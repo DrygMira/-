@@ -1,0 +1,145 @@
+<!DOCTYPE html>
+<html lang="ru">
+<head>
+    <meta charset="UTF-8">
+    <title>Blockchain WS Test</title>
+    <style>
+        body { font-family: monospace; background: #0d1117; color: #c9d1d9; padding: 20px; }
+        h1 { color: #58a6ff; }
+        #log { white-space: pre-wrap; border: 1px solid #30363d; padding: 10px; background: #161b22; height: 500px; overflow-y: auto; }
+        button { background: #238636; color: white; border: none; padding: 10px 16px; border-radius: 6px; cursor: pointer; margin-right: 10px; }
+        button:hover { background: #2ea043; }
+        input { background: #0d1117; color: white; border: 1px solid #30363d; padding: 8px; border-radius: 6px; width: 300px; }
+    </style>
+</head>
+<body>
+
+<h1>🔗 WebSocket Blockchain Test</h1>
+<p>URL: <b>wss://shineup.me/ws</b></p>
+<button id="btnConnect">Connect</button>
+<button id="btnAddHeader">Add Header</button>
+<button id="btnGetChain">Get Chain</button>
+<br><br>
+<label for="textInput"></label><input id="textInput" placeholder="Введите текст для нового блока">
+<button id="btnAddText">Add Text</button>
+<br><br>
+<div id="log"></div>
+
+<script>
+    const log = msg => {
+        const el = document.getElementById("log");
+        el.textContent += msg + "\n";
+        el.scrollTop = el.scrollHeight;
+    };
+
+    // === Константы ===
+    const WS_URL = "wss://shineup.me/ws";
+    const OP_ADD_BLOCK = 1;
+    const OP_GET_BLOCKCHAIN = 2;
+    const TYPE_HEADER = 0;
+    const TYPE_TEXT = 1;
+
+    let ws;
+    let blockchainId = 777000001n;
+    let userLogin = "test_user_js";
+
+    function beInt(v) {
+        const buf = new ArrayBuffer(4);
+        new DataView(buf).setInt32(0, v, false);
+        return new Uint8Array(buf);
+    }
+    function beLong(v) {
+        const buf = new ArrayBuffer(8);
+        new DataView(buf).setBigInt64(0, BigInt(v), false);
+        return new Uint8Array(buf);
+    }
+    function concat(...arrs) {
+        let len = arrs.reduce((a, b) => a + b.length, 0);
+        let out = new Uint8Array(len);
+        let off = 0;
+        for (let a of arrs) { out.set(a, off); off += a.length; }
+        return out;
+    }
+    function textUtf8(s) {
+        return new TextEncoder().encode(s);
+    }
+
+    // === Построение HEADER ===
+    function buildHeaderBody() {
+        const tag = textUtf8("SHiNE001");
+        const id = beLong(blockchainId);
+        const login = textUtf8(userLogin);
+        const loginLen = new Uint8Array([login.length]);
+        const zeros = new Uint8Array(4+4+2+8+32); // type, num, ver, prev, pubkey
+        return concat(tag, id, loginLen, login, zeros);
+    }
+
+    function buildRawRecord(recordNumber, timestamp, recordType, recordTypeVersion, body) {
+        const recordSize = 4+4+8+2+2+body.length;
+        const buf = new ArrayBuffer(20);
+        const view = new DataView(buf);
+        view.setInt32(0, recordSize, false);
+        view.setInt32(4, recordNumber, false);
+        view.setBigInt64(8, BigInt(timestamp), false);
+        view.setInt16(16, recordType, false);
+        view.setInt16(18, recordTypeVersion, false);
+        return concat(new Uint8Array(buf), body);
+    }
+
+    // === Команды ===
+    document.getElementById("btnConnect").onclick = () => {
+        ws = new WebSocket(WS_URL);
+        ws.binaryType = "arraybuffer";
+
+        ws.onopen = () => log("✅ Connected to " + WS_URL);
+        ws.onclose = () => log("❌ Disconnected");
+        ws.onerror = e => log("⚠️ Error: " + e.message);
+
+        ws.onmessage = e => {
+            const data = new Uint8Array(e.data);
+            const status = new DataView(data.buffer).getInt32(0, false);
+            log("📩 Received status: " + status);
+            if (data.length > 8) {
+                const len = new DataView(data.buffer).getInt32(4, false);
+                const payload = data.slice(8, 8 + len);
+                log("Payload (" + len + " bytes): " + toHex(payload.slice(0, 64)) + "...");
+            }
+        };
+    };
+
+    document.getElementById("btnAddHeader").onclick = () => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return log("⚠️ Not connected");
+        const body = buildHeaderBody();
+        const ts = Math.floor(Date.now() / 1000);
+        const raw = buildRawRecord(0, ts, TYPE_HEADER, 1, body);
+        const msg = concat(beInt(OP_ADD_BLOCK), beLong(blockchainId), raw);
+        ws.send(msg);
+        log("📤 Sent ADD_HEADER (" + raw.length + " bytes)");
+    };
+
+    document.getElementById("btnGetChain").onclick = () => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return log("⚠️ Not connected");
+        const msg = concat(beInt(OP_GET_BLOCKCHAIN), beLong(blockchainId));
+        ws.send(msg);
+        log("📤 Sent GET_BLOCKCHAIN");
+    };
+
+    document.getElementById("btnAddText").onclick = () => {
+        if (!ws || ws.readyState !== WebSocket.OPEN) return log("⚠️ Not connected");
+        const txt = document.getElementById("textInput").value.trim();
+        if (!txt) return log("⚠️ Пустое сообщение");
+        const body = textUtf8(txt);
+        const ts = Math.floor(Date.now() / 1000);
+        const raw = buildRawRecord(1, ts, TYPE_TEXT, 1, body);
+        const msg = concat(beInt(OP_ADD_BLOCK), beLong(blockchainId), raw);
+        ws.send(msg);
+        log("📤 Sent ADD_TEXT (" + txt + ")");
+    };
+
+    // === Helpers ===
+    function toHex(buf) {
+        return Array.from(buf).map(b => b.toString(16).padStart(2, "0")).join("");
+    }
+</script>
+</body>
+</html>

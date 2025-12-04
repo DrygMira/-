@@ -1,0 +1,10 @@
+
+просто запустить
+user@p628065:~/docker/ws-server$ java -jar ws-server.jar
+
+
+запустить нормально что бы в фоне работал
+user@p628065:~/docker/ws-server$ nohup java -jar ws-server.jar > server.log 2>&1 &
+
+перестартовать кадди
+user@p628065:~/docker/ws-server$ docker restart caddy

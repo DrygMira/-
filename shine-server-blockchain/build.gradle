@@ -1,0 +1,33 @@
+plugins {
+    id 'java'
+}
+
+group = 'shine'
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // модуль блокчейна использует крипту
+    implementation project(':shine-server-crypto')
+
+    // JSON (BchInfoManager)
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.18.1'
+
+    // логгер
+    implementation 'org.slf4j:slf4j-api:2.0.16'
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
+}
+
+test {
+    useJUnitPlatform()
+}

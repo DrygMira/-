@@ -1,0 +1,72 @@
+plugins {
+    id 'java'
+    id 'application'
+    id 'com.github.johnrengelman.shadow' version '8.1.1'
+}
+
+group = 'shine'
+version = '1.0'
+
+tasks.jar {
+    enabled = false     // это что бы не создавала обычный джар, а будет только толстый джар
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    implementation 'org.eclipse.jetty:jetty-server:11.0.20'
+    implementation 'org.eclipse.jetty:jetty-servlet:11.0.20'
+    implementation 'org.eclipse.jetty.websocket:websocket-jetty-server:11.0.20'
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1'              // шифрование
+    implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.1'  // json
+
+    implementation 'org.slf4j:slf4j-api:2.0.9'
+    implementation 'ch.qos.logback:logback-classic:1.5.6'
+
+    testImplementation platform('org.junit:junit-bom:5.10.0')
+    testImplementation 'org.junit.jupiter:junit-jupiter'
+
+
+    implementation project(':shine-server-config')       // модуль настроек из application.properties
+    implementation project(':shine-server-crypto')       // модуль сервера для работы с криптографией
+    implementation project(':shine-server-blockchain')   // модуль для работы с блокчейном
+    implementation project(':shine-server-db')           // модуль для работы с БД содержит и сущности из БД и саму работу с БД
+
+    implementation project(':shine-server-net-protocol') // Модуль отвечающий за протокол (классы Net..Request/Response
+    implementation project(':shine-server-net-server')   // Хэндлеры для обработки сетевых запросов
+
+
+}
+
+application {
+    // 👇 класс с методом main
+    mainClass = 'server.ws.WsServer'
+}
+
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+
+shadowJar {
+    // создаём 1 файл без постфиксов
+    archiveBaseName.set('shine-server')
+    archiveClassifier.set('')
+    archiveVersion.set('')
+    mergeServiceFiles()
+
+    manifest {
+        attributes(
+                'Main-Class': 'server.ws.WsServer'
+        )
+    }
+}
+
+test {
+    useJUnitPlatform()
+}

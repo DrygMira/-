@@ -1,0 +1,8 @@
+rootProject.name = 'shine-server-server'
+
+include 'shine-server-config'
+include 'shine-server-crypto'
+include 'shine-server-blockchain'
+include 'shine-server-db'
+include 'shine-server-net-protocol'
+include 'shine-server-net-server'
