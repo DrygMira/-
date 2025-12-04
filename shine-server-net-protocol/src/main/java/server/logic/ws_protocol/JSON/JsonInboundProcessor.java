@@ -55,10 +55,10 @@ public final class JsonInboundProcessor {
                         "EMPTY_JSON", "Пустое JSON-сообщение");
             }
 
-            // 1. Парсим общий пакет как дерево
+            // 1. Парсим общий пакет
             JsonNode root = JSON_MAPPER.readTree(json);
 
-            // 2. Берём op и requestId
+            // 2. op и requestId
             String op = getTextOrNull(root, "op");
             if (op == null || op.isEmpty()) {
                 return buildErrorJson(null, null, WireCodes.Status.BAD_REQUEST,
@@ -75,21 +75,27 @@ public final class JsonInboundProcessor {
                         "UNKNOWN_OP", "Неизвестная операция: " + op);
             }
 
-            // 3. Маппим весь JSON в конкретный класс запроса
+            // 3. Маппим JSON → нужный NetRequest
             NetRequest request = JSON_MAPPER.treeToValue(root, reqClass);
 
-            // 4. Вызываем хэндлер, передавая контекст
-            NetResponse response = handler.handle(request, ctx);
+            NetResponse response;
 
-            // На всякий случай: если хэндлер не выставил op/requestId
-            if (response.getOp() == null) {
-                response.setOp(op);
-            }
-            if (response.getRequestId() == null) {
-                response.setRequestId(requestId);
+            // 4. Трай-кэтч вокруг хэндлера (важно!)
+            try {
+                response = handler.handle(request, ctx);
+            } catch (Exception handlerError) {
+                log.error("💥 Ошибка внутри хэндлера '{}'", op, handlerError);
+                return buildErrorJson(op, requestId,
+                        WireCodes.Status.INTERNAL_ERROR,
+                        "INTERNAL_HANDLER_ERROR",
+                        "Неожиданная ошибка при обработке операции: " + op);
             }
 
-            // 5. Собираем JSON-ответ
+            // Если хэндлер не выставил op/requestId
+            if (response.getOp() == null) response.setOp(op);
+            if (response.getRequestId() == null) response.setRequestId(requestId);
+
+            // 5. Формируем JSON
             ObjectNode out = JSON_MAPPER.createObjectNode();
             out.put("op", response.getOp());
             out.put("requestId", response.getRequestId());
@@ -118,16 +124,7 @@ public final class JsonInboundProcessor {
     }
 
     /**
-     * Генерация JSON-ошибки в формате ответа:
-     * {
-     *   "op": op,
-     *   "requestId": requestId,
-     *   "status": status,
-     *   "payload": {
-     *     "code": errorCode,
-     *     "message": errorMessage
-     *   }
-     * }
+     * Генерация JSON-ошибки
      */
     private static String buildErrorJson(String op,
                                          String requestId,

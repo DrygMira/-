@@ -5,6 +5,7 @@ import server.logic.ws_protocol.JSON.entyties.*;
 import server.logic.ws_protocol.JSON.entyties.Auth.NetAuthSessionNewStep1Request;
 import server.logic.ws_protocol.JSON.entyties.Auth.NetAuthSessionNewStep1Response;
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
 import server.logic.ws_protocol.WireCodes;
 import shine.db.dao.SolanaUsersDAO;
 import shine.db.entities.SolanaUser;
@@ -23,15 +24,22 @@ public class NetAuthSessionNewStep1Handler implements JsonMessageHandler {
 
         String login = req.getLogin();
         if (login == null || login.isBlank()) {
-            return error(req, WireCodes.Status.BAD_REQUEST,
-                    "EMPTY_LOGIN", "Пустой логин");
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_LOGIN",
+                    "Пустой логин"
+            );
         }
 
         // 1) Проверка: в контексте никто не авторизован
         if (ctx.getLogin() != null) {
-            return error(req, WireCodes.Status.BAD_REQUEST,
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
                     "ALREADY_AUTHED",
-                    "Попытка повторной авторификации для уже заданного login=" + ctx.getLogin());
+                    "Попытка повторной авторификации для уже заданного login=" + ctx.getLogin()
+            );
         }
 
         // 2) Ищем пользователя в локальной БД
@@ -39,8 +47,12 @@ public class NetAuthSessionNewStep1Handler implements JsonMessageHandler {
 
         if (solanaUser == null) {
             // TODO позже — запрос в Solana, если не нашли локально
-            return error(req, WireCodes.Status.UNVERIFIED,
-                    "UNKNOWN_USER", "Пользователь с таким логином не найден");
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "UNKNOWN_USER",
+                    "Пользователь с таким логином не найден"
+            );
         }
 
         // 3) Заполняем контекст полями пользователя
@@ -65,15 +77,6 @@ public class NetAuthSessionNewStep1Handler implements JsonMessageHandler {
         resp.setStatus(WireCodes.Status.OK);
         resp.setPayload(Map.of("sessionPwd", sessionPwd));
 
-        return resp;
-    }
-
-    private NetExceptionResponse error(NetRequest req, int status, String code, String msg) {
-        NetExceptionResponse resp = new NetExceptionResponse();
-        resp.setOp(req.getOp());
-        resp.setRequestId(req.getRequestId());
-        resp.setStatus(status);
-        resp.setPayload(Map.of("code", code, "message", msg));
         return resp;
     }
 }

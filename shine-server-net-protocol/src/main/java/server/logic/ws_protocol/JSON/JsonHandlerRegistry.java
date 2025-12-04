@@ -5,7 +5,7 @@ import server.logic.ws_protocol.JSON.entyties.Auth.NetAuthSessionNewStep1Request
 import server.logic.ws_protocol.JSON.entyties.Auth.NetSessionRefreshRequest;
 import server.logic.ws_protocol.JSON.handlers.*;
 import server.logic.ws_protocol.JSON.entyties.tempToTest.NetAddUserRequest;
-import server.logic.ws_protocol.JSON.handlers.auth.NetAddUserHandler;
+import server.logic.ws_protocol.JSON.handlers.tempToTest.NetAddUserHandler;
 import server.logic.ws_protocol.JSON.handlers.auth.NetAuthSessionNewStep1Handler;
 import server.logic.ws_protocol.JSON.handlers.auth.NetSessionRefreshHandler;
 

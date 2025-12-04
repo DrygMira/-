@@ -1,18 +1,17 @@
 package server.logic.ws_protocol.JSON.handlers.auth;
 
 import server.logic.ws_protocol.JSON.ConnectionContext;
-import server.logic.ws_protocol.JSON.entyties.NetExceptionResponse;
 import server.logic.ws_protocol.JSON.entyties.NetRequest;
 import server.logic.ws_protocol.JSON.entyties.NetResponse;
 import server.logic.ws_protocol.JSON.entyties.Auth.NetSessionRefreshRequest;
 import server.logic.ws_protocol.JSON.entyties.Auth.NetSessionRefreshResponse;
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
 import server.logic.ws_protocol.WireCodes;
 import shine.db.dao.ActiveSessionsDAO;
 import shine.db.entities.ActiveSession;
 
 import java.sql.SQLException;
-import java.util.Map;
 
 /**
  * Хэндлер SessionRefresh.
@@ -35,8 +34,12 @@ public class NetSessionRefreshHandler implements JsonMessageHandler {
         String sessionPwd = req.getSessionPwd();
 
         if (sessionPwd == null || sessionPwd.isEmpty()) {
-            return buildError(req, WireCodes.Status.BAD_REQUEST,
-                    "BAD_SESSION_PWD", "Пустой пароль сессии");
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_SESSION_PWD",
+                    "Пустой пароль сессии"
+            );
         }
 
         ActiveSessionsDAO dao = ActiveSessionsDAO.getInstance();
@@ -45,19 +48,31 @@ public class NetSessionRefreshHandler implements JsonMessageHandler {
             session = dao.getBySessionId(sessionId);
         } catch (SQLException e) {
             // Ошибка БД → внутренняя ошибка сервера
-            return buildError(req, WireCodes.Status.SERVER_DATA_ERROR,
-                    "DB_ERROR", "Ошибка доступа к базе данных");
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR",
+                    "Ошибка доступа к базе данных"
+            );
         }
 
         if (session == null) {
-            return buildError(req, WireCodes.Status.UNVERIFIED,
-                    "SESSION_NOT_FOUND", "Сессия не найдена");
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "SESSION_NOT_FOUND",
+                    "Сессия не найдена"
+            );
         }
 
         String dbPwd = session.getSessionPwd();
         if (dbPwd == null || !dbPwd.equals(sessionPwd)) {
-            return buildError(req, WireCodes.Status.UNVERIFIED,
-                    "SESSION_PWD_MISMATCH", "Неверный пароль сессии");
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "SESSION_PWD_MISMATCH",
+                    "Неверный пароль сессии"
+            );
         }
 
         // Всё хорошо — обновляем контекст соединения
@@ -74,21 +89,6 @@ public class NetSessionRefreshHandler implements JsonMessageHandler {
         resp.setRequestId(req.getRequestId());
         resp.setStatus(WireCodes.Status.OK);
         resp.setPayload(null); // или Map.of("ok", true)
-        return resp;
-    }
-
-    private NetExceptionResponse buildError(NetRequest req,
-                                            int status,
-                                            String code,
-                                            String message) {
-        NetExceptionResponse resp = new NetExceptionResponse();
-        resp.setOp(req.getOp());
-        resp.setRequestId(req.getRequestId());
-        resp.setStatus(status);
-        resp.setPayload(Map.of(
-                "code", code,
-                "message", message
-        ));
         return resp;
     }
 }
