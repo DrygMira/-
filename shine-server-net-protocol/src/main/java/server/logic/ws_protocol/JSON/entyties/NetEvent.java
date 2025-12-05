@@ -3,7 +3,7 @@ package server.logic.ws_protocol.JSON.entyties;
 /**
  * Базовый класс для всех событий (event).
  * Общие поля: op и payload.
- *
+ *.
  * Формат JSON (event):
  * {
  *   "op": "...",

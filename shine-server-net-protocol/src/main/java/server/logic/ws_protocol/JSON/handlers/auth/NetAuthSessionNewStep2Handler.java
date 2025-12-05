@@ -2,6 +2,7 @@ package server.logic.ws_protocol.JSON.handlers.auth;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.NetRequest;
 import server.logic.ws_protocol.JSON.entyties.NetResponse;
@@ -22,7 +23,7 @@ import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Шаг 2 авторизации: проверка подписи и создание сессии.
- *
+ *.
  * Клиент присылает:
  *  - loginId
  *  - sigNum (0 или 1)
@@ -164,6 +165,9 @@ public class NetAuthSessionNewStep2Handler implements JsonMessageHandler {
         ctx.setActiveSession(activeSession);
         ctx.setSessionId(sessionId);
         ctx.setAuthenticationStatus(ConnectionContext.AUTH_STATUS_USER);
+
+        // Регистрируем это подключение в глобальном реестре активных соединений
+        ActiveConnectionsRegistry.getInstance().register(ctx);
 
         // --- формируем ответ ---
         NetAuthSessionNewStep2Response resp = new NetAuthSessionNewStep2Response();

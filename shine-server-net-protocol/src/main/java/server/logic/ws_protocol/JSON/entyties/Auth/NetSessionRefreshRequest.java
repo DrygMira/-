@@ -4,7 +4,7 @@ import server.logic.ws_protocol.JSON.entyties.NetRequest;
 
 /**
  * Запрос SessionRefresh.
- *
+ *.
  * JSON (payload):
  * {
  *   "sessionId": 123,

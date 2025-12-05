@@ -17,7 +17,7 @@ import java.util.Map;
 
 /**
  * JsonInboundProcessor — обработка JSON-сообщений.
- *
+ *.
  * 1) Парсит общий пакет (op, requestId,...).
  * 2) По op выбирает класс запроса и хэндлер.
  * 3) Маппит JSON → NetRequest через ObjectMapper.

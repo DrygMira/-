@@ -11,7 +11,7 @@ import java.net.http.HttpResponse;
 
 /**
  * Сервис для геолокации по IP.
- *
+ *.
  * Основной метод:
  *   resolveCountryCityOrIp(ip) -> "Country, City" или исходный ip, если не удалось.
  */

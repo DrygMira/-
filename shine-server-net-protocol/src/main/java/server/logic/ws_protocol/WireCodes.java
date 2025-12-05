@@ -2,11 +2,11 @@ package server.logic.ws_protocol;
 
 /**
  * WireCodes — константы бинарного протокола поверх WebSocket.
- *
+ *.
  * Формат входящего сообщения:
  *   [4] int opCode (big-endian)
  *   [*] payload
- *
+ *.
  * Ответ сервера:
  *   ровно [4] int statusCode (big-endian)
  */

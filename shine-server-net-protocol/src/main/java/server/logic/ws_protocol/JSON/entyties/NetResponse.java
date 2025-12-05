@@ -2,9 +2,9 @@ package server.logic.ws_protocol.JSON.entyties;
 
 /**
  * Базовый класс для всех ответов (server → client).
- *
+ *.
  * Наследуется от NetRequest и добавляет status.
- *
+ *.
  * Формат JSON (response):
  * {
  *   "op": "...",

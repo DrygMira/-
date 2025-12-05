@@ -2,7 +2,7 @@ package server.logic.ws_protocol.JSON.entyties;
 
 /**
  * Ответ с ошибкой (любой отказ).
- *
+ *.
  * В payload будет:
  * {
  *   "code": "...",

@@ -1,5 +1,6 @@
 package server.logic.ws_protocol.JSON;
 
+import org.eclipse.jetty.websocket.api.Session;
 import shine.db.entities.SolanaUser;
 import shine.db.entities.ActiveSession;
 
@@ -23,6 +24,22 @@ public class ConnectionContext {
     private String sessionPwd;
 
     private int authenticationStatus = AUTH_STATUS_NONE;
+
+    /**
+     * WebSocket-сессия Jetty для данного подключения.
+     * Нужна, чтобы через ConnectionContext можно было отправлять сообщения клиенту.
+     */
+    private Session wsSession;
+
+    // --- WebSocket Session ---
+
+    public Session getWsSession() {
+        return wsSession;
+    }
+
+    public void setWsSession(Session wsSession) {
+        this.wsSession = wsSession;
+    }
 
     // --- SolanaUser / ActiveSession ---
 
@@ -96,6 +113,7 @@ public class ConnectionContext {
         sessionPwd = null;
 
         authenticationStatus = AUTH_STATUS_NONE;
+        wsSession = null;
     }
 
     @Override

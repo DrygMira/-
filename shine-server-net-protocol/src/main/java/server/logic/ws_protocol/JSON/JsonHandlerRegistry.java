@@ -16,7 +16,7 @@ import java.util.Map;
 /**
  * JsonHandlerRegistry — единое место, где руками регистрируются
  * JSON-операции: op → handler и op → requestClass.
- *
+ *.
  * Если нужно добавить новый запрос:
  *   1) создаёшь класс NetXXXRequest / NetXXXResponse,
  *   2) создаёшь JsonMessageHandler (NetXXXHandler),

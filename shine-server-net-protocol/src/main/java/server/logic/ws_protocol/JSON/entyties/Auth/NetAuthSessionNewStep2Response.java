@@ -4,7 +4,7 @@ import server.logic.ws_protocol.JSON.entyties.NetResponse;
 
 /**
  * Ответ на AuthSessionNewStep2.
- *
+ *.
  * Успешный JSON:
  * {
  *   "op": "AuthSessionNewStep2",

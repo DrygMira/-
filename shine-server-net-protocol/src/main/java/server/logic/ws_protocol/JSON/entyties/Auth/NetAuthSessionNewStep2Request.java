@@ -4,7 +4,7 @@ import server.logic.ws_protocol.JSON.entyties.NetRequest;
 
 /**
  * Шаг 2 авторизации: клиент подтверждает владение ключом.
- *
+ *.
  * JSON:
  * {
  *   "op": "AuthSessionNewStep2",

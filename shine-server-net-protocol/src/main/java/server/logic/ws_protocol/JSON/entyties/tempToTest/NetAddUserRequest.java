@@ -4,7 +4,7 @@ import server.logic.ws_protocol.JSON.entyties.NetRequest;
 
 /**
  * Запрос AddUser.
- *
+ *.
  * Ожидаемый JSON:
  * {
  *   "op": "AddUser",

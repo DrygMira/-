@@ -6,6 +6,7 @@ import org.eclipse.jetty.websocket.api.annotations.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.logic.InboundMessageProcessor;
+import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.JsonInboundProcessor;
 
@@ -24,6 +25,8 @@ public class BlockchainWsEndpoint {
     @OnWebSocketConnect
     public void onConnect(Session session) {
         this.session = session;
+        // Привязываем WebSocket-сессию к ConnectionContext
+        connectionContext.setWsSession(session);
         log.info("WS connected: {}", session.getRemoteAddress());
     }
 
@@ -77,6 +80,8 @@ public class BlockchainWsEndpoint {
     @OnWebSocketClose
     public void onClose(int statusCode, String reason) {
         log.info("WS closed: {} {}", statusCode, reason);
+        // Удаляем это подключение из реестра активных соединений
+        ActiveConnectionsRegistry.getInstance().remove(connectionContext);
         // На всякий случай очищаем контекст
         connectionContext.reset();
     }
