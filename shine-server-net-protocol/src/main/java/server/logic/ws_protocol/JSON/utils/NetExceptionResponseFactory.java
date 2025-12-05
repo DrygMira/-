@@ -1,11 +1,7 @@
 package server.logic.ws_protocol.JSON.utils;
 
-
-
 import server.logic.ws_protocol.JSON.entyties.NetExceptionResponse;
 import server.logic.ws_protocol.JSON.entyties.NetRequest;
-
-import java.util.Map;
 
 /**
  * Фабрика ошибок для JSON-протокола.
@@ -26,11 +22,27 @@ public final class NetExceptionResponseFactory {
         resp.setOp(req.getOp());
         resp.setRequestId(req.getRequestId());
         resp.setStatus(status);
-        resp.setPayload(Map.of(
-                "code", code,
-                "message", message
-        ));
+        resp.setCode(code);
+        resp.setMessage(message);
+        return resp;
+    }
 
+    /**
+     * Вариант для случаев, когда NetRequest ещё не распарсен,
+     * но мы уже знаем op и requestId (или они null).
+     */
+    public static NetExceptionResponse error(String op,
+                                             String requestId,
+                                             int status,
+                                             String code,
+                                             String message) {
+
+        NetExceptionResponse resp = new NetExceptionResponse();
+        resp.setOp(op);
+        resp.setRequestId(requestId);
+        resp.setStatus(status);
+        resp.setCode(code);
+        resp.setMessage(message);
         return resp;
     }
 }

@@ -16,13 +16,7 @@ import shine.db.entities.SolanaUser;
 import java.sql.SQLException;
 
 /**
- * Временный Хэндлер AddUser.              Используется для тестовой регистрации!!!!!!!!
- *
- * Логика:
- *  - берём login, loginId, bchId, pubkey0, pubkey1, bchLimit;
- *  - создаём SolanaUser и вставляем через SolanaUsersDAO;
- *  - если всё ОК → NetAddUserResponse со статусом 200;
- *  - если ошибка БД или некорректные данные → NetExceptionResponse.
+ * Временный хэндлер AddUser (тестовая регистрация).
  */
 public class NetAddUserHandler implements JsonMessageHandler {
 
@@ -64,7 +58,7 @@ public class NetAddUserHandler implements JsonMessageHandler {
             resp.setOp(req.getOp());
             resp.setRequestId(req.getRequestId());
             resp.setStatus(WireCodes.Status.OK);
-            resp.setPayload(null); // можно поставить Map.of("ok", true)
+            // payload сам станет {} через JsonInboundProcessor
             log.info("✅ Пользователь добавлен: login={}, loginId={}", req.getLogin(), req.getLoginId());
             return resp;
 

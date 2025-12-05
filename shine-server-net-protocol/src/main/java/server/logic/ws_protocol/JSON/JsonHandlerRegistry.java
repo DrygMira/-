@@ -2,9 +2,11 @@ package server.logic.ws_protocol.JSON;
 
 import server.logic.ws_protocol.JSON.entyties.*;
 import server.logic.ws_protocol.JSON.entyties.Auth.NetAuthSessionNewStep1Request;
+import server.logic.ws_protocol.JSON.entyties.Auth.NetAuthSessionNewStep2Request;
 import server.logic.ws_protocol.JSON.entyties.Auth.NetSessionRefreshRequest;
 import server.logic.ws_protocol.JSON.handlers.*;
 import server.logic.ws_protocol.JSON.entyties.tempToTest.NetAddUserRequest;
+import server.logic.ws_protocol.JSON.handlers.auth.NetAuthSessionNewStep2Handler;
 import server.logic.ws_protocol.JSON.handlers.tempToTest.NetAddUserHandler;
 import server.logic.ws_protocol.JSON.handlers.auth.NetAuthSessionNewStep1Handler;
 import server.logic.ws_protocol.JSON.handlers.auth.NetSessionRefreshHandler;
@@ -25,14 +27,16 @@ public final class JsonHandlerRegistry {
     private static final Map<String, JsonMessageHandler> HANDLERS = Map.of(
             "SessionRefresh", new NetSessionRefreshHandler(),
             "AddUser",        new NetAddUserHandler(),
-            "AuthSessionNewStep1", new NetAuthSessionNewStep1Handler()
+            "AuthSessionNewStep1", new NetAuthSessionNewStep1Handler(),
+            "AuthSessionNewStep2",   new NetAuthSessionNewStep2Handler()
             // сюда потом добавишь другие операции
     );
 
     private static final Map<String, Class<? extends NetRequest>> REQUEST_TYPES = Map.of(
             "SessionRefresh", NetSessionRefreshRequest.class,
             "AddUser",        NetAddUserRequest.class,
-            "AuthSessionNewStep1", NetAuthSessionNewStep1Request.class
+            "AuthSessionNewStep1", NetAuthSessionNewStep1Request.class,
+            "AuthSessionNewStep2",   NetAuthSessionNewStep2Request.class
     );
 
     private JsonHandlerRegistry() {

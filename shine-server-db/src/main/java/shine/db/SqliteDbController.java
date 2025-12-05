@@ -1,6 +1,7 @@
 package shine.db;
 
 import shine.db.dao.ActiveSessionsDAO;
+import shine.db.entities.ActiveSession;
 import utils.config.AppConfig;
 
 import java.nio.file.Files;

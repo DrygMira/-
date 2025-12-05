@@ -1,5 +1,8 @@
 package server.logic.ws_protocol.JSON;
 
+import shine.db.entities.SolanaUser;
+import shine.db.entities.ActiveSession;
+
 /**
  * ConnectionContext — контекст состояния одного WebSocket-соединения.
  * Живёт ровно столько же, сколько живёт подключение.
@@ -7,41 +10,49 @@ package server.logic.ws_protocol.JSON;
 public class ConnectionContext {
 
     // Статусы аутентификации
-    public static final int AUTH_STATUS_NONE = 0; // ананимный или не авторизованный пользователь
+    public static final int AUTH_STATUS_NONE = 0; // анонимный или не авторизованный пользователь
     public static final int AUTH_STATUS_USER = 1; // авторизованный пользователь
-//    public static final int AUTH_STATUS_ANON = 2; // анонимный (зарезервировано на будущее)
 
-    private String login;
-    private Long loginId;
+    // Полный пользователь из БД (solana_users)
+    private SolanaUser solanaUser;
+
+    // Активная сессия из БД (active_sessions)
+    private ActiveSession activeSession;
 
     private Long sessionId;
     private String sessionPwd;
 
-    // Данные пользователя / блокчейна
-    private Long bchId;
-    private String pubkey0;
-    private String pubkey1;
-    private Integer bchLimit;
-
     private int authenticationStatus = AUTH_STATUS_NONE;
 
-    // --- getters / setters ---
+    // --- SolanaUser / ActiveSession ---
 
-    public String getLogin() {
-        return login;
+    public SolanaUser getSolanaUser() {
+        return solanaUser;
     }
 
-    public void setLogin(String login) {
-        this.login = login;
+    public void setSolanaUser(SolanaUser solanaUser) {
+        this.solanaUser = solanaUser;
+    }
+
+    public ActiveSession getActiveSession() {
+        return activeSession;
+    }
+
+    public void setActiveSession(ActiveSession activeSession) {
+        this.activeSession = activeSession;
+    }
+
+    // --- Удобные геттеры для логина ---
+
+    public String getLogin() {
+        return solanaUser != null ? solanaUser.getLogin() : null;
     }
 
     public Long getLoginId() {
-        return loginId;
+        return solanaUser != null ? solanaUser.getLoginId() : null;
     }
 
-    public void setLoginId(Long loginId) {
-        this.loginId = loginId;
-    }
+    // --- sessionId / sessionPwd ---
 
     public Long getSessionId() {
         return sessionId;
@@ -59,37 +70,7 @@ public class ConnectionContext {
         this.sessionPwd = sessionPwd;
     }
 
-    public Long getBchId() {
-        return bchId;
-    }
-
-    public void setBchId(Long bchId) {
-        this.bchId = bchId;
-    }
-
-    public String getPubkey0() {
-        return pubkey0;
-    }
-
-    public void setPubkey0(String pubkey0) {
-        this.pubkey0 = pubkey0;
-    }
-
-    public String getPubkey1() {
-        return pubkey1;
-    }
-
-    public void setPubkey1(String pubkey1) {
-        this.pubkey1 = pubkey1;
-    }
-
-    public Integer getBchLimit() {
-        return bchLimit;
-    }
-
-    public void setBchLimit(Integer bchLimit) {
-        this.bchLimit = bchLimit;
-    }
+    // --- auth status ---
 
     public int getAuthenticationStatus() {
         return authenticationStatus;
@@ -108,15 +89,11 @@ public class ConnectionContext {
     }
 
     public void reset() {
-        login = null;
-        loginId = null;
+        solanaUser = null;
+        activeSession = null;
+
         sessionId = null;
         sessionPwd = null;
-
-        bchId = null;
-        pubkey0 = null;
-        pubkey1 = null;
-        bchLimit = null;
 
         authenticationStatus = AUTH_STATUS_NONE;
     }
@@ -124,13 +101,9 @@ public class ConnectionContext {
     @Override
     public String toString() {
         return "ConnectionContext{" +
-                "login='" + login + '\'' +
-                ", loginId=" + loginId +
+                "login='" + getLogin() + '\'' +
+                ", loginId=" + getLoginId() +
                 ", sessionId=" + sessionId +
-                ", bchId=" + bchId +
-                ", pubkey0='" + pubkey0 + '\'' +
-                ", pubkey1='" + pubkey1 + '\'' +
-                ", bchLimit=" + bchLimit +
                 ", authenticationStatus=" + authenticationStatus +
                 '}';
     }

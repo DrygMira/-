@@ -1,5 +1,7 @@
 package server.logic.ws_protocol.JSON.handlers.auth;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.NetRequest;
 import server.logic.ws_protocol.JSON.entyties.NetResponse;
@@ -9,22 +11,18 @@ import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
 import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
 import server.logic.ws_protocol.WireCodes;
 import shine.db.dao.ActiveSessionsDAO;
+import shine.db.dao.SolanaUsersDAO;
 import shine.db.entities.ActiveSession;
+import shine.db.entities.SolanaUser;
 
 import java.sql.SQLException;
 
 /**
  * Хэндлер SessionRefresh.
- *
- * Логика:
- *  - берём sessionId и sessionPwd из запроса;
- *  - ищем сессию в БД;
- *  - если не нашли или пароль не совпал → NetExceptionResponse;
- *  - если всё ок:
- *      * обновляем ConnectionContext (sessionId, sessionPwd, статус USER);
- *      * возвращаем NetSessionRefreshResponse со статусом 200.
  */
 public class NetSessionRefreshHandler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(NetSessionRefreshHandler.class);
 
     @Override
     public NetResponse handle(NetRequest request, ConnectionContext ctx) throws Exception {
@@ -42,12 +40,12 @@ public class NetSessionRefreshHandler implements JsonMessageHandler {
             );
         }
 
-        ActiveSessionsDAO dao = ActiveSessionsDAO.getInstance();
+        ActiveSessionsDAO sessionsDao = ActiveSessionsDAO.getInstance();
         ActiveSession session;
         try {
-            session = dao.getBySessionId(sessionId);
+            session = sessionsDao.getBySessionId(sessionId);
         } catch (SQLException e) {
-            // Ошибка БД → внутренняя ошибка сервера
+            log.error("Ошибка БД при поиске сессии sessionId={}", sessionId, e);
             return NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.SERVER_DATA_ERROR,
@@ -75,20 +73,48 @@ public class NetSessionRefreshHandler implements JsonMessageHandler {
             );
         }
 
+        // --- достаём пользователя по loginId из сессии ---
+        SolanaUser solanaUser = null;
+        Long loginId = null;
+        try {
+            loginId = session.getLoginId();
+            if (loginId != null) {
+                SolanaUsersDAO usersDao = SolanaUsersDAO.getInstance();
+                solanaUser = usersDao.getByLoginId(loginId);
+            }
+        } catch (SQLException e) {
+            log.error("Ошибка БД при поиске пользователя по loginId={} из сессии", loginId, e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR_USER_LOOKUP",
+                    "Ошибка доступа к базе данных при получении пользователя для сессии"
+            );
+        }
+
+        if (loginId != null && solanaUser == null) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "USER_NOT_FOUND_FOR_SESSION",
+                    "Пользователь для данной сессии не найден"
+            );
+        }
+
         // Всё хорошо — обновляем контекст соединения
         if (ctx != null) {
+            ctx.setActiveSession(session);
+            ctx.setSolanaUser(solanaUser);
             ctx.setSessionId(sessionId);
             ctx.setSessionPwd(sessionPwd);
-            // Если потом добавишь в ActiveSession login / loginId — можно здесь и их проставлять
             ctx.setAuthenticationStatus(ConnectionContext.AUTH_STATUS_USER);
         }
 
-        // И возвращаем OK без доп. данных
+        // И возвращаем OK без доп. полей (payload будет {}).
         NetSessionRefreshResponse resp = new NetSessionRefreshResponse();
         resp.setOp(req.getOp());
         resp.setRequestId(req.getRequestId());
         resp.setStatus(WireCodes.Status.OK);
-        resp.setPayload(null); // или Map.of("ok", true)
         return resp;
     }
 }
