@@ -21,10 +21,14 @@ public final class WsServer {
         AppConfig config = AppConfig.getInstance();
         int port = 7070;
         try {
-            port = Integer.parseInt(config.getParam("server.port"),7070);
+            String portStr = config.getParam("server.port");
+            if (portStr != null && !portStr.isBlank()) {
+                port = Integer.parseInt(portStr.trim());
+            }
         } catch (Exception e) {
-            log.info("Установите параметр server.port в файле настроек");
+            log.info("Не удалось прочитать параметр server.port, используем порт по умолчанию {}", port);
         }
+
 
         Server server = new Server(port);
 

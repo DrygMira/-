@@ -64,12 +64,14 @@ public class Test_AddUser_FirstAuth {
                 {
                   "op": "AddUser",
                   "requestId": "test-add-1",
-                  "login": "%s",
-                  "loginId": %d,
-                  "bchId": %d,
-                  "pubkey0": "%s",
-                  "pubkey1": "%s",
-                  "bchLimit": %d
+                  "payload": {
+                    "login": "%s",
+                    "loginId": %d,
+                    "bchId": %d,
+                    "pubkey0": "%s",
+                    "pubkey1": "%s",
+                    "bchLimit": %d
+                  }
                 }
                 """.formatted(
                 TEST_LOGIN,
@@ -87,7 +89,9 @@ public class Test_AddUser_FirstAuth {
                 {
                   "op": "AuthSessionNewStep1",
                   "requestId": "test-auth-1",
-                  "login": "%s"
+                  "payload": {
+                    "login": "%s"
+                  }
                 }
                 """.formatted(TEST_LOGIN);
     }
@@ -112,10 +116,12 @@ public class Test_AddUser_FirstAuth {
                 {
                   "op": "AuthSessionNewStep2",
                   "requestId": "test-auth-2",
-                  "loginId": %d,
-                  "sigNum": 0,
-                  "timeMs": %d,
-                  "signatureB64": "%s"
+                  "payload": {
+                    "loginId": %d,
+                    "sigNum": 0,
+                    "timeMs": %d,
+                    "signatureB64": "%s"
+                  }
                 }
                 """.formatted(
                 TEST_LOGIN_ID,

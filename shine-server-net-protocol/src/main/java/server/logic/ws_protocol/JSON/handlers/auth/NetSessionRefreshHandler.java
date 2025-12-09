@@ -110,6 +110,7 @@ public class NetSessionRefreshHandler implements JsonMessageHandler {
             ctx.setSessionPwd(sessionPwd);
             ctx.setAuthenticationStatus(ConnectionContext.AUTH_STATUS_USER);
 
+            ActiveConnectionsRegistry.getInstance().removeBySessionId(sessionId);  // на всякий случай удаляем что бы точно небыло повторов
             // Регистрируем это подключение в глобальном реестре активных соединений
             ActiveConnectionsRegistry.getInstance().register(ctx);
         }

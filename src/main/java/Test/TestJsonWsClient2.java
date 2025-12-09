@@ -16,8 +16,10 @@ public class TestJsonWsClient2 {
                 {
                   "op": "SessionRefresh",
                   "requestId": "test-1",
-                  "sessionId": 123,
-                  "sessionPwd": "test-password"
+                  "payload": {
+                    "sessionId": 123,
+                    "sessionPwd": "test-password"
+                  }
                 }
                 """;
 
@@ -25,12 +27,14 @@ public class TestJsonWsClient2 {
                 {
                   "op": "AddUser",
                   "requestId": "test-add-1",
-                  "login": "anya1111",
-                  "loginId": 100211,
-                  "bchId": 4222,
-                  "pubkey0": "PUB0",
-                  "pubkey1": "PUB1",
-                  "bchLimit": 1000000
+                  "payload": {
+                    "login": "anya1111",
+                    "loginId": 100211,
+                    "bchId": 4222,
+                    "pubkey0": "PUB0",
+                    "pubkey1": "PUB1",
+                    "bchLimit": 1000000
+                  }
                 }
                 """;
 
@@ -38,7 +42,9 @@ public class TestJsonWsClient2 {
                 {
                   "op": "AuthSessionNewStep1",
                   "requestId": "test-auth-1",
-                  "login": "anya1111"
+                  "payload": {
+                    "login": "anya1111"
+                  }
                 }
                 """;
 

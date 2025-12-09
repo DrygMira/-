@@ -40,8 +40,10 @@ public class Test_SessionRefreshClient {
                 {
                   "op": "SessionRefresh",
                   "requestId": "test-session-refresh-1",
-                  "sessionId": %d,
-                  "sessionPwd": "%s"
+                  "payload": {
+                    "sessionId": %d,
+                    "sessionPwd": "%s"
+                  }
                 }
                 """.formatted(SESSION_ID, SESSION_PWD);
     }
@@ -49,7 +51,6 @@ public class Test_SessionRefreshClient {
     private static class ClientListener implements Listener {
 
         private final CountDownLatch latch;
-        private boolean sent = false;
 
         ClientListener(CountDownLatch latch) {
             this.latch = latch;
@@ -67,7 +68,6 @@ public class Test_SessionRefreshClient {
             System.out.println("📤 Отправляем SessionRefresh:");
             System.out.println(json);
             webSocket.sendText(json, true);
-            sent = true;
 
             Listener.super.onOpen(webSocket);
         }

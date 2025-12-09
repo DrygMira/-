@@ -166,6 +166,7 @@ public class NetAuthSessionNewStep2Handler implements JsonMessageHandler {
         ctx.setSessionId(sessionId);
         ctx.setAuthenticationStatus(ConnectionContext.AUTH_STATUS_USER);
 
+        ActiveConnectionsRegistry.getInstance().removeBySessionId(sessionId); // га всякий случай предварительно удаляем что бы точно небыло дублирования активной сессии
         // Регистрируем это подключение в глобальном реестре активных соединений
         ActiveConnectionsRegistry.getInstance().register(ctx);
 

@@ -17,12 +17,13 @@ import java.util.Map;
 
 /**
  * JsonInboundProcessor — обработка JSON-сообщений.
- *.
- * 1) Парсит общий пакет (op, requestId,...).
+ *
+ * 1) Парсит общий пакет (op, requestId, payload).
  * 2) По op выбирает класс запроса и хэндлер.
- * 3) Маппит JSON → NetRequest через ObjectMapper.
- * 4) Вызывает хэндлер, получает NetResponse.
- * 5) Собирает JSON-ответ:
+ * 3) Собирает "плоский" объект: op + requestId + поля из payload.
+ * 4) Маппит его в NetRequest через ObjectMapper.
+ * 5) Вызывает хэндлер, получает NetResponse.
+ * 6) Собирает JSON-ответ:
  *    {
  *      "op": ...,
  *      "requestId": ...,
@@ -42,7 +43,9 @@ public final class JsonInboundProcessor {
     private static final Map<String, Class<? extends NetRequest>> JSON_REQUEST_TYPES =
             JsonHandlerRegistry.getRequestTypes();
 
-    private JsonInboundProcessor() {}
+    private JsonInboundProcessor() {
+        // utility
+    }
 
     public static String processJson(String json, ConnectionContext ctx) {
         String op = null;
@@ -63,7 +66,7 @@ public final class JsonInboundProcessor {
             // 1. Парсим общий пакет
             JsonNode root = JSON_MAPPER.readTree(json);
 
-            // 2. op и requestId
+            // 2. op и requestId из корня
             op = getTextOrNull(root, "op");
             requestId = getTextOrNull(root, "requestId");
 
@@ -92,12 +95,50 @@ public final class JsonInboundProcessor {
                 return writeResponse(err);
             }
 
-            // 3. Маппим JSON → нужный NetRequest
-            NetRequest request = JSON_MAPPER.treeToValue(root, reqClass);
+            // 3. Берём payload
+            JsonNode payloadNode = root.get("payload");
+            if (payloadNode == null || payloadNode.isNull()) {
+                NetExceptionResponse err = NetExceptionResponseFactory.error(
+                        op,
+                        requestId,
+                        WireCodes.Status.BAD_REQUEST,
+                        "NO_PAYLOAD",
+                        "Поле 'payload' отсутствует"
+                );
+                return writeResponse(err);
+            }
+            if (!payloadNode.isObject()) {
+                NetExceptionResponse err = NetExceptionResponseFactory.error(
+                        op,
+                        requestId,
+                        WireCodes.Status.BAD_REQUEST,
+                        "BAD_PAYLOAD",
+                        "Поле 'payload' должно быть объектом"
+                );
+                return writeResponse(err);
+            }
+
+            // 3.1 Собираем "плоский" объект для маппинга в NetRequest:
+            //     op + requestId + поля из payload
+            ObjectNode merged = JSON_MAPPER.createObjectNode();
+
+            // Добавляем op и requestId, чтобы они попали в NetRequest
+            if (op != null) {
+                merged.put("op", op);
+            }
+            if (requestId != null) {
+                merged.put("requestId", requestId);
+            }
+
+            // Добавляем все поля из payload внутрь
+            merged.setAll((ObjectNode) payloadNode);
+
+            // 4. Маппим в конкретный класс NetRequest
+            NetRequest request = JSON_MAPPER.treeToValue(merged, reqClass);
 
             NetResponse response;
 
-            // 4. Трай-кэтч вокруг хэндлера
+            // 5. Вызываем хэндлер
             try {
                 response = handler.handle(request, ctx);
             } catch (Exception handlerError) {
@@ -116,7 +157,7 @@ public final class JsonInboundProcessor {
             if (response.getOp() == null) response.setOp(op);
             if (response.getRequestId() == null) response.setRequestId(requestId);
 
-            // 5. Универсальная сборка ответа
+            // 6. Универсальная сборка ответа
             return writeResponse(response);
 
         } catch (Exception e) {
