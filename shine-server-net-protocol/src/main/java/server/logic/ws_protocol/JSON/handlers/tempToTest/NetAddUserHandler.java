@@ -16,7 +16,25 @@ import shine.db.entities.SolanaUser;
 import java.sql.SQLException;
 
 /**
- * Временный хэндлер AddUser (тестовая регистрация).
+ * Временный хэндлер AddUser (тестовая регистрация локального пользователя).
+ *
+ * Ожидаемый запрос (все поля в payload):
+ * {
+ *   "op": "AddUser",
+ *   "requestId": "...",
+ *   "payload": {
+ *     "login": "anya",
+ *     "loginId": 100211,
+ *     "bchId": 4222,
+ *     "loginKey": "base64-pubkey-login",
+ *     "deviceKey": "base64-pubkey-device",
+ *     "bchLimit": 1000000
+ *   }
+ * }
+ *
+ * При успехе:
+ *  - пользователь сохраняется в таблицу solana_users;
+ *  - возвращается status=200 и пустой payload.
  */
 public class NetAddUserHandler implements JsonMessageHandler {
 
@@ -28,15 +46,15 @@ public class NetAddUserHandler implements JsonMessageHandler {
 
         // Одна общая проверка всех ключевых полей
         if (req.getLogin() == null || req.getLogin().isBlank()
-                || req.getPubkey0() == null || req.getPubkey0().isBlank()
-                || req.getPubkey1() == null || req.getPubkey1().isBlank()
+                || req.getLoginKey() == null || req.getLoginKey().isBlank()
+                || req.getDeviceKey() == null || req.getDeviceKey().isBlank()
                 || req.getBchLimit() == null) {
 
             return NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.BAD_REQUEST,
                     "BAD_FIELDS",
-                    "Некорректные или пустые поля: login, pubkey0, pubkey1, bchLimit"
+                    "Некорректные или пустые поля: login, loginKey, deviceKey, bchLimit"
             );
         }
 
@@ -47,8 +65,8 @@ public class NetAddUserHandler implements JsonMessageHandler {
                     req.getLoginId(),
                     req.getLogin(),
                     req.getBchId(),
-                    req.getPubkey0(),
-                    req.getPubkey1(),
+                    req.getLoginKey(),
+                    req.getDeviceKey(),
                     req.getBchLimit()
             );
 
@@ -58,7 +76,7 @@ public class NetAddUserHandler implements JsonMessageHandler {
             resp.setOp(req.getOp());
             resp.setRequestId(req.getRequestId());
             resp.setStatus(WireCodes.Status.OK);
-            // payload сам станет {} через JsonInboundProcessor
+            // payload станет {} через JsonInboundProcessor
             log.info("✅ Пользователь добавлен: login={}, loginId={}", req.getLogin(), req.getLoginId());
             return resp;
 

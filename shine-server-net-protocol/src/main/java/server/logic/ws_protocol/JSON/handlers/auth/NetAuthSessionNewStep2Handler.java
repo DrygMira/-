@@ -119,7 +119,7 @@ public class NetAuthSessionNewStep2Handler implements JsonMessageHandler {
         }
 
         // --- выбираем публичный ключ pubkey1 ---
-        String pubKeyB64 = user.getPubkey1();
+        String pubKeyB64 = user.getDeviceKey();
         if (pubKeyB64 == null || pubKeyB64.isBlank()) {
             return NetExceptionResponseFactory.error(
                     req,

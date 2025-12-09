@@ -7,8 +7,17 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Здесь храним данные об пользователях - локальная копия того что есть в солане */
-
+/**
+ * SolanaUsersDAO — локальная таблица пользователей из Solana.
+ *
+ * Колонки:
+ *  - login       TEXT
+ *  - loginId     INTEGER (PK)
+ *  - bchId       INTEGER
+ *  - loginKey    TEXT
+ *  - deviceKey   TEXT
+ *  - bchLimit    INTEGER (может быть NULL)
+ */
 public final class SolanaUsersDAO {
 
     private static volatile SolanaUsersDAO instance;
@@ -29,7 +38,7 @@ public final class SolanaUsersDAO {
 
     public void insert(SolanaUser user) throws SQLException {
         String sql = """
-            INSERT INTO solana_users (login, loginId, bchId, pubkey0, pubkey1, bchLimit)
+            INSERT INTO solana_users (login, loginId, bchId, loginKey, deviceKey, bchLimit)
             VALUES (?, ?, ?, ?, ?, ?)
             """;
 
@@ -37,8 +46,8 @@ public final class SolanaUsersDAO {
             ps.setString(1, user.getLogin());
             ps.setLong(2, user.getLoginId());
             ps.setLong(3, user.getBchId());
-            ps.setString(4, user.getPubkey0());
-            ps.setString(5, user.getPubkey1());
+            ps.setString(4, user.getLoginKey());
+            ps.setString(5, user.getDeviceKey());
 
             if (user.getBchLimit() != null) {
                 ps.setInt(6, user.getBchLimit());
@@ -52,7 +61,7 @@ public final class SolanaUsersDAO {
 
     public SolanaUser getByLoginId(long loginId) throws SQLException {
         String sql = """
-            SELECT login, loginId, bchId, pubkey0, pubkey1, bchLimit
+            SELECT login, loginId, bchId, loginKey, deviceKey, bchLimit
             FROM solana_users
             WHERE loginId = ?
             """;
@@ -69,7 +78,7 @@ public final class SolanaUsersDAO {
 
     public SolanaUser getByLogin(String login) throws SQLException {
         String sql = """
-            SELECT login, loginId, bchId, pubkey0, pubkey1, bchLimit
+            SELECT login, loginId, bchId, loginKey, deviceKey, bchLimit
             FROM solana_users
             WHERE LOWER(login) = LOWER(?)
             """;
@@ -86,7 +95,7 @@ public final class SolanaUsersDAO {
 
     public List<SolanaUser> searchByLoginPrefix(String prefix) throws SQLException {
         String sql = """
-            SELECT login, loginId, bchId, pubkey0, pubkey1, bchLimit
+            SELECT login, loginId, bchId, loginKey, deviceKey, bchLimit
             FROM solana_users
             WHERE LOWER(login) LIKE ?
             ORDER BY login
@@ -111,8 +120,8 @@ public final class SolanaUsersDAO {
                 rs.getLong("loginId"),
                 rs.getString("login"),
                 rs.getLong("bchId"),
-                rs.getString("pubkey0"),
-                rs.getString("pubkey1"),
+                rs.getString("loginKey"),
+                rs.getString("deviceKey"),
                 rs.getObject("bchLimit") != null ? rs.getInt("bchLimit") : null
         );
     }

@@ -1,30 +1,34 @@
 package shine.db.entities;
 
 /**
- * ActiveSession — запись об активной сессии пользователя.
+ * Модель активной сессии (таблица active_sessions).
  *
- * Поля:
- *  - sessionId      – строка (base64 от 32 байт)
- *  - loginId        – long
- *  - sessionPwd     – строка (секрет шага 1)
- *  - storagePwd     – строка (секрет клиента для хранения данных)
- *  - sessionCreatedAtMs      – long (время создания)
- *  - lastAuthirificatedAtMs  – long (последнее подтверждение/refresh)
- *  - pushEndpoint   – строка (WebPush, пока null/пусто)
- *  - pushP256dhKey  – строка (WebPush, пока null/пусто)
- *  - pushAuthKey    – строка (WebPush, пока null/пусто)
+ * Поля соответствуют схеме:
+ *
+ * CREATE TABLE active_sessions (
+ *     sessionId              TEXT    NOT NULL PRIMARY KEY,
+ *     loginId                INTEGER NOT NULL,
+ *     sessionPwd             TEXT    NOT NULL,
+ *     storagePwd             TEXT    NOT NULL,
+ *     sessionCreatedAtMs     INTEGER NOT NULL,
+ *     lastAuthirificatedAtMs INTEGER NOT NULL,
+ *     pushEndpoint           TEXT,
+ *     pushP256dhKey          TEXT,
+ *     pushAuthKey            TEXT,
+ *     FOREIGN KEY (loginId) REFERENCES solana_users(loginId)
+ * );
  */
 public class ActiveSession {
 
-    private String sessionId;
-    private long loginId;
-    private String sessionPwd;
-    private String storagePwd;
-    private long sessionCreatedAtMs;
-    private long lastAuthirificatedAtMs;
-    private String pushEndpoint;
-    private String pushP256dhKey;
-    private String pushAuthKey;
+    private String sessionId;               // TEXT base64(32 bytes)
+    private long   loginId;                 // INTEGER
+    private String sessionPwd;              // TEXT
+    private String storagePwd;              // TEXT
+    private long   sessionCreatedAtMs;      // INTEGER
+    private long   lastAuthirificatedAtMs;  // INTEGER
+    private String pushEndpoint;            // TEXT (nullable)
+    private String pushP256dhKey;           // TEXT (nullable)
+    private String pushAuthKey;             // TEXT (nullable)
 
     public ActiveSession() {
     }
@@ -49,9 +53,12 @@ public class ActiveSession {
         this.pushAuthKey = pushAuthKey;
     }
 
+    // --- getters / setters ---
+
     public String getSessionId() {
         return sessionId;
     }
+
     public void setSessionId(String sessionId) {
         this.sessionId = sessionId;
     }
@@ -59,6 +66,7 @@ public class ActiveSession {
     public long getLoginId() {
         return loginId;
     }
+
     public void setLoginId(long loginId) {
         this.loginId = loginId;
     }
@@ -66,6 +74,7 @@ public class ActiveSession {
     public String getSessionPwd() {
         return sessionPwd;
     }
+
     public void setSessionPwd(String sessionPwd) {
         this.sessionPwd = sessionPwd;
     }
@@ -73,6 +82,7 @@ public class ActiveSession {
     public String getStoragePwd() {
         return storagePwd;
     }
+
     public void setStoragePwd(String storagePwd) {
         this.storagePwd = storagePwd;
     }
@@ -80,6 +90,7 @@ public class ActiveSession {
     public long getSessionCreatedAtMs() {
         return sessionCreatedAtMs;
     }
+
     public void setSessionCreatedAtMs(long sessionCreatedAtMs) {
         this.sessionCreatedAtMs = sessionCreatedAtMs;
     }
@@ -87,6 +98,7 @@ public class ActiveSession {
     public long getLastAuthirificatedAtMs() {
         return lastAuthirificatedAtMs;
     }
+
     public void setLastAuthirificatedAtMs(long lastAuthirificatedAtMs) {
         this.lastAuthirificatedAtMs = lastAuthirificatedAtMs;
     }
@@ -94,6 +106,7 @@ public class ActiveSession {
     public String getPushEndpoint() {
         return pushEndpoint;
     }
+
     public void setPushEndpoint(String pushEndpoint) {
         this.pushEndpoint = pushEndpoint;
     }
@@ -101,6 +114,7 @@ public class ActiveSession {
     public String getPushP256dhKey() {
         return pushP256dhKey;
     }
+
     public void setPushP256dhKey(String pushP256dhKey) {
         this.pushP256dhKey = pushP256dhKey;
     }
@@ -108,6 +122,7 @@ public class ActiveSession {
     public String getPushAuthKey() {
         return pushAuthKey;
     }
+
     public void setPushAuthKey(String pushAuthKey) {
         this.pushAuthKey = pushAuthKey;
     }

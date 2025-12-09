@@ -1,13 +1,23 @@
 package shine.db.entities;
 
+/**
+ * Локальная копия пользователя из Solana.
+ *
+ * Храним:
+ *  - login / loginId;
+ *  - bchId — id персонального блокчейна;
+ *  - loginKey  — публичный ключ для логина / авторизации;
+ *  - deviceKey — публичный ключ устройства (второй ключ);
+ *  - bchLimit  — лимит по количеству блоков / размеру цепочки (может быть null).
+ */
 public class SolanaUser {
 
     private long loginId;
     private String login;
     private long bchId;
-    private String pubkey0;
-    private String pubkey1;
-    private Integer bchLimit;   // может быть null
+    private String loginKey;   // раньше pubkey0
+    private String deviceKey;  // раньше pubkey1
+    private Integer bchLimit;  // может быть null
 
     public SolanaUser() {
     }
@@ -15,14 +25,14 @@ public class SolanaUser {
     public SolanaUser(long loginId,
                       String login,
                       long bchId,
-                      String pubkey0,
-                      String pubkey1,
+                      String loginKey,
+                      String deviceKey,
                       Integer bchLimit) {
         this.loginId = loginId;
         this.login = login;
         this.bchId = bchId;
-        this.pubkey0 = pubkey0;
-        this.pubkey1 = pubkey1;
+        this.loginKey = loginKey;
+        this.deviceKey = deviceKey;
         this.bchLimit = bchLimit;
     }
 
@@ -50,20 +60,22 @@ public class SolanaUser {
         this.bchId = bchId;
     }
 
-    public String getPubkey0() {
-        return pubkey0;
+    /** Публичный ключ логина (основной ключ пользователя). */
+    public String getLoginKey() {
+        return loginKey;
     }
 
-    public void setPubkey0(String pubkey0) {
-        this.pubkey0 = pubkey0;
+    public void setLoginKey(String loginKey) {
+        this.loginKey = loginKey;
     }
 
-    public String getPubkey1() {
-        return pubkey1;
+    /** Публичный ключ устройства (device key). */
+    public String getDeviceKey() {
+        return deviceKey;
     }
 
-    public void setPubkey1(String pubkey1) {
-        this.pubkey1 = pubkey1;
+    public void setDeviceKey(String deviceKey) {
+        this.deviceKey = deviceKey;
     }
 
     public Integer getBchLimit() {

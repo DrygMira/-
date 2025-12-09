@@ -1,6 +1,5 @@
 package shine.db;
 
-
 import utils.config.AppConfig;
 
 import java.io.BufferedReader;
@@ -12,6 +11,15 @@ import java.sql.DriverManager;
 import java.sql.SQLException;
 import java.sql.Statement;
 
+/**
+ * DatabaseInitializer — создание новой SQLite-БД по схеме SHiNE.
+ *
+ * Читает путь к файлу БД из application.properties (db.path),
+ * при необходимости удаляет старый файл и создаёт таблицы:
+ *  - solana_users
+ *  - active_sessions
+ *  - users_params
+ */
 public class DatabaseInitializer {
 
     public static void createNewDB(String[] args) {
@@ -75,9 +83,9 @@ public class DatabaseInitializer {
                     login       TEXT    NOT NULL,
                     loginId     INTEGER NOT NULL PRIMARY KEY,
                     bchId       INTEGER NOT NULL,
-                    pubkey0     TEXT,
-                    pubkey1     TEXT,
-                    bchLimit    INTEGER         -- может быть NULL
+                    loginKey    TEXT,              -- основной публичный ключ (логин)
+                    deviceKey   TEXT,              -- публичный ключ устройства
+                    bchLimit    INTEGER            -- может быть NULL
                 );
                 """);
 
@@ -87,22 +95,29 @@ public class DatabaseInitializer {
                 """);
 
             // 2. Таблица active_sessions
+            // sessionId теперь TEXT (base64 от 32 байт), а не INTEGER.
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS active_sessions (
-                    sessionId        INTEGER NOT NULL PRIMARY KEY,
-                    session_pwd      TEXT    NOT NULL,
-                    loginId          INTEGER NOT NULL,
-                    time_ms          INTEGER NOT NULL,
-                    pubkey_num       INTEGER NOT NULL,
-                    push_endpoint    TEXT,
-                    push_p256dh_key  TEXT,
-                    push_auth_key    TEXT,
+                    sessionId                TEXT    NOT NULL PRIMARY KEY,
+                    loginId                  INTEGER NOT NULL,
+                    sessionPwd               TEXT    NOT NULL,
+                    storagePwd               TEXT    NOT NULL,
+                    sessionCreatedAtMs       INTEGER NOT NULL,
+                    lastAuthirificatedAtMs   INTEGER NOT NULL,
+                    pushEndpoint             TEXT,
+                    pushP256dhKey            TEXT,
+                    pushAuthKey              TEXT,
                     FOREIGN KEY (loginId) REFERENCES solana_users(loginId)
                 );
                 """);
 
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_active_sessions_loginId
+                ON active_sessions (loginId);
+                """);
+
             // 3. Таблица users_params
-            // Важно: пара (loginId, param) должна быть уникальна
+            // Пара (loginId, param) должна быть уникальна.
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS users_params (
                     loginId        INTEGER NOT NULL,

@@ -3,27 +3,32 @@ package server.logic.ws_protocol.JSON.entyties.tempToTest;
 import server.logic.ws_protocol.JSON.entyties.NetRequest;
 
 /**
- * Запрос AddUser.
- *.
- * Ожидаемый JSON:
+ * Запрос AddUser — временная/тестовая регистрация локального пользователя.
+ *
+ * Клиент отправляет:
+ *
  * {
  *   "op": "AddUser",
- *   "requestId": "...",
- *   "login": "...",
- *   "loginId": 123,
- *   "bchId": 456,
- *   "pubkey0": "...",
- *   "pubkey1": "...",
- *   "bchLimit": 1000
+ *   "requestId": "test-add-1",
+ *   "payload": {
+ *     "login": "anya",
+ *     "loginId": 100211,
+ *     "bchId": 4222,
+ *     "loginKey": "base64-ed25519-public-key-login",
+ *     "deviceKey": "base64-ed25519-public-key-device",
+ *     "bchLimit": 1000000
+ *   }
  * }
+ *
+ * Все поля лежат внутри payload.
  */
 public class NetAddUserRequest extends NetRequest {
 
     private String login;
     private long loginId;
     private long bchId;
-    private String pubkey0;
-    private String pubkey1;
+    private String loginKey;
+    private String deviceKey;
     private Integer bchLimit;
 
     public String getLogin() {
@@ -50,20 +55,20 @@ public class NetAddUserRequest extends NetRequest {
         this.bchId = bchId;
     }
 
-    public String getPubkey0() {
-        return pubkey0;
+    public String getLoginKey() {
+        return loginKey;
     }
 
-    public void setPubkey0(String pubkey0) {
-        this.pubkey0 = pubkey0;
+    public void setLoginKey(String loginKey) {
+        this.loginKey = loginKey;
     }
 
-    public String getPubkey1() {
-        return pubkey1;
+    public String getDeviceKey() {
+        return deviceKey;
     }
 
-    public void setPubkey1(String pubkey1) {
-        this.pubkey1 = pubkey1;
+    public void setDeviceKey(String deviceKey) {
+        this.deviceKey = deviceKey;
     }
 
     public Integer getBchLimit() {

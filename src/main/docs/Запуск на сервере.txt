@@ -8,3 +8,6 @@ user@p628065:~/docker/ws-server$ nohup java -jar ws-server.jar > server.log 2>&1
 
 перестартовать кадди
 user@p628065:~/docker/ws-server$ docker restart caddy
+
+очистить того кто держит порт 7070 :)
+kill -9 $(lsof -t -i:7070)
