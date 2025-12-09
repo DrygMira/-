@@ -3,39 +3,47 @@ package server.logic.ws_protocol.JSON.entyties.Auth;
 import server.logic.ws_protocol.JSON.entyties.NetRequest;
 
 /**
- * Шаг 2 авторизации: клиент подтверждает владение ключом.
- *.
- * JSON:
+ * Шаг 2 авторизации: подтверждение владения ключом и установка сессии.
+ *
+ * Клиент:
+ *  1) получает от сервера sessionPwd на шаге 1;
+ *  2) генерирует свой StoragePwd (base64 от 32 байт);
+ *  3) формирует строку для подписи:
+ *       "AUTHORIFICATED:" + timeMs + sessionPwd
+ *  4) подписывает эту строку своим приватным ключом (pubkey1),
+ *     отправляет подпись и StoragePwd на сервер.
+ *
+ * Формат входящего JSON:
  * {
  *   "op": "AuthSessionNewStep2",
  *   "requestId": "...",
- *   "loginId": 100211,
- *   "sigNum": 0,                  // номер подписи: 0 или 1
- *   "timeMs": 1733310000000,      // время в миллисекундах с 1970-01-01
- *   "signatureB64": "..."         // подпись base64 от строки loginId+timeMs+sessionPwd
+ *   "payload": {
+ *     "storagePwd": "base64-строка-от-32-байт",
+ *     "timeMs": 1733310000000,
+ *     "signatureB64": "base64-подпись-Ed25519"
+ *   }
  * }
+ *
+ * При успешной проверке подписи сервер создаёт запись в active_sessions
+ * и возвращает sessionId (base64-строка от 32 байт).
  */
 public class NetAuthSessionNewStep2Request extends NetRequest {
 
-    private long loginId;
-    private int sigNum;        // 0 или 1
-    private long timeMs;       // миллисекунды с 1970
+    /** Клиентский пароль для хранения данных (base64 от 32 байт). */
+    private String storagePwd;
+
+    /** Время на стороне клиента (мс с 1970-01-01). */
+    private long timeMs;
+
+    /** Подпись Ed25519 над строкой "AUTHORIFICATED:" + timeMs + sessionPwd (base64). */
     private String signatureB64;
 
-    public long getLoginId() {
-        return loginId;
+    public String getStoragePwd() {
+        return storagePwd;
     }
 
-    public void setLoginId(long loginId) {
-        this.loginId = loginId;
-    }
-
-    public int getSigNum() {
-        return sigNum;
-    }
-
-    public void setSigNum(int sigNum) {
-        this.sigNum = sigNum;
+    public void setStoragePwd(String storagePwd) {
+        this.storagePwd = storagePwd;
     }
 
     public long getTimeMs() {

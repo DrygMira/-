@@ -4,26 +4,30 @@ import server.logic.ws_protocol.JSON.entyties.NetResponse;
 
 /**
  * Ответ на AuthSessionNewStep2.
- *.
- * Успешный JSON:
+ *
+ * При успехе сервер создаёт запись в active_sessions
+ * и возвращает идентификатор сессии sessionId.
+ *
+ * JSON:
  * {
  *   "op": "AuthSessionNewStep2",
  *   "requestId": "...",
  *   "status": 200,
  *   "payload": {
- *     "sessionId": 1234567890
+ *     "sessionId": "base64-строка-от-32-байт"
  *   }
  * }
  */
 public class NetAuthSessionNewStep2Response extends NetResponse {
 
-    private Long sessionId;
+    /** Идентификатор сессии, base64 от 32 байт. */
+    private String sessionId;
 
-    public Long getSessionId() {
+    public String getSessionId() {
         return sessionId;
     }
 
-    public void setSessionId(Long sessionId) {
+    public void setSessionId(String sessionId) {
         this.sessionId = sessionId;
     }
 }

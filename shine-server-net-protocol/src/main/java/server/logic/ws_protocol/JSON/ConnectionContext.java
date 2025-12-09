@@ -20,7 +20,14 @@ public class ConnectionContext {
     // Активная сессия из БД (active_sessions)
     private ActiveSession activeSession;
 
-    private Long sessionId;
+    /**
+     * Идентификатор сессии — base64-строка от 32 байт.
+     */
+    private String sessionId;
+
+    /**
+     * Временный секрет шага 1, который используется на шаге 2 и хранится в БД.
+     */
     private String sessionPwd;
 
     private int authenticationStatus = AUTH_STATUS_NONE;
@@ -71,11 +78,11 @@ public class ConnectionContext {
 
     // --- sessionId / sessionPwd ---
 
-    public Long getSessionId() {
+    public String getSessionId() {
         return sessionId;
     }
 
-    public void setSessionId(Long sessionId) {
+    public void setSessionId(String sessionId) {
         this.sessionId = sessionId;
     }
 

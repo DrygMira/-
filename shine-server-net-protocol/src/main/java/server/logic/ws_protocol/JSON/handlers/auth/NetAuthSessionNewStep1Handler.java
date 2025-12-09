@@ -11,6 +11,7 @@ import shine.db.dao.SolanaUsersDAO;
 import shine.db.entities.SolanaUser;
 
 import java.security.SecureRandom;
+import java.util.Base64;
 
 public class NetAuthSessionNewStep1Handler implements JsonMessageHandler {
 
@@ -57,9 +58,10 @@ public class NetAuthSessionNewStep1Handler implements JsonMessageHandler {
         // 3) Заполняем контекст целиком пользователем
         ctx.setSolanaUser(solanaUser);
 
-        // 4) Генерируем надёжный sessionPwd
-        String sessionPwd = Long.toHexString(System.nanoTime()) +
-                Long.toHexString(RANDOM.nextLong());
+        // 4) Генерируем надёжный sessionPwd = base64(32 случайных байт)
+        byte[] buf = new byte[32];
+        RANDOM.nextBytes(buf);
+        String sessionPwd = Base64.getUrlEncoder().withoutPadding().encodeToString(buf);
 
         ctx.setSessionPwd(sessionPwd);
 
@@ -68,7 +70,7 @@ public class NetAuthSessionNewStep1Handler implements JsonMessageHandler {
         resp.setOp(req.getOp());
         resp.setRequestId(req.getRequestId());
         resp.setStatus(WireCodes.Status.OK);
-        resp.setSessionPwd(sessionPwd); // 🔴 Больше не трогаем payload
+        resp.setSessionPwd(sessionPwd);
 
         return resp;
     }

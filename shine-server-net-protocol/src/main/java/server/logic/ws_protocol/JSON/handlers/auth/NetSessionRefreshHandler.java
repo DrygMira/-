@@ -20,6 +20,12 @@ import java.sql.SQLException;
 
 /**
  * Хэндлер SessionRefresh.
+ *
+ * При успешной проверке sessionId + sessionPwd:
+ *  - подтягивает пользователя по loginId из сессии;
+ *  - заполняет ConnectionContext;
+ *  - обновляет lastAuthirificatedAtMs в БД на текущее время;
+ *  - возвращает storagePwd в payload.
  */
 public class NetSessionRefreshHandler implements JsonMessageHandler {
 
@@ -29,8 +35,17 @@ public class NetSessionRefreshHandler implements JsonMessageHandler {
     public NetResponse handle(NetRequest request, ConnectionContext ctx) throws Exception {
         NetSessionRefreshRequest req = (NetSessionRefreshRequest) request;
 
-        long sessionId = req.getSessionId();
+        String sessionId = req.getSessionId();
         String sessionPwd = req.getSessionPwd();
+
+        if (sessionId == null || sessionId.isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_SESSION_ID",
+                    "Пустой идентификатор сессии"
+            );
+        }
 
         if (sessionPwd == null || sessionPwd.isEmpty()) {
             return NetExceptionResponseFactory.error(
@@ -76,13 +91,10 @@ public class NetSessionRefreshHandler implements JsonMessageHandler {
 
         // --- достаём пользователя по loginId из сессии ---
         SolanaUser solanaUser = null;
-        Long loginId = null;
+        long loginId = session.getLoginId();
         try {
-            loginId = session.getLoginId();
-            if (loginId != null) {
-                SolanaUsersDAO usersDao = SolanaUsersDAO.getInstance();
-                solanaUser = usersDao.getByLoginId(loginId);
-            }
+            SolanaUsersDAO usersDao = SolanaUsersDAO.getInstance();
+            solanaUser = usersDao.getByLoginId(loginId);
         } catch (SQLException e) {
             log.error("Ошибка БД при поиске пользователя по loginId={} из сессии", loginId, e);
             return NetExceptionResponseFactory.error(
@@ -93,7 +105,7 @@ public class NetSessionRefreshHandler implements JsonMessageHandler {
             );
         }
 
-        if (loginId != null && solanaUser == null) {
+        if (solanaUser == null) {
             return NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.UNVERIFIED,
@@ -110,16 +122,24 @@ public class NetSessionRefreshHandler implements JsonMessageHandler {
             ctx.setSessionPwd(sessionPwd);
             ctx.setAuthenticationStatus(ConnectionContext.AUTH_STATUS_USER);
 
-            ActiveConnectionsRegistry.getInstance().removeBySessionId(sessionId);  // на всякий случай удаляем что бы точно небыло повторов
             // Регистрируем это подключение в глобальном реестре активных соединений
             ActiveConnectionsRegistry.getInstance().register(ctx);
         }
 
-        // И возвращаем OK без доп. полей (payload будет {}).
+        // Обновляем lastAuthirificatedAtMs в БД
+        try {
+            long nowMs = System.currentTimeMillis();
+            sessionsDao.updateLastAuthirificatedAtMs(sessionId, nowMs);
+        } catch (SQLException e) {
+            log.error("Ошибка БД при обновлении lastAuthirificatedAtMs для sessionId={}", sessionId, e);
+        }
+
+        // Возвращаем OK + storagePwd
         NetSessionRefreshResponse resp = new NetSessionRefreshResponse();
         resp.setOp(req.getOp());
         resp.setRequestId(req.getRequestId());
         resp.setStatus(WireCodes.Status.OK);
+        resp.setStoragePwd(session.getStoragePwd());
         return resp;
     }
 }

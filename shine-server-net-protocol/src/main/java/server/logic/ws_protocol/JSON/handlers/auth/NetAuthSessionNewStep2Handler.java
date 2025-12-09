@@ -18,21 +18,37 @@ import utils.crypto.Ed25519Util;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
+import java.security.SecureRandom;
 import java.util.Base64;
-import java.util.concurrent.ThreadLocalRandom;
 
 /**
  * Шаг 2 авторизации: проверка подписи и создание сессии.
- *.
- * Клиент присылает:
- *  - loginId
- *  - sigNum (0 или 1)
- *  - timeMs
- *  - signatureB64 от строки (loginId + timeMs + sessionPwd)
+ *
+ * Клиент присылает в payload:
+ *  - storagePwd    (base64 от 32 байт)
+ *  - timeMs        (long, мс с 1970-01-01)
+ *  - signatureB64  (подпись Ed25519 над строкой:
+ *                   "AUTHORIFICATED:" + timeMs + sessionPwd)
+ *
+ * Параметр sessionPwd клиент получил на шаге 1.
+ * Для проверки подписи используется pubkey1 (второй публичный ключ пользователя).
+ *
+ * Дополнительно:
+ *  - timeMs должен отличаться от текущего времени сервера не более чем на 30 секунд.
+ *
+ * При успехе:
+ *  - создаётся запись ActiveSession в БД;
+ *  - генерируется sessionId (base64 от 32 случайных байт);
+ *  - sessionCreatedAtMs и lastAuthirificatedAtMs = текущее время;
+ *  - pushEndpoint / pushP256dhKey / pushAuthKey остаются пустыми;
+ *  - возвращается sessionId в ответе.
  */
 public class NetAuthSessionNewStep2Handler implements JsonMessageHandler {
 
     private static final Logger log = LoggerFactory.getLogger(NetAuthSessionNewStep2Handler.class);
+
+    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final long ALLOWED_SKEW_MS = 30_000L;
 
     @Override
     public NetResponse handle(NetRequest baseReq, ConnectionContext ctx) throws Exception {
@@ -58,25 +74,23 @@ public class NetAuthSessionNewStep2Handler implements JsonMessageHandler {
         }
 
         SolanaUser user = ctx.getSolanaUser();
-        long reqLoginId = req.getLoginId();
-        Long ctxLoginId = user.getLoginId();
-
-        if (ctxLoginId == null || ctxLoginId != reqLoginId) {
+        Long loginId = user.getLoginId();
+        if (loginId == null) {
             return NetExceptionResponseFactory.error(
                     req,
-                    WireCodes.Status.UNVERIFIED,
-                    "LOGIN_ID_MISMATCH",
-                    "loginId в запросе не совпадает с пользователем из шага 1"
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "NO_LOGIN_ID",
+                    "Для пользователя не задан loginId в БД"
             );
         }
 
-        int sigNum = req.getSigNum();
-        if (sigNum != 0 && sigNum != 1) {
+        String storagePwd = req.getStoragePwd();
+        if (storagePwd == null || storagePwd.isBlank()) {
             return NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.BAD_REQUEST,
-                    "BAD_SIG_NUM",
-                    "Номер подписи должен быть 0 или 1"
+                    "EMPTY_STORAGE_PWD",
+                    "Пустой storagePwd"
             );
         }
 
@@ -90,14 +104,28 @@ public class NetAuthSessionNewStep2Handler implements JsonMessageHandler {
             );
         }
 
-        // --- выбираем публичный ключ по sigNum ---
-        String pubKeyB64 = (sigNum == 0) ? user.getPubkey0() : user.getPubkey1();
+        long timeMs = req.getTimeMs();
+        long nowMs = System.currentTimeMillis();
+
+        // Проверка, что время клиента не отличается от времени сервера больше чем на 30 секунд
+        long diff = Math.abs(nowMs - timeMs);
+        if (diff > ALLOWED_SKEW_MS) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "TIME_SKEW",
+                    "Время клиента отличается от сервера более чем на 30 секунд"
+            );
+        }
+
+        // --- выбираем публичный ключ pubkey1 ---
+        String pubKeyB64 = user.getPubkey1();
         if (pubKeyB64 == null || pubKeyB64.isBlank()) {
             return NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.BAD_REQUEST,
-                    "NO_PUBKEY",
-                    "Отсутствует публичный ключ для выбранного номера подписи"
+                    "NO_PUBKEY1",
+                    "Отсутствует публичный ключ pubkey1 для пользователя"
             );
         }
 
@@ -115,9 +143,8 @@ public class NetAuthSessionNewStep2Handler implements JsonMessageHandler {
             );
         }
 
-        // --- собираем строку для подписи: loginId + timeMs + sessionPwd ---
-        long timeMs = req.getTimeMs();
-        String preimageStr = String.valueOf(reqLoginId) + timeMs + ctx.getSessionPwd();
+        // --- собираем строку для подписи: "AUTHORIFICATED:" + timeMs + sessionPwd ---
+        String preimageStr = "AUTHORIFICATED:" + timeMs + ctx.getSessionPwd();
         byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
 
         boolean sigOk = Ed25519Util.verify(preimage, signature64, publicKey32);
@@ -130,29 +157,30 @@ public class NetAuthSessionNewStep2Handler implements JsonMessageHandler {
             );
         }
 
-        // --- создаём уникальный sessionId и записываем в БД ---
+        // --- создаём уникальный sessionId (base64 от 32 байт) и записываем в БД ---
         ActiveSessionsDAO dao = ActiveSessionsDAO.getInstance();
-        long sessionId;
+        String sessionId;
         ActiveSession activeSession;
 
         try {
-            sessionId = generateUniqueSessionId(dao);
-            long nowMs = System.currentTimeMillis();
+            sessionId = generateRandomSessionId();
+            long now = System.currentTimeMillis();
 
             activeSession = new ActiveSession(
                     sessionId,
+                    loginId,
                     ctx.getSessionPwd(),
-                    reqLoginId,
-                    nowMs,
-                    (short) sigNum, // pubkeyNum
-                    null,           // pushEndpoint
-                    null,           // pushP256dhKey
-                    null            // pushAuthKey
+                    storagePwd,
+                    now,
+                    now,
+                    null,   // pushEndpoint
+                    null,   // pushP256dhKey
+                    null    // pushAuthKey
             );
 
             dao.insert(activeSession);
         } catch (SQLException e) {
-            log.error("Ошибка БД при создании новой сессии для loginId={}", reqLoginId, e);
+            log.error("Ошибка БД при создании новой сессии для loginId={}", loginId, e);
             return NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.SERVER_DATA_ERROR,
@@ -166,7 +194,6 @@ public class NetAuthSessionNewStep2Handler implements JsonMessageHandler {
         ctx.setSessionId(sessionId);
         ctx.setAuthenticationStatus(ConnectionContext.AUTH_STATUS_USER);
 
-        ActiveConnectionsRegistry.getInstance().removeBySessionId(sessionId); // га всякий случай предварительно удаляем что бы точно небыло дублирования активной сессии
         // Регистрируем это подключение в глобальном реестре активных соединений
         ActiveConnectionsRegistry.getInstance().register(ctx);
 
@@ -180,16 +207,11 @@ public class NetAuthSessionNewStep2Handler implements JsonMessageHandler {
     }
 
     /**
-     * Генерация уникального sessionId с проверкой в БД.
+     * Генерация случайного sessionId: base64-строка от 32 байт.
      */
-    private long generateUniqueSessionId(ActiveSessionsDAO dao) throws SQLException {
-        for (int i = 0; i < 10; i++) {
-            long candidate = ThreadLocalRandom.current().nextLong(Long.MAX_VALUE);
-            ActiveSession existing = dao.getBySessionId(candidate);
-            if (existing == null) {
-                return candidate;
-            }
-        }
-        throw new SQLException("Не удалось сгенерировать уникальный sessionId за разумное число попыток");
+    private String generateRandomSessionId() {
+        byte[] buf = new byte[32];
+        RANDOM.nextBytes(buf);
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(buf);
     }
 }
