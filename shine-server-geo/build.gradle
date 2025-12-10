@@ -17,6 +17,11 @@ repositories {
 
 dependencies {
     implementation 'com.fasterxml.jackson.core:jackson-databind:2.17.1'  // json
+
+    implementation 'org.eclipse.jetty:jetty-server:11.0.20'           // WS сервер
+    implementation 'org.eclipse.jetty:jetty-servlet:11.0.20'
+    implementation 'org.eclipse.jetty.websocket:websocket-jetty-server:11.0.20'
+
 }
 
 java {
