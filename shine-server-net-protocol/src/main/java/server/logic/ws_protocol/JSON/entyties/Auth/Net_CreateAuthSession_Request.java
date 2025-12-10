@@ -15,7 +15,7 @@ import server.logic.ws_protocol.JSON.entyties.NetRequest;
  *
  * Формат входящего JSON:
  * {
- *   "op": "AuthSessionNewStep2",
+ *   "op": "CreateAuthSession",
  *   "requestId": "...",
  *   "payload": {
  *     "storagePwd": "base64-строка-от-32-байт",
@@ -27,7 +27,7 @@ import server.logic.ws_protocol.JSON.entyties.NetRequest;
  * При успешной проверке подписи сервер создаёт запись в active_sessions
  * и возвращает sessionId (base64-строка от 32 байт).
  */
-public class NetAuthSessionNewStep2Request extends NetRequest {
+public class Net_CreateAuthSession_Request extends NetRequest {
 
     /** Клиентский пароль для хранения данных (base64 от 32 байт). */
     private String storagePwd;

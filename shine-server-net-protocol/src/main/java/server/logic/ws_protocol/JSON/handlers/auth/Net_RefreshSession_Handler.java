@@ -4,10 +4,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
 import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Auth.Net_RefreshSession_Request;
+import server.logic.ws_protocol.JSON.entyties.Auth.Net_RefreshSession_Response;
 import server.logic.ws_protocol.JSON.entyties.NetRequest;
 import server.logic.ws_protocol.JSON.entyties.NetResponse;
-import server.logic.ws_protocol.JSON.entyties.Auth.NetSessionRefreshRequest;
-import server.logic.ws_protocol.JSON.entyties.Auth.NetSessionRefreshResponse;
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
 import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
 import server.logic.ws_protocol.WireCodes;
@@ -19,7 +19,7 @@ import shine.db.entities.SolanaUser;
 import java.sql.SQLException;
 
 /**
- * Хэндлер SessionRefresh.
+ * Хэндлер RefreshSession.
  *
  * При успешной проверке sessionId + sessionPwd:
  *  - подтягивает пользователя по loginId из сессии;
@@ -27,13 +27,13 @@ import java.sql.SQLException;
  *  - обновляет lastAuthirificatedAtMs в БД на текущее время;
  *  - возвращает storagePwd в payload.
  */
-public class NetSessionRefreshHandler implements JsonMessageHandler {
+public class Net_RefreshSession_Handler implements JsonMessageHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(NetSessionRefreshHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(Net_RefreshSession_Handler.class);
 
     @Override
     public NetResponse handle(NetRequest request, ConnectionContext ctx) throws Exception {
-        NetSessionRefreshRequest req = (NetSessionRefreshRequest) request;
+        Net_RefreshSession_Request req = (Net_RefreshSession_Request) request;
 
         String sessionId = req.getSessionId();
         String sessionPwd = req.getSessionPwd();
@@ -135,7 +135,7 @@ public class NetSessionRefreshHandler implements JsonMessageHandler {
         }
 
         // Возвращаем OK + storagePwd
-        NetSessionRefreshResponse resp = new NetSessionRefreshResponse();
+        Net_RefreshSession_Response resp = new Net_RefreshSession_Response();
         resp.setOp(req.getOp());
         resp.setRequestId(req.getRequestId());
         resp.setStatus(WireCodes.Status.OK);

@@ -20,18 +20,18 @@ import java.util.concurrent.CountDownLatch;
  *  1) AddUser  — добавляем пользователя в локальную БД
  *     (loginKey и deviceKey разные).
  *
- *  2) AuthSessionNewStep1 — запрашиваем sessionPwd.
+ *  2) AuthChallenge — запрашиваем sessionPwd.
  *
- *  3) AuthSessionNewStep2 — подтверждаем владение deviceKey,
+ *  3) CreateAuthSession — подтверждаем владение deviceKey,
  *     создаётся сессия, сервер возвращает sessionId (строка).
  *
  *  4) Новое подключение:
- *       - отправляем SessionRefresh с тем же sessionId,
+ *       - отправляем RefreshSession с тем же sessionId,
  *         но заведомо неверным sessionPwd
  *         (в консоль пишем: ожидаем ОТРИЦАТЕЛЬНЫЙ ответ).
  *
  *  5) Ещё одно новое подключение:
- *       - отправляем SessionRefresh с sessionId
+ *       - отправляем RefreshSession с sessionId
  *         и корректным sessionPwd
  *         (в консоль пишем: ожидаем УСПЕШНЫЙ ответ).
  */
@@ -72,13 +72,13 @@ public class Test_AddUser_and_Authorification {
 
     // --- Глобальные переменные между сценариями ---
 
-    /** sessionPwd, выданный на шаге AuthSessionNewStep1. */
+    /** sessionPwd, выданный на шаге AuthChallenge. */
     private static String GLOBAL_SESSION_PWD;
 
-    /** sessionId (строка, base64-32 байта), выданный на шаге AuthSessionNewStep2. */
+    /** sessionId (строка, base64-32 байта), выданный на шаге CreateAuthSession. */
     private static String GLOBAL_SESSION_ID;
 
-    /** storagePwd, который мы отправили при AuthSessionNewStep2 (для информации). */
+    /** storagePwd, который мы отправили при CreateAuthSession (для информации). */
     private static String GLOBAL_STORAGE_PWD_SENT;
 
     public static void main(String[] args) throws Exception {
@@ -87,11 +87,11 @@ public class Test_AddUser_and_Authorification {
         // Сценарий 1: регистрация + первичная авторизация
         runScenario_AddUser_And_FirstAuth();
 
-        // Сценарий 2: новое подключение, SessionRefresh с неверным sessionPwd
-        runScenario_SessionRefresh_WrongPwd();
+        // Сценарий 2: новое подключение, RefreshSession с неверным sessionPwd
+        runScenario_RefreshSession_WrongPwd();
 
-        // Сценарий 3: новое подключение, SessionRefresh с корректным sessionPwd
-        runScenario_SessionRefresh_CorrectPwd();
+        // Сценарий 3: новое подключение, RefreshSession с корректным sessionPwd
+        runScenario_RefreshSession_CorrectPwd();
 
         System.out.println("Все тесты завершены, выходим.");
     }
@@ -102,7 +102,7 @@ public class Test_AddUser_and_Authorification {
 
     private static void runScenario_AddUser_And_FirstAuth() throws Exception {
         System.out.println();
-        System.out.println("=== СЦЕНАРИЙ 1: AddUser + AuthSessionNewStep1 + AuthSessionNewStep2 ===");
+        System.out.println("=== СЦЕНАРИЙ 1: AddUser + AuthChallenge + CreateAuthSession ===");
 
         CountDownLatch latch = new CountDownLatch(1);
         HttpClient client = HttpClient.newHttpClient();
@@ -132,7 +132,7 @@ public class Test_AddUser_and_Authorification {
                             case 1 -> {
                                 String json = buildAuthStep1Json();
                                 System.out.println();
-                                System.out.println("📤 [S1 / Шаг 2] Отправляем AuthSessionNewStep1:");
+                                System.out.println("📤 [S1 / Шаг 2] Отправляем AuthChallenge:");
                                 System.out.println(json);
                                 webSocket.sendText(json, true);
                             }
@@ -140,7 +140,7 @@ public class Test_AddUser_and_Authorification {
                                 GLOBAL_STORAGE_PWD_SENT = generateFakeStoragePwd();
                                 String json = buildAuthStep2Json(GLOBAL_SESSION_PWD, GLOBAL_STORAGE_PWD_SENT);
                                 System.out.println();
-                                System.out.println("📤 [S1 / Шаг 3] Отправляем AuthSessionNewStep2 (подпись deviceKey):");
+                                System.out.println("📤 [S1 / Шаг 3] Отправляем CreateAuthSession (подпись deviceKey):");
                                 System.out.println(json);
                                 webSocket.sendText(json, true);
                             }
@@ -202,12 +202,12 @@ public class Test_AddUser_and_Authorification {
     }
 
     // ==========================================================
-    //         SCENARIO 2: SessionRefresh с неправильным паролем
+    //         SCENARIO 2: RefreshSession с неправильным паролем
     // ==========================================================
 
-    private static void runScenario_SessionRefresh_WrongPwd() throws Exception {
+    private static void runScenario_RefreshSession_WrongPwd() throws Exception {
         System.out.println();
-        System.out.println("=== СЦЕНАРИЙ 2: SessionRefresh с НЕВЕРНЫМ sessionPwd ===");
+        System.out.println("=== СЦЕНАРИЙ 2: RefreshSession с НЕВЕРНЫМ sessionPwd ===");
         System.out.println("Ожидаем ОТРИЦАТЕЛЬНЫЙ ответ сервера (UNVERIFIED / SESSION_PWD_MISMATCH и т.п.)");
 
         if (GLOBAL_SESSION_ID == null || GLOBAL_SESSION_PWD == null) {
@@ -229,9 +229,9 @@ public class Test_AddUser_and_Authorification {
                         System.out.println("✅ [S2] WebSocket подключен");
                         webSocket.request(1);
 
-                        String json = buildSessionRefreshJson(GLOBAL_SESSION_ID, wrongPwd, "test-refresh-wrong-1");
+                        String json = buildRefreshSessionJson(GLOBAL_SESSION_ID, wrongPwd, "test-refresh-wrong-1");
                         System.out.println();
-                        System.out.println("📤 [S2] Отправляем SessionRefresh с НЕВЕРНЫМ sessionPwd:");
+                        System.out.println("📤 [S2] Отправляем RefreshSession с НЕВЕРНЫМ sessionPwd:");
                         System.out.println(json);
                         webSocket.sendText(json, true);
                         Listener.super.onOpen(webSocket);
@@ -274,12 +274,12 @@ public class Test_AddUser_and_Authorification {
     }
 
     // ==========================================================
-    //         SCENARIO 3: SessionRefresh с правильными данными
+    //         SCENARIO 3: RefreshSession с правильными данными
     // ==========================================================
 
-    private static void runScenario_SessionRefresh_CorrectPwd() throws Exception {
+    private static void runScenario_RefreshSession_CorrectPwd() throws Exception {
         System.out.println();
-        System.out.println("=== СЦЕНАРИЙ 3: SessionRefresh с КОРРЕКТНЫМ sessionPwd ===");
+        System.out.println("=== СЦЕНАРИЙ 3: RefreshSession с КОРРЕКТНЫМ sessionPwd ===");
         System.out.println("Ожидаем УСПЕШНЫЙ ответ сервера (status=200),");
         System.out.println(" а в payload должен вернуться актуальный storagePwd (по твоей схеме).");
 
@@ -299,9 +299,9 @@ public class Test_AddUser_and_Authorification {
                         System.out.println("✅ [S3] WebSocket подключен");
                         webSocket.request(1);
 
-                        String json = buildSessionRefreshJson(GLOBAL_SESSION_ID, GLOBAL_SESSION_PWD, "test-refresh-ok-1");
+                        String json = buildRefreshSessionJson(GLOBAL_SESSION_ID, GLOBAL_SESSION_PWD, "test-refresh-ok-1");
                         System.out.println();
-                        System.out.println("📤 [S3] Отправляем SessionRefresh с КОРРЕКТНЫМ sessionPwd:");
+                        System.out.println("📤 [S3] Отправляем RefreshSession с КОРРЕКТНЫМ sessionPwd:");
                         System.out.println(json);
                         webSocket.sendText(json, true);
                         Listener.super.onOpen(webSocket);
@@ -379,7 +379,7 @@ public class Test_AddUser_and_Authorification {
     private static String buildAuthStep1Json() {
         return """
                 {
-                  "op": "AuthSessionNewStep1",
+                  "op": "AuthChallenge",
                   "requestId": "test-auth-1",
                   "payload": {
                     "login": "%s"
@@ -410,7 +410,7 @@ public class Test_AddUser_and_Authorification {
 
         return """
                 {
-                  "op": "AuthSessionNewStep2",
+                  "op": "CreateAuthSession",
                   "requestId": "test-auth-2",
                   "payload": {
                     "storagePwd": "%s",
@@ -425,11 +425,11 @@ public class Test_AddUser_and_Authorification {
         );
     }
 
-    // 4) SessionRefresh: всё в payload
-    private static String buildSessionRefreshJson(String sessionId, String sessionPwd, String requestId) {
+    // 4) RefreshSession: всё в payload
+    private static String buildRefreshSessionJson(String sessionId, String sessionPwd, String requestId) {
         return """
                 {
-                  "op": "SessionRefresh",
+                  "op": "RefreshSession",
                   "requestId": "%s",
                   "payload": {
                     "sessionId": "%s",

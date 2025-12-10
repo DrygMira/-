@@ -4,10 +4,10 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
 import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Auth.Net_CreateAuthSession_Response;
 import server.logic.ws_protocol.JSON.entyties.NetRequest;
 import server.logic.ws_protocol.JSON.entyties.NetResponse;
-import server.logic.ws_protocol.JSON.entyties.Auth.NetAuthSessionNewStep2Request;
-import server.logic.ws_protocol.JSON.entyties.Auth.NetAuthSessionNewStep2Response;
+import server.logic.ws_protocol.JSON.entyties.Auth.Net_CreateAuthSession_Request;
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
 import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
 import server.logic.ws_protocol.WireCodes;
@@ -43,16 +43,16 @@ import java.util.Base64;
  *  - pushEndpoint / pushP256dhKey / pushAuthKey остаются пустыми;
  *  - возвращается sessionId в ответе.
  */
-public class NetAuthSessionNewStep2Handler implements JsonMessageHandler {
+public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(NetAuthSessionNewStep2Handler.class);
+    private static final Logger log = LoggerFactory.getLogger(Net_CreateAuthSession__Handler.class);
 
     private static final SecureRandom RANDOM = new SecureRandom();
     private static final long ALLOWED_SKEW_MS = 30_000L;
 
     @Override
     public NetResponse handle(NetRequest baseReq, ConnectionContext ctx) throws Exception {
-        NetAuthSessionNewStep2Request req = (NetAuthSessionNewStep2Request) baseReq;
+        Net_CreateAuthSession_Request req = (Net_CreateAuthSession_Request) baseReq;
 
         // --- базовые проверки контекста ---
         if (ctx == null || ctx.getSolanaUser() == null || ctx.getSessionPwd() == null) {
@@ -198,7 +198,7 @@ public class NetAuthSessionNewStep2Handler implements JsonMessageHandler {
         ActiveConnectionsRegistry.getInstance().register(ctx);
 
         // --- формируем ответ ---
-        NetAuthSessionNewStep2Response resp = new NetAuthSessionNewStep2Response();
+        Net_CreateAuthSession_Response resp = new Net_CreateAuthSession_Response();
         resp.setOp(req.getOp());
         resp.setRequestId(req.getRequestId());
         resp.setStatus(WireCodes.Status.OK);

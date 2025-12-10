@@ -3,7 +3,7 @@ package server.logic.ws_protocol.JSON.entyties.Auth;
 import server.logic.ws_protocol.JSON.entyties.NetRequest;
 
 /**
- * Запрос SessionRefresh.
+ * Запрос RefreshSession.
  *
  * Используется для повторного входа без повторной подписи:
  * клиент хранит sessionId и sessionPwd, которые получил на шаге 2.
@@ -14,7 +14,7 @@ import server.logic.ws_protocol.JSON.entyties.NetRequest;
  *   "sessionPwd": "base64-sessionPwd"
  * }
  */
-public class NetSessionRefreshRequest extends NetRequest {
+public class Net_RefreshSession_Request extends NetRequest {
 
     private String sessionId;
     private String sessionPwd;

@@ -3,14 +3,14 @@ package server.logic.ws_protocol.JSON.entyties.Auth;
 import server.logic.ws_protocol.JSON.entyties.NetResponse;
 
 /**
- * Успешный ответ на SessionRefresh.
+ * Успешный ответ на RefreshSession.
  *
  * Дополнительно к статусу 200 сервер возвращает storagePwd,
  * чтобы клиент мог восстановить/синхронизировать локальное хранилище.
  *
  * JSON:
  * {
- *   "op": "SessionRefresh",
+ *   "op": "RefreshSession",
  *   "requestId": "...",
  *   "status": 200,
  *   "payload": {
@@ -18,7 +18,7 @@ import server.logic.ws_protocol.JSON.entyties.NetResponse;
  *   }
  * }
  */
-public class NetSessionRefreshResponse extends NetResponse {
+public class Net_RefreshSession_Response extends NetResponse {
 
     /** Пароль хранилища, сохранённый в сессии (storagePwd). */
     private String storagePwd;

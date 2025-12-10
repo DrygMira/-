@@ -3,14 +3,14 @@ package server.logic.ws_protocol.JSON.entyties.Auth;
 import server.logic.ws_protocol.JSON.entyties.NetResponse;
 
 /**
- * Ответ на AuthSessionNewStep1.
+ * Ответ на AuthChallenge.
  *
  * При успехе сервер возвращает временный секрет sessionPwd,
  * который клиент обязан использовать на втором шаге при формировании подписи.
  *
  * JSON:
  * {
- *   "op": "AuthSessionNewStep1",
+ *   "op": "AuthChallenge",
  *   "requestId": "...",
  *   "status": 200,
  *   "payload": {
@@ -18,7 +18,7 @@ import server.logic.ws_protocol.JSON.entyties.NetResponse;
  *   }
  * }
  */
-public class NetAuthSessionNewStep1Response extends NetResponse {
+public class Net_AuthChallenge_Response extends NetResponse {
 
     /**
      * Временный секрет, сгенерированный сервером.

@@ -2,8 +2,8 @@ package server.logic.ws_protocol.JSON.handlers.auth;
 
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.*;
-import server.logic.ws_protocol.JSON.entyties.Auth.NetAuthSessionNewStep1Request;
-import server.logic.ws_protocol.JSON.entyties.Auth.NetAuthSessionNewStep1Response;
+import server.logic.ws_protocol.JSON.entyties.Auth.Net_AuthChallenge_Request;
+import server.logic.ws_protocol.JSON.entyties.Auth.Net_AuthChallenge_Response;
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
 import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
 import server.logic.ws_protocol.WireCodes;
@@ -13,14 +13,14 @@ import shine.db.entities.SolanaUser;
 import java.security.SecureRandom;
 import java.util.Base64;
 
-public class NetAuthSessionNewStep1Handler implements JsonMessageHandler {
+public class Net_AuthChallenge_Handler implements JsonMessageHandler {
 
     private static final SecureRandom RANDOM = new SecureRandom();
 
     @Override
     public NetResponse handle(NetRequest baseReq, ConnectionContext ctx) throws Exception {
 
-        NetAuthSessionNewStep1Request req = (NetAuthSessionNewStep1Request) baseReq;
+        Net_AuthChallenge_Request req = (Net_AuthChallenge_Request) baseReq;
 
         String login = req.getLogin();
         if (login == null || login.isBlank()) {
@@ -66,7 +66,7 @@ public class NetAuthSessionNewStep1Handler implements JsonMessageHandler {
         ctx.setSessionPwd(sessionPwd);
 
         // 5) Формируем ответ
-        NetAuthSessionNewStep1Response resp = new NetAuthSessionNewStep1Response();
+        Net_AuthChallenge_Response resp = new Net_AuthChallenge_Response();
         resp.setOp(req.getOp());
         resp.setRequestId(req.getRequestId());
         resp.setStatus(WireCodes.Status.OK);

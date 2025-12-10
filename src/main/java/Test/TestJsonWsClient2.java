@@ -12,9 +12,9 @@ public class TestJsonWsClient2 {
     public static void main(String[] args) throws Exception {
         String uri = "ws://localhost:7070/ws";
 
-        String jsonRequestSessionRefresh = """
+        String jsonRequestRefreshSession = """
                 {
-                  "op": "SessionRefresh",
+                  "op": "RefreshSession",
                   "requestId": "test-1",
                   "payload": {
                     "sessionId": 123,
@@ -38,9 +38,9 @@ public class TestJsonWsClient2 {
                 }
                 """;
 
-        String jsonRequestAuthSessionNewStep1 = """
+        String jsonRequestAuthChallenge = """
                 {
-                  "op": "AuthSessionNewStep1",
+                  "op": "AuthChallenge",
                   "requestId": "test-auth-1",
                   "payload": {
                     "login": "anya1111"
@@ -49,8 +49,8 @@ public class TestJsonWsClient2 {
                 """;
 
         // Что тестируем сейчас:
-        String jsonRequest = jsonRequestAuthSessionNewStep1;
-//      String jsonRequest = jsonRequestSessionRefresh;
+        String jsonRequest = jsonRequestAuthChallenge;
+//      String jsonRequest = jsonRequestRefreshSession;
 //      String jsonRequest = jsonRequestAddUser;
 
         System.out.println("Подключаемся к " + uri);

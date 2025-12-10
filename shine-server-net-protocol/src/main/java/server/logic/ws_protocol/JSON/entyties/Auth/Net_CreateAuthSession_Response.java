@@ -3,14 +3,14 @@ package server.logic.ws_protocol.JSON.entyties.Auth;
 import server.logic.ws_protocol.JSON.entyties.NetResponse;
 
 /**
- * Ответ на AuthSessionNewStep2.
+ * Ответ на CreateAuthSession.
  *
  * При успехе сервер создаёт запись в active_sessions
  * и возвращает идентификатор сессии sessionId.
  *
  * JSON:
  * {
- *   "op": "AuthSessionNewStep2",
+ *   "op": "CreateAuthSession",
  *   "requestId": "...",
  *   "status": 200,
  *   "payload": {
@@ -18,7 +18,7 @@ import server.logic.ws_protocol.JSON.entyties.NetResponse;
  *   }
  * }
  */
-public class NetAuthSessionNewStep2Response extends NetResponse {
+public class Net_CreateAuthSession_Response extends NetResponse {
 
     /** Идентификатор сессии, base64 от 32 байт. */
     private String sessionId;

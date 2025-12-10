@@ -10,7 +10,7 @@ import server.logic.ws_protocol.JSON.entyties.NetRequest;
  *
  * Формат входящего JSON:
  * {
- *   "op": "AuthSessionNewStep1",
+ *   "op": "AuthChallenge",
  *   "requestId": "...",
  *   "payload": {
  *     "login": "someLogin"
@@ -19,7 +19,7 @@ import server.logic.ws_protocol.JSON.entyties.NetRequest;
  *
  * Формат успешного ответа:
  * {
- *   "op": "AuthSessionNewStep1",
+ *   "op": "AuthChallenge",
  *   "requestId": "...",
  *   "status": 200,
  *   "payload": {
@@ -27,7 +27,7 @@ import server.logic.ws_protocol.JSON.entyties.NetRequest;
  *   }
  * }
  */
-public class NetAuthSessionNewStep1Request extends NetRequest {
+public class Net_AuthChallenge_Request extends NetRequest {
 
     /**
      * Логин пользователя, для которого запускается авторизация.

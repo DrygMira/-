@@ -32,13 +32,13 @@ public class Test_SessionRefreshClient {
                 .join();
 
         latch.await();
-        System.out.println("Тест SessionRefresh завершён, выходим.");
+        System.out.println("Тест RefreshSession завершён, выходим.");
     }
 
-    private static String buildSessionRefreshJson() {
+    private static String buildRefreshSessionJson() {
         return """
                 {
-                  "op": "SessionRefresh",
+                  "op": "RefreshSession",
                   "requestId": "test-session-refresh-1",
                   "payload": {
                     "sessionId": %d,
@@ -62,10 +62,10 @@ public class Test_SessionRefreshClient {
 
             webSocket.request(1); // разрешаем принимать одно сообщение
 
-            // сразу отправляем запрос SessionRefresh
-            String json = buildSessionRefreshJson();
+            // сразу отправляем запрос RefreshSession
+            String json = buildRefreshSessionJson();
             System.out.println();
-            System.out.println("📤 Отправляем SessionRefresh:");
+            System.out.println("📤 Отправляем RefreshSession:");
             System.out.println(json);
             webSocket.sendText(json, true);
 
@@ -81,7 +81,7 @@ public class Test_SessionRefreshClient {
             System.out.println("-----------------------------------------------------");
 
             // После одного ответа просто закрываем соединение
-            System.out.println("✅ Получен ответ на SessionRefresh, закрываем соединение");
+            System.out.println("✅ Получен ответ на RefreshSession, закрываем соединение");
             webSocket.sendClose(WebSocket.NORMAL_CLOSURE, "session refresh test done");
 
             // запрашиваем следующее сообщение на всякий случай (хотя уже закрываемся)
