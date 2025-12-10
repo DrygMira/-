@@ -43,8 +43,8 @@ public class Test_AddUser_and_Authorification {
     private static final ObjectMapper JSON_MAPPER = new ObjectMapper();
 
     // Тестовые данные пользователя
-    private static final String TEST_LOGIN = "anya1";
-    private static final long TEST_LOGIN_ID = 100310L;
+    private static final String TEST_LOGIN = "anya2";
+    private static final long TEST_LOGIN_ID = 100120L;
     private static final long TEST_BCH_ID = 4222L;
     private static final int TEST_BCH_LIMIT = 1_000_000;
 

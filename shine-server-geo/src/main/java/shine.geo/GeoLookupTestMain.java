@@ -31,7 +31,13 @@ public class GeoLookupTestMain {
             ip = detectedIp;
         }
 
+        // Замер времени
+        long start = System.currentTimeMillis();
         String result = GeoLookupService.resolveCountryCityOrIp(ip);
+        long end = System.currentTimeMillis();
+        long duration = end - start;
+
         System.out.println("Результат геолокации: " + result);
+        System.out.println("Время ответа геолокации: " + duration + " мс");
     }
 }
