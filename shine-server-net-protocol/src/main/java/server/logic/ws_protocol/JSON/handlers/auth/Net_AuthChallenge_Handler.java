@@ -13,6 +13,12 @@ import shine.db.entities.SolanaUser;
 import java.security.SecureRandom;
 import java.util.Base64;
 
+/**
+ * Шаг 1 авторизации: запрос выдачи временного nonce (authNonce).
+ *
+ * Клиент по логину просит сервер сгенерировать случайный authNonce,
+ * который будет использован на втором шаге при подписи.
+ */
 public class Net_AuthChallenge_Handler implements JsonMessageHandler {
 
     private static final SecureRandom RANDOM = new SecureRandom();
@@ -32,7 +38,7 @@ public class Net_AuthChallenge_Handler implements JsonMessageHandler {
             );
         }
 
-        // 1) Проверка: в контексте никто не авторизован
+        // Если по этому соединению уже есть залогиненный пользователь — не даём повторную авторификацию
         if (ctx.getLogin() != null) {
             return NetExceptionResponseFactory.error(
                     req,
@@ -56,6 +62,9 @@ public class Net_AuthChallenge_Handler implements JsonMessageHandler {
 
         // 3) Заполняем контекст пользователем
         ctx.setSolanaUser(solanaUser);
+
+        // 3.1) Отмечаем, что по этому соединению начата авторификация
+        ctx.setAuthenticationStatus(ConnectionContext.AUTH_STATUS_AUTH_IN_PROGRESS);
 
         // 4) Генерируем одноразовый authNonce = base64(32 случайных байт)
         byte[] buf = new byte[32];

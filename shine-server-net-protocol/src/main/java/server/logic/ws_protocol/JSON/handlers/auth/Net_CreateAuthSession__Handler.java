@@ -2,6 +2,7 @@ package server.logic.ws_protocol.JSON.handlers.auth;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.eclipse.jetty.websocket.api.Session;
 import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.Auth.Net_CreateAuthSession_Response;
@@ -11,14 +12,13 @@ import server.logic.ws_protocol.JSON.entyties.Auth.Net_CreateAuthSession_Request
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
 import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
 import server.logic.ws_protocol.WireCodes;
+import server.ws.WsConnectionUtils;
 import shine.db.dao.ActiveSessionsDAO;
 import shine.db.entities.ActiveSession;
 import shine.db.entities.SolanaUser;
 import shine.geo.ClientInfoService;
 import shine.geo.GeoLookupService;
 import utils.crypto.Ed25519Util;
-
-import org.eclipse.jetty.websocket.api.Session;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
@@ -44,6 +44,9 @@ import java.util.Base64;
  *  - sessionCreatedAtMs и lastAuthirificatedAtMs = текущее время;
  *  - заполняются поля clientIp, clientInfoFromClient, clientInfoFromRequest, userLanguage;
  *  - возвращается sessionId и sessionPwd в ответе.
+ *
+ * При ошибке авторификации (битые данные, подпись, время и т.п.) —
+ * соединение закрывается через WsConnectionUtils.
  */
 public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
 
@@ -58,52 +61,63 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
 
         // --- базовые проверки контекста ---
         if (ctx == null || ctx.getSolanaUser() == null || ctx.getSessionPwd() == null) {
-            return NetExceptionResponseFactory.error(
+            Net_Response err = NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.BAD_REQUEST,
                     "NO_STEP1_CONTEXT",
                     "Шаг 1 авторизации не был корректно выполнен для данного соединения"
             );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: no step1 context");
+            return err;
         }
 
-        if (!ctx.isAnonymous()) {
-            return NetExceptionResponseFactory.error(
+        // Ожидаем, что перед этим был AuthChallenge и статус = AUTH_IN_PROGRESS
+        if (ctx.getAuthenticationStatus() != ConnectionContext.AUTH_STATUS_AUTH_IN_PROGRESS) {
+            Net_Response err = NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.BAD_REQUEST,
-                    "ALREADY_AUTHED",
-                    "Пользователь уже авторизован по текущему соединению"
+                    "BAD_AUTH_FLOW_STATE",
+                    "Неожиданное состояние авторификации для данного соединения"
             );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad auth flow state");
+            return err;
         }
 
         SolanaUser user = ctx.getSolanaUser();
         Long loginId = user.getLoginId();
         if (loginId == null) {
-            return NetExceptionResponseFactory.error(
+            Net_Response err = NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.SERVER_DATA_ERROR,
                     "NO_LOGIN_ID",
                     "Для пользователя не задан loginId в БД"
             );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: no loginId");
+            return err;
         }
 
         String storagePwd = req.getStoragePwd();
         if (storagePwd == null || storagePwd.isBlank()) {
-            return NetExceptionResponseFactory.error(
+            Net_Response err = NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.BAD_REQUEST,
                     "EMPTY_STORAGE_PWD",
                     "Пустой storagePwd"
             );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty storagePwd");
+            return err;
         }
 
         String signatureB64 = req.getSignatureB64();
         if (signatureB64 == null || signatureB64.isBlank()) {
-            return NetExceptionResponseFactory.error(
+            Net_Response err = NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.BAD_REQUEST,
                     "EMPTY_SIGNATURE",
                     "Пустая цифровая подпись"
             );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty signature");
+            return err;
         }
 
         long timeMs = req.getTimeMs();
@@ -111,12 +125,14 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
 
         long diff = Math.abs(nowMs - timeMs);
         if (diff > ALLOWED_SKEW_MS) {
-            return NetExceptionResponseFactory.error(
+            Net_Response err = NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.BAD_REQUEST,
                     "TIME_SKEW",
                     "Время клиента отличается от сервера более чем на 30 секунд"
             );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: time skew");
+            return err;
         }
 
         // Короткая строка clientInfo от клиента (до 50 символов)
@@ -128,12 +144,14 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
         // --- выбираем публичный ключ pubkey1 ---
         String pubKeyB64 = user.getDeviceKey();
         if (pubKeyB64 == null || pubKeyB64.isBlank()) {
-            return NetExceptionResponseFactory.error(
+            Net_Response err = NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.BAD_REQUEST,
                     "NO_PUBKEY1",
                     "Отсутствует публичный ключ pubkey1 для пользователя"
             );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: no pubkey");
+            return err;
         }
 
         byte[] publicKey32;
@@ -142,12 +160,14 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
             publicKey32 = Ed25519Util.keyFromBase64(pubKeyB64);
             signature64 = Base64.getDecoder().decode(signatureB64);
         } catch (IllegalArgumentException ex) {
-            return NetExceptionResponseFactory.error(
+            Net_Response err = NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.BAD_REQUEST,
                     "BAD_BASE64",
                     "Некорректный формат Base64 для ключа или подписи"
             );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad base64");
+            return err;
         }
 
         // --- authNonce (challenge) мы сохранили в ctx.sessionPwd на шаге 1 ---
@@ -159,12 +179,14 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
 
         boolean sigOk = Ed25519Util.verify(preimage, signature64, publicKey32);
         if (!sigOk) {
-            return NetExceptionResponseFactory.error(
+            Net_Response err = NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.UNVERIFIED,
                     "BAD_SIGNATURE",
                     "Подпись не прошла проверку"
             );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad signature");
+            return err;
         }
 
         // --- Генерируем настоящий секрет сессии (sessionPwd) и sessionId ---
@@ -222,12 +244,14 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
             dao.insert(activeSession);
         } catch (SQLException e) {
             log.error("Ошибка БД при создании новой сессии для loginId={}", loginId, e);
-            return NetExceptionResponseFactory.error(
+            Net_Response err = NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.SERVER_DATA_ERROR,
                     "DB_ERROR_SESSION_CREATE",
                     "Ошибка БД при создании сессии"
             );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: db error");
+            return err;
         }
 
         // --- обновляем контекст ---

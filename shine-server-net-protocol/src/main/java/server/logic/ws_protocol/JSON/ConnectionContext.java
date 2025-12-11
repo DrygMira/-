@@ -11,8 +11,9 @@ import shine.db.entities.ActiveSession;
 public class ConnectionContext {
 
     // Статусы аутентификации
-    public static final int AUTH_STATUS_NONE = 0; // анонимный или не авторизованный пользователь
-    public static final int AUTH_STATUS_USER = 1; // авторизованный пользователь
+    public static final int AUTH_STATUS_NONE = 0;              // анонимный / не авторизован
+    public static final int AUTH_STATUS_AUTH_IN_PROGRESS = 1;  // получен AuthChallenge, ждём CreateAuthSession
+    public static final int AUTH_STATUS_USER = 2;              // авторизованный пользователь
 
     // Полный пользователь из БД (solana_users)
     private SolanaUser solanaUser;
@@ -26,10 +27,15 @@ public class ConnectionContext {
     private String sessionId;
 
     /**
-     * Временный секрет шага 1, который используется на шаге 2 и хранится в БД.
+     * Временный секрет шага 1, который используется на шаге 2 и хранится в БД,
+     * а после успешной авторизации — настоящий секрет сессии.
      */
     private String sessionPwd;
 
+    /**
+     * Текущий статус аутентификации.
+     * См. константы AUTH_STATUS_*
+     */
     private int authenticationStatus = AUTH_STATUS_NONE;
 
     /**
