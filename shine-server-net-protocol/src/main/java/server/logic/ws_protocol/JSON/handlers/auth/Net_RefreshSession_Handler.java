@@ -6,8 +6,8 @@ import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.Auth.Net_RefreshSession_Request;
 import server.logic.ws_protocol.JSON.entyties.Auth.Net_RefreshSession_Response;
-import server.logic.ws_protocol.JSON.entyties.NetRequest;
-import server.logic.ws_protocol.JSON.entyties.NetResponse;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
 import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
 import server.logic.ws_protocol.WireCodes;
@@ -37,7 +37,7 @@ public class Net_RefreshSession_Handler implements JsonMessageHandler {
     private static final int CLIENT_INFO_MAX_LEN = 50;
 
     @Override
-    public NetResponse handle(NetRequest request, ConnectionContext ctx) throws Exception {
+    public Net_Response handle(Net_Request request, ConnectionContext ctx) throws Exception {
         Net_RefreshSession_Request req = (Net_RefreshSession_Request) request;
 
         String sessionId = req.getSessionId();

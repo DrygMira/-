@@ -1,6 +1,6 @@
 package server.logic.ws_protocol.JSON.entyties.Auth;
 
-import server.logic.ws_protocol.JSON.entyties.NetResponse;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
 
 /**
  * Успешный ответ на RefreshSession.
@@ -18,7 +18,7 @@ import server.logic.ws_protocol.JSON.entyties.NetResponse;
  *   }
  * }
  */
-public class Net_RefreshSession_Response extends NetResponse {
+public class Net_RefreshSession_Response extends Net_Response {
 
     /** Пароль хранилища, сохранённый в сессии (storagePwd). */
     private String storagePwd;

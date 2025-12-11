@@ -5,8 +5,8 @@ import org.slf4j.LoggerFactory;
 import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.Auth.Net_CreateAuthSession_Response;
-import server.logic.ws_protocol.JSON.entyties.NetRequest;
-import server.logic.ws_protocol.JSON.entyties.NetResponse;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
 import server.logic.ws_protocol.JSON.entyties.Auth.Net_CreateAuthSession_Request;
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
 import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
@@ -53,7 +53,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
     private static final long ALLOWED_SKEW_MS = 30_000L;
 
     @Override
-    public NetResponse handle(NetRequest baseReq, ConnectionContext ctx) throws Exception {
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
         Net_CreateAuthSession_Request req = (Net_CreateAuthSession_Request) baseReq;
 
         // --- базовые проверки контекста ---

@@ -3,10 +3,10 @@ package server.logic.ws_protocol.JSON.handlers.tempToTest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.logic.ws_protocol.JSON.ConnectionContext;
-import server.logic.ws_protocol.JSON.entyties.NetRequest;
-import server.logic.ws_protocol.JSON.entyties.NetResponse;
-import server.logic.ws_protocol.JSON.entyties.tempToTest.NetAddUserRequest;
-import server.logic.ws_protocol.JSON.entyties.tempToTest.NetAddUserResponse;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.entyties.tempToTest.Net_AddUser_Request;
+import server.logic.ws_protocol.JSON.entyties.tempToTest.Net_AddUser_Response;
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
 import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
 import server.logic.ws_protocol.WireCodes;
@@ -36,13 +36,13 @@ import java.sql.SQLException;
  *  - пользователь сохраняется в таблицу solana_users;
  *  - возвращается status=200 и пустой payload.
  */
-public class NetAddUserHandler implements JsonMessageHandler {
+public class Net_AddUser_Handler implements JsonMessageHandler {
 
-    private static final Logger log = LoggerFactory.getLogger(NetAddUserHandler.class);
+    private static final Logger log = LoggerFactory.getLogger(Net_AddUser_Handler.class);
 
     @Override
-    public NetResponse handle(NetRequest baseRequest, ConnectionContext ctx) throws Exception {
-        NetAddUserRequest req = (NetAddUserRequest) baseRequest;
+    public Net_Response handle(Net_Request baseRequest, ConnectionContext ctx) throws Exception {
+        Net_AddUser_Request req = (Net_AddUser_Request) baseRequest;
 
         // Одна общая проверка всех ключевых полей
         if (req.getLogin() == null || req.getLogin().isBlank()
@@ -72,7 +72,7 @@ public class NetAddUserHandler implements JsonMessageHandler {
 
             dao.insert(user);
 
-            NetAddUserResponse resp = new NetAddUserResponse();
+            Net_AddUser_Response resp = new Net_AddUser_Response();
             resp.setOp(req.getOp());
             resp.setRequestId(req.getRequestId());
             resp.setStatus(WireCodes.Status.OK);

@@ -1,6 +1,6 @@
 package server.logic.ws_protocol.JSON.entyties.Auth;
 
-import server.logic.ws_protocol.JSON.entyties.NetResponse;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
 
 /**
  * Ответ на AuthChallenge.
@@ -19,7 +19,7 @@ import server.logic.ws_protocol.JSON.entyties.NetResponse;
  *   }
  * }
  */
-public class Net_AuthChallenge_Response extends NetResponse {
+public class Net_AuthChallenge_Response extends Net_Response {
 
     /**
      * Одноразовый nonce для авторификации.

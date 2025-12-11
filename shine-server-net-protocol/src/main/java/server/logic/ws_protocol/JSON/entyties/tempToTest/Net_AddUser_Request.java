@@ -1,6 +1,6 @@
 package server.logic.ws_protocol.JSON.entyties.tempToTest;
 
-import server.logic.ws_protocol.JSON.entyties.NetRequest;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
 
 /**
  * Запрос AddUser — временная/тестовая регистрация локального пользователя.
@@ -22,7 +22,7 @@ import server.logic.ws_protocol.JSON.entyties.NetRequest;
  *
  * Все поля лежат внутри payload.
  */
-public class NetAddUserRequest extends NetRequest {
+public class Net_AddUser_Request extends Net_Request {
 
     private String login;
     private long loginId;

@@ -1,6 +1,6 @@
 package server.logic.ws_protocol.JSON.entyties.Auth;
 
-import server.logic.ws_protocol.JSON.entyties.NetRequest;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
 
 /**
  * Шаг 1 авторизации: запрос выдачи временного пароля сессии (sessionPwd).
@@ -27,7 +27,7 @@ import server.logic.ws_protocol.JSON.entyties.NetRequest;
  *   }
  * }
  */
-public class Net_AuthChallenge_Request extends NetRequest {
+public class Net_AuthChallenge_Request extends Net_Request {
 
     /**
      * Логин пользователя, для которого запускается авторизация.

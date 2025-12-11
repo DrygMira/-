@@ -10,7 +10,7 @@ package server.logic.ws_protocol.JSON.entyties;
  *   "payload": { ... }
  * }
  */
-public abstract class NetEvent {
+public abstract class Net_Event {
 
     /** Имя операции / события (op). */
     private String op;

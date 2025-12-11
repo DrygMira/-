@@ -13,7 +13,7 @@ package server.logic.ws_protocol.JSON.entyties;
  *   "payload": { ... } // и для успеха, и для ошибки
  * }
  */
-public abstract class NetResponse extends NetRequest {
+public abstract class Net_Response extends Net_Request {
 
     /** Статус результата (200 — успех, любое другое значение — ошибка). */
     private int status;

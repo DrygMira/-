@@ -1,8 +1,8 @@
 package server.logic.ws_protocol.JSON.handlers;
 
 import server.logic.ws_protocol.JSON.ConnectionContext;
-import server.logic.ws_protocol.JSON.entyties.NetRequest;
-import server.logic.ws_protocol.JSON.entyties.NetResponse;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
 
 /**
  * Общий интерфейс для всех JSON-хэндлеров.
@@ -15,5 +15,5 @@ public interface JsonMessageHandler {
      * @param request распарсенный запрос
      * @param ctx     контекст текущего WebSocket-соединения
      */
-    NetResponse handle(NetRequest request, ConnectionContext ctx) throws Exception;
+    Net_Response handle(Net_Request request, ConnectionContext ctx) throws Exception;
 }

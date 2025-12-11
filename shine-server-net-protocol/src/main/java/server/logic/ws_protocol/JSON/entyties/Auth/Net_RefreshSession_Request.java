@@ -1,6 +1,6 @@
 package server.logic.ws_protocol.JSON.entyties.Auth;
 
-import server.logic.ws_protocol.JSON.entyties.NetRequest;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
 
 /**
  * Запрос RefreshSession.
@@ -15,7 +15,7 @@ import server.logic.ws_protocol.JSON.entyties.NetRequest;
  *   "clientInfo": "до 50 символов, краткая строка об устройстве"
  * }
  */
-public class Net_RefreshSession_Request extends NetRequest {
+public class Net_RefreshSession_Request extends Net_Request {
 
     private String sessionId;
     private String sessionPwd;

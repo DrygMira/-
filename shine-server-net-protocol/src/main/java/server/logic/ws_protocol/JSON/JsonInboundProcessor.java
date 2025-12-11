@@ -6,9 +6,9 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import server.logic.ws_protocol.JSON.entyties.NetExceptionResponse;
-import server.logic.ws_protocol.JSON.entyties.NetRequest;
-import server.logic.ws_protocol.JSON.entyties.NetResponse;
+import server.logic.ws_protocol.JSON.entyties.Net_Exception_Response;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
 import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
 import server.logic.ws_protocol.WireCodes;
@@ -40,7 +40,7 @@ public final class JsonInboundProcessor {
     private static final Map<String, JsonMessageHandler> JSON_HANDLERS =
             JsonHandlerRegistry.getHandlers();
 
-    private static final Map<String, Class<? extends NetRequest>> JSON_REQUEST_TYPES =
+    private static final Map<String, Class<? extends Net_Request>> JSON_REQUEST_TYPES =
             JsonHandlerRegistry.getRequestTypes();
 
     private JsonInboundProcessor() {
@@ -53,7 +53,7 @@ public final class JsonInboundProcessor {
 
         try {
             if (json == null || json.isBlank()) {
-                NetExceptionResponse err = NetExceptionResponseFactory.error(
+                Net_Exception_Response err = NetExceptionResponseFactory.error(
                         null,
                         null,
                         WireCodes.Status.BAD_REQUEST,
@@ -71,7 +71,7 @@ public final class JsonInboundProcessor {
             requestId = getTextOrNull(root, "requestId");
 
             if (op == null || op.isEmpty()) {
-                NetExceptionResponse err = NetExceptionResponseFactory.error(
+                Net_Exception_Response err = NetExceptionResponseFactory.error(
                         null,
                         requestId,
                         WireCodes.Status.BAD_REQUEST,
@@ -82,10 +82,10 @@ public final class JsonInboundProcessor {
             }
 
             JsonMessageHandler handler = JSON_HANDLERS.get(op);
-            Class<? extends NetRequest> reqClass = JSON_REQUEST_TYPES.get(op);
+            Class<? extends Net_Request> reqClass = JSON_REQUEST_TYPES.get(op);
 
             if (handler == null || reqClass == null) {
-                NetExceptionResponse err = NetExceptionResponseFactory.error(
+                Net_Exception_Response err = NetExceptionResponseFactory.error(
                         op,
                         requestId,
                         WireCodes.Status.BAD_REQUEST,
@@ -98,7 +98,7 @@ public final class JsonInboundProcessor {
             // 3. Берём payload
             JsonNode payloadNode = root.get("payload");
             if (payloadNode == null || payloadNode.isNull()) {
-                NetExceptionResponse err = NetExceptionResponseFactory.error(
+                Net_Exception_Response err = NetExceptionResponseFactory.error(
                         op,
                         requestId,
                         WireCodes.Status.BAD_REQUEST,
@@ -108,7 +108,7 @@ public final class JsonInboundProcessor {
                 return writeResponse(err);
             }
             if (!payloadNode.isObject()) {
-                NetExceptionResponse err = NetExceptionResponseFactory.error(
+                Net_Exception_Response err = NetExceptionResponseFactory.error(
                         op,
                         requestId,
                         WireCodes.Status.BAD_REQUEST,
@@ -134,16 +134,16 @@ public final class JsonInboundProcessor {
             merged.setAll((ObjectNode) payloadNode);
 
             // 4. Маппим в конкретный класс NetRequest
-            NetRequest request = JSON_MAPPER.treeToValue(merged, reqClass);
+            Net_Request request = JSON_MAPPER.treeToValue(merged, reqClass);
 
-            NetResponse response;
+            Net_Response response;
 
             // 5. Вызываем хэндлер
             try {
                 response = handler.handle(request, ctx);
             } catch (Exception handlerError) {
                 log.error("💥 Ошибка внутри хэндлера '{}'", op, handlerError);
-                NetExceptionResponse err = NetExceptionResponseFactory.error(
+                Net_Exception_Response err = NetExceptionResponseFactory.error(
                         op,
                         requestId,
                         WireCodes.Status.INTERNAL_ERROR,
@@ -162,7 +162,7 @@ public final class JsonInboundProcessor {
 
         } catch (Exception e) {
             log.error("Ошибка при обработке JSON-сообщения", e);
-            NetExceptionResponse err = NetExceptionResponseFactory.error(
+            Net_Exception_Response err = NetExceptionResponseFactory.error(
                     op != null ? op : "Unknown",
                     requestId,
                     WireCodes.Status.INTERNAL_ERROR,
@@ -189,7 +189,7 @@ public final class JsonInboundProcessor {
      *   "payload": { ... }
      * }
      */
-    private static String writeResponse(NetResponse response) {
+    private static String writeResponse(Net_Response response) {
         try {
             // Конвертируем полный объект ответа в ObjectNode
             ObjectNode full = JSON_MAPPER.convertValue(response, ObjectNode.class);

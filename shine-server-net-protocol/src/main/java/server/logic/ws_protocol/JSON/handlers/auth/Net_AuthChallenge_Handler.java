@@ -18,7 +18,7 @@ public class Net_AuthChallenge_Handler implements JsonMessageHandler {
     private static final SecureRandom RANDOM = new SecureRandom();
 
     @Override
-    public NetResponse handle(NetRequest baseReq, ConnectionContext ctx) throws Exception {
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
 
         Net_AuthChallenge_Request req = (Net_AuthChallenge_Request) baseReq;
 

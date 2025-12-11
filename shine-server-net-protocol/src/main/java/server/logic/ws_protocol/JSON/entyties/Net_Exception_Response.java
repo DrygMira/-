@@ -9,7 +9,7 @@ package server.logic.ws_protocol.JSON.entyties;
  *   "message": "..."
  * }
  */
-public class NetExceptionResponse extends NetResponse {
+public class Net_Exception_Response extends Net_Response {
 
     private String code;
     private String message;

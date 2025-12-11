@@ -1,6 +1,6 @@
 package server.logic.ws_protocol.JSON.entyties.Auth;
 
-import server.logic.ws_protocol.JSON.entyties.NetRequest;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
 
 /**
  * Шаг 2 авторизации: подтверждение владения ключом и установка сессии.
@@ -28,7 +28,7 @@ import server.logic.ws_protocol.JSON.entyties.NetRequest;
  *   }
  * }
  */
-public class Net_CreateAuthSession_Request extends NetRequest {
+public class Net_CreateAuthSession_Request extends Net_Request {
 
     /** Клиентский пароль для хранения данных (base64 от 32 байт). */
     private String storagePwd;

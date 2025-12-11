@@ -1,7 +1,7 @@
 package server.logic.ws_protocol.JSON.utils;
 
-import server.logic.ws_protocol.JSON.entyties.NetExceptionResponse;
-import server.logic.ws_protocol.JSON.entyties.NetRequest;
+import server.logic.ws_protocol.JSON.entyties.Net_Exception_Response;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
 
 /**
  * Фабрика ошибок для JSON-протокола.
@@ -13,12 +13,12 @@ public final class NetExceptionResponseFactory {
         // запрет на создание объектов
     }
 
-    public static NetExceptionResponse error(NetRequest req,
-                                             int status,
-                                             String code,
-                                             String message) {
+    public static Net_Exception_Response error(Net_Request req,
+                                               int status,
+                                               String code,
+                                               String message) {
 
-        NetExceptionResponse resp = new NetExceptionResponse();
+        Net_Exception_Response resp = new Net_Exception_Response();
         resp.setOp(req.getOp());
         resp.setRequestId(req.getRequestId());
         resp.setStatus(status);
@@ -31,13 +31,13 @@ public final class NetExceptionResponseFactory {
      * Вариант для случаев, когда NetRequest ещё не распарсен,
      * но мы уже знаем op и requestId (или они null).
      */
-    public static NetExceptionResponse error(String op,
-                                             String requestId,
-                                             int status,
-                                             String code,
-                                             String message) {
+    public static Net_Exception_Response error(String op,
+                                               String requestId,
+                                               int status,
+                                               String code,
+                                               String message) {
 
-        NetExceptionResponse resp = new NetExceptionResponse();
+        Net_Exception_Response resp = new Net_Exception_Response();
         resp.setOp(op);
         resp.setRequestId(requestId);
         resp.setStatus(status);

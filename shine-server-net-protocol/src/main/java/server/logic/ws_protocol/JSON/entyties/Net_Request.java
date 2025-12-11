@@ -12,7 +12,7 @@ package server.logic.ws_protocol.JSON.entyties;
  *   "payload": { ... }
  * }
  */
-public abstract class NetRequest extends NetEvent {
+public abstract class Net_Request extends Net_Event {
 
     /** Идентификатор запроса, чтобы связать запрос и ответ. */
     private String requestId;

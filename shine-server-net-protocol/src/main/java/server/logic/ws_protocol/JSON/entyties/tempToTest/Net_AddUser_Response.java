@@ -1,6 +1,6 @@
 package server.logic.ws_protocol.JSON.entyties.tempToTest;
 
-import server.logic.ws_protocol.JSON.entyties.NetResponse;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
 
 /**
  * Успешный ответ на AddUser.
@@ -15,6 +15,6 @@ import server.logic.ws_protocol.JSON.entyties.NetResponse;
  *   "payload": { }
  * }
  */
-public class NetAddUserResponse extends NetResponse {
+public class Net_AddUser_Response extends Net_Response {
     // При необходимости сюда можно добавить, например, флаг created/updated и т.п.
 }
