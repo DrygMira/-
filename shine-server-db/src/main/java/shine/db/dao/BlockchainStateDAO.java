@@ -21,8 +21,14 @@ public final class BlockchainStateDAO {
         return instance;
     }
 
-    // --- Новый вариант: работа на переданном соединении ---
-    public BlockchainStateEntry getByBlockchainId(Connection conn, long blockchainId) throws SQLException {
+    // старый метод оставим
+    public BlockchainStateEntry getByBlockchainId(long blockchainId) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return getByBlockchainId(c, blockchainId);
+        }
+    }
+
+    public BlockchainStateEntry getByBlockchainId(Connection c, long blockchainId) throws SQLException {
         String sql = """
             SELECT
                 blockchain_id,
@@ -45,7 +51,7 @@ public final class BlockchainStateDAO {
             WHERE blockchain_id = ?
             """;
 
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setLong(1, blockchainId);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return null;
@@ -54,18 +60,14 @@ public final class BlockchainStateDAO {
         }
     }
 
-    // Старый вариант: сам открывает/закрывает conn
-    public BlockchainStateEntry getByBlockchainId(long blockchainId) throws SQLException {
-        try (Connection conn = db.getConnection()) {
-            return getByBlockchainId(conn, blockchainId);
+    // старый метод оставим
+    public void upsert(BlockchainStateEntry e) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            upsert(c, e);
         }
     }
 
-    // --- Новый вариант: UPSERT на переданном соединении ---
-    public void upsert(Connection conn, BlockchainStateEntry e) throws SQLException {
-        long now = System.currentTimeMillis();
-        if (e.getUpdatedAtMs() <= 0) e.setUpdatedAtMs(now);
-
+    public void upsert(Connection c, BlockchainStateEntry e) throws SQLException {
         String sql = """
             INSERT INTO blockchain_state (
                 blockchain_id,
@@ -104,7 +106,6 @@ public final class BlockchainStateDAO {
                 size_bytes         = excluded.size_bytes,
                 last_global_number = excluded.last_global_number,
                 last_global_hash   = excluded.last_global_hash,
-
                 line0_last_number  = excluded.line0_last_number,
                 line0_last_hash    = excluded.line0_last_hash,
                 line1_last_number  = excluded.line1_last_number,
@@ -121,11 +122,10 @@ public final class BlockchainStateDAO {
                 line6_last_hash    = excluded.line6_last_hash,
                 line7_last_number  = excluded.line7_last_number,
                 line7_last_hash    = excluded.line7_last_hash,
-
                 updated_at_ms      = excluded.updated_at_ms
             """;
 
-        try (PreparedStatement ps = conn.prepareStatement(sql)) {
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
             int i = 1;
             ps.setLong(i++, e.getBlockchainId());
             ps.setString(i++, nn(e.getUserLogin()));
@@ -142,13 +142,6 @@ public final class BlockchainStateDAO {
 
             ps.setLong(i++, e.getUpdatedAtMs());
             ps.executeUpdate();
-        }
-    }
-
-    // Старый вариант: сам открывает/закрывает conn
-    public void upsert(BlockchainStateEntry e) throws SQLException {
-        try (Connection conn = db.getConnection()) {
-            upsert(conn, e);
         }
     }
 
@@ -173,7 +166,5 @@ public final class BlockchainStateDAO {
         return e;
     }
 
-    private static String nn(String s) {
-        return s == null ? "" : s;
-    }
+    private static String nn(String s) { return s == null ? "" : s; }
 }

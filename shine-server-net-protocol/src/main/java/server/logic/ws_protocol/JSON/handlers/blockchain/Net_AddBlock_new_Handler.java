@@ -14,7 +14,7 @@ public final class Net_AddBlock_new_Handler implements JsonMessageHandler {
     public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
         Net_AddBlock_new_Request req = (Net_AddBlock_new_Request) baseReq;
 
-        var r = BlockchainStateService_new.getInstance().addBlock(
+        var r = BlockchainStateService_new.getInstance().addBlockAtomically(
                 req.getLogin(),
                 req.getBlockchainId(),
                 req.getGlobalNumber(),
@@ -25,7 +25,6 @@ public final class Net_AddBlock_new_Handler implements JsonMessageHandler {
         Net_AddBlock_new_Response resp = new Net_AddBlock_new_Response();
         resp.setOp(req.getOp());
         resp.setRequestId(req.getRequestId());
-
         resp.setLineIndex(r.lineIndex);
 
         if (r.isOk()) {

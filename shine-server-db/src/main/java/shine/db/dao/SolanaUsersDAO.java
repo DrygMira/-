@@ -76,6 +76,23 @@ public final class SolanaUsersDAO {
         }
     }
 
+   // добавь рядом со старым методом
+    public SolanaUserEntry getByLogin(Connection c, String login) throws SQLException {
+        String sql = """
+        SELECT login, loginId, bchId, loginKey, deviceKey, bchLimit
+        FROM solana_users
+        WHERE LOWER(login) = LOWER(?)
+        """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, login);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                return mapRow(rs);
+            }
+        }
+    }
+
     public SolanaUserEntry getByLogin(String login) throws SQLException {
         String sql = """
             SELECT login, loginId, bchId, loginKey, deviceKey, bchLimit
