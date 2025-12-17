@@ -16,6 +16,9 @@ public final class BlockchainStateEntry {
     private int sizeLimit;
     private int sizeBytes;
 
+    /** NEW: размер файла блокчейна в байтах (то, что будем сверять/чинить при старте). */
+    private long fileSizeBytes;
+
     private int lastGlobalNumber;
     private String lastGlobalHash; // HEX(64) либо пустая строка для "нулевого"
 
@@ -32,12 +35,12 @@ public final class BlockchainStateEntry {
         this.lastGlobalHash = "";
     }
 
-    // --- удобный конструктор (если хочешь) ---
     public BlockchainStateEntry(long blockchainId,
                                 String userLogin,
                                 String publicKeyBase64,
                                 int sizeLimit,
                                 int sizeBytes,
+                                long fileSizeBytes,
                                 int lastGlobalNumber,
                                 String lastGlobalHash,
                                 int[] lastLineNumbers,
@@ -48,6 +51,7 @@ public final class BlockchainStateEntry {
         this.publicKeyBase64 = publicKeyBase64;
         this.sizeLimit = sizeLimit;
         this.sizeBytes = sizeBytes;
+        this.fileSizeBytes = fileSizeBytes;
         this.lastGlobalNumber = lastGlobalNumber;
         this.lastGlobalHash = lastGlobalHash == null ? "" : lastGlobalHash;
 
@@ -65,8 +69,6 @@ public final class BlockchainStateEntry {
         this.updatedAtMs = updatedAtMs;
     }
 
-    // --- getters / setters ---
-
     public long getBlockchainId() { return blockchainId; }
     public void setBlockchainId(long blockchainId) { this.blockchainId = blockchainId; }
 
@@ -81,6 +83,9 @@ public final class BlockchainStateEntry {
 
     public int getSizeBytes() { return sizeBytes; }
     public void setSizeBytes(int sizeBytes) { this.sizeBytes = sizeBytes; }
+
+    public long getFileSizeBytes() { return fileSizeBytes; }
+    public void setFileSizeBytes(long fileSizeBytes) { this.fileSizeBytes = fileSizeBytes; }
 
     public int getLastGlobalNumber() { return lastGlobalNumber; }
     public void setLastGlobalNumber(int lastGlobalNumber) { this.lastGlobalNumber = lastGlobalNumber; }

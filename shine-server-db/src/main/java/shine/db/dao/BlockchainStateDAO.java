@@ -21,7 +21,6 @@ public final class BlockchainStateDAO {
         return instance;
     }
 
-    // старый метод оставим
     public BlockchainStateEntry getByBlockchainId(long blockchainId) throws SQLException {
         try (Connection c = db.getConnection()) {
             return getByBlockchainId(c, blockchainId);
@@ -36,6 +35,7 @@ public final class BlockchainStateDAO {
                 public_key_base64,
                 size_limit,
                 size_bytes,
+                file_size_bytes,
                 last_global_number,
                 last_global_hash,
                 line0_last_number, line0_last_hash,
@@ -60,7 +60,6 @@ public final class BlockchainStateDAO {
         }
     }
 
-    // старый метод оставим
     public void upsert(BlockchainStateEntry e) throws SQLException {
         try (Connection c = db.getConnection()) {
             upsert(c, e);
@@ -75,6 +74,7 @@ public final class BlockchainStateDAO {
                 public_key_base64,
                 size_limit,
                 size_bytes,
+                file_size_bytes,
                 last_global_number,
                 last_global_hash,
                 line0_last_number, line0_last_hash,
@@ -104,6 +104,7 @@ public final class BlockchainStateDAO {
                 public_key_base64  = excluded.public_key_base64,
                 size_limit         = excluded.size_limit,
                 size_bytes         = excluded.size_bytes,
+                file_size_bytes    = excluded.file_size_bytes,
                 last_global_number = excluded.last_global_number,
                 last_global_hash   = excluded.last_global_hash,
                 line0_last_number  = excluded.line0_last_number,
@@ -132,6 +133,7 @@ public final class BlockchainStateDAO {
             ps.setString(i++, nn(e.getPublicKeyBase64()));
             ps.setInt(i++, e.getSizeLimit());
             ps.setInt(i++, e.getSizeBytes());
+            ps.setLong(i++, e.getFileSizeBytes());
             ps.setInt(i++, e.getLastGlobalNumber());
             ps.setString(i++, nn(e.getLastGlobalHash()));
 
@@ -153,6 +155,7 @@ public final class BlockchainStateDAO {
 
         e.setSizeLimit(rs.getInt("size_limit"));
         e.setSizeBytes(rs.getInt("size_bytes"));
+        e.setFileSizeBytes(rs.getLong("file_size_bytes"));
 
         e.setLastGlobalNumber(rs.getInt("last_global_number"));
         e.setLastGlobalHash(rs.getString("last_global_hash"));

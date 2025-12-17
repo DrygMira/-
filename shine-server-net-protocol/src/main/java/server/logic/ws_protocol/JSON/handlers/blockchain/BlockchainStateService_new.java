@@ -29,6 +29,7 @@ public final class BlockchainStateService_new {
             this.stateAfter = stateAfter;
             this.lineIndex = lineIndex;
         }
+
         public boolean isOk() { return reasonCode == null && httpStatus == 200; }
     }
 
@@ -40,7 +41,6 @@ public final class BlockchainStateService_new {
 
     // Локи по blockchainId (MVP, один сервер)
     private final ConcurrentMap<Long, ReentrantLock> locks = new ConcurrentHashMap<>();
-
     private ReentrantLock lockFor(long blockchainId) {
         return locks.computeIfAbsent(blockchainId, k -> new ReentrantLock());
     }
@@ -80,6 +80,8 @@ public final class BlockchainStateService_new {
         if (lineIndex < 0 || lineIndex > 7)
             return new Result(400, "BAD_LINE_INDEX", null, lineIndex);
 
+        boolean isHeaderBlock = (globalNumber == 0 && lineIndex == 0 && block.lineNumber == 0);
+
         ReentrantLock lock = lockFor(blockchainId);
         lock.lock();
         try (Connection conn = SqliteDbController.getInstance().getConnection()) {
@@ -87,10 +89,7 @@ public final class BlockchainStateService_new {
             BlockchainStateDAO stateDao = BlockchainStateDAO.getInstance();
             SolanaUsersDAO usersDao = SolanaUsersDAO.getInstance();
 
-            // читаем state В ЭТОМ ЖЕ conn
             BlockchainStateEntry state = stateDao.getByBlockchainId(conn, blockchainId);
-
-            boolean isHeaderBlock = (globalNumber == 0 && lineIndex == 0 && block.lineNumber == 0);
 
             if (state == null) {
                 // state отсутствует — разрешаем ТОЛЬКО header-блок
@@ -98,7 +97,6 @@ public final class BlockchainStateService_new {
                     return new Result(404, "UNKNOWN_BLOCKCHAIN", null, lineIndex);
                 }
 
-                // Проверяем пользователя и соответствие bchId
                 SolanaUserEntry u = usersDao.getByLogin(conn, login);
                 if (u == null) {
                     return new Result(404, "UNKNOWN_USER", null, lineIndex);
@@ -112,17 +110,13 @@ public final class BlockchainStateService_new {
                     return new Result(409, "GLOBAL_HASH_MISMATCH", null, lineIndex);
                 }
 
-                // Создаём “нулевой” state ДО записи header (last_global_number = -1)
+                // Создаём начальный state (ЕЩЁ НЕ ПИШЕМ В БД — запишем после успешного append)
                 state = createInitialState(blockchainId, login, u.getLoginKey(), safeLimit(u.getBchLimit()));
-//                stateDao.upsert(conn, state);  //TODO так здесь наверное его в БД сохранять не надо если всё верно то потом дополненный сохраниться
             } else {
-                // state есть — обычная проверка login
                 if (!login.equals(state.getUserLogin())) {
                     return new Result(403, "LOGIN_MISMATCH", state, lineIndex);
                 }
             }
-
-            // Перечитывать не надо, state актуален в переменной.
 
             // expected global
             int expectedGlobal = state.getLastGlobalNumber() + 1;
@@ -130,7 +124,7 @@ public final class BlockchainStateService_new {
                 return new Result(409, "OUT_OF_SEQUENCE_GLOBAL", state, lineIndex);
             }
 
-            // prev global hash сверяем
+            // prev global hash
             String dbPrevGlobalHash = nn(state.getLastGlobalHash());
             if (!eqHash(prevGlobalHashHex, dbPrevGlobalHash)) {
                 return new Result(409, "GLOBAL_HASH_MISMATCH", state, lineIndex);
@@ -144,10 +138,10 @@ public final class BlockchainStateService_new {
 
             // TODO: крипто-проверка (потом подключим)
 
-            // 1) запись блока в файл
+            // 1) запись блока в файл (append-only)
             FileStoreUtil.getInstance().addDataToBlockchain(blockchainId, block.toBytes());
 
-            // 2) апдейт state
+            // 2) апдейт state + запись state в БД
             String newHashHex = bytesToHex(block.getHash32());
 
             state.setLastGlobalNumber(globalNumber);
@@ -156,15 +150,18 @@ public final class BlockchainStateService_new {
             state.setLastLineNumber(lineIndex, block.lineNumber);
             state.setLastLineHash(lineIndex, newHashHex);
 
+            // Логический размер (как было)
             state.setSizeBytes(state.getSizeBytes() + fullBytes.length);
+
+            // Новый: размер файла (ровно по твоему правилу)
+            state.setFileSizeBytes(state.getFileSizeBytes() + fullBytes.length);
+
             state.setUpdatedAtMs(System.currentTimeMillis());
 
             stateDao.upsert(conn, state);
 
             return new Result(200, null, state, lineIndex);
 
-        } catch (SQLException e) {
-            throw e;
         } finally {
             lock.unlock();
         }
@@ -180,18 +177,19 @@ public final class BlockchainStateService_new {
         s.setPublicKeyBase64(nn(loginKeyBase64));
 
         s.setSizeLimit(sizeLimit);
-        s.setSizeBytes(0);
 
-        // как ты хочешь:
+        s.setSizeBytes(0);
+        s.setFileSizeBytes(0);
+
         s.setLastGlobalNumber(-1);
         s.setLastGlobalHash(ZERO64);
 
         for (int i = 0; i < 8; i++) {
             if (i == 0) {
-                // линия 0: заглавный блок имеет lineNumber=0
+                // линия 0: заглавный блок имеет lineNumber=0 -> значит "последний" до него = -1
                 s.setLastLineNumber(i, -1);
             } else {
-                // остальные линии: первый блок будет lineNumber=1
+                // остальные линии: первый блок будет lineNumber=1 -> значит "последний" до него = 0
                 s.setLastLineNumber(i, 0);
             }
             s.setLastLineHash(i, ZERO64);
@@ -202,7 +200,7 @@ public final class BlockchainStateService_new {
     }
 
     private static int safeLimit(Integer limit) {
-        if (limit == null || limit <= 0) return 1_000_000; // fallback (test)
+        if (limit == null || limit <= 0) return 1_000_000; // TEST ONLY fallback
         return limit;
     }
 
