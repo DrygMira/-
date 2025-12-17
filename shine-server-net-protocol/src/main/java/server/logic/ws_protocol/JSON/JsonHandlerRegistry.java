@@ -6,6 +6,8 @@ import server.logic.ws_protocol.JSON.entyties.Auth.Net_CreateAuthSession_Request
 import server.logic.ws_protocol.JSON.entyties.Auth.Net_RefreshSession_Request;
 import server.logic.ws_protocol.JSON.entyties.Auth.Net_CloseActiveSession_Request;
 import server.logic.ws_protocol.JSON.entyties.Auth.Net_ListSessions_Request;
+import server.logic.ws_protocol.JSON.entyties.blockchain.Net_AddBlock_new_Request;
+import server.logic.ws_protocol.JSON.entyties.blockchain.Net_AddBlock_new_Response;
 import server.logic.ws_protocol.JSON.entyties.tempToTest.Net_AddUser_Request;
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
 import server.logic.ws_protocol.JSON.handlers.auth.Net_AuthChallenge_Handler;
@@ -13,6 +15,7 @@ import server.logic.ws_protocol.JSON.handlers.auth.Net_CreateAuthSession__Handle
 import server.logic.ws_protocol.JSON.handlers.auth.Net_RefreshSession_Handler;
 import server.logic.ws_protocol.JSON.handlers.auth.Net_CloseActiveSession_Handler;
 import server.logic.ws_protocol.JSON.handlers.auth.Net_ListSessions_Handler;
+import server.logic.ws_protocol.JSON.handlers.blockchain.Net_AddBlock_new_Handler;
 import server.logic.ws_protocol.JSON.handlers.tempToTest.Net_AddUser_Handler;
 
 import java.util.Map;
@@ -34,7 +37,8 @@ public final class JsonHandlerRegistry {
             "AuthChallenge",      new Net_AuthChallenge_Handler(),
             "CreateAuthSession",  new Net_CreateAuthSession__Handler(),
             "CloseActiveSession", new Net_CloseActiveSession_Handler(),
-            "ListSessions",       new Net_ListSessions_Handler()
+            "ListSessions",       new Net_ListSessions_Handler(),
+            "AddBlock",           new Net_AddBlock_new_Handler()
             // сюда потом добавишь другие операции
     );
 
@@ -44,7 +48,8 @@ public final class JsonHandlerRegistry {
             "AuthChallenge",      Net_AuthChallenge_Request.class,
             "CreateAuthSession",  Net_CreateAuthSession_Request.class,
             "CloseActiveSession", Net_CloseActiveSession_Request.class,
-            "ListSessions",       Net_ListSessions_Request.class
+            "ListSessions",       Net_ListSessions_Request.class,
+            "AddBlock",           Net_AddBlock_new_Request.class
     );
 
     private JsonHandlerRegistry() {

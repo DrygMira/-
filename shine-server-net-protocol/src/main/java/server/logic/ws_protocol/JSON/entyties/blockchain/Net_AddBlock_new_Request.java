@@ -1,0 +1,27 @@
+package server.logic.ws_protocol.JSON.entyties.blockchain;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+public final class Net_AddBlock_new_Request extends Net_Request {
+
+    private String login;              // обязателен
+    private long blockchainId;         // обязателен
+    private int globalNumber;          // обязателен
+    private String prevGlobalHash;     // HEX(64) или "" для нулевого
+    private String blockBase64;        // байты FULL-блока (raw+sig+hash) в Base64
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+
+    public long getBlockchainId() { return blockchainId; }
+    public void setBlockchainId(long blockchainId) { this.blockchainId = blockchainId; }
+
+    public int getGlobalNumber() { return globalNumber; }
+    public void setGlobalNumber(int globalNumber) { this.globalNumber = globalNumber; }
+
+    public String getPrevGlobalHash() { return prevGlobalHash; }
+    public void setPrevGlobalHash(String prevGlobalHash) { this.prevGlobalHash = prevGlobalHash; }
+
+    public String getBlockBase64() { return blockBase64; }
+    public void setBlockBase64(String blockBase64) { this.blockBase64 = blockBase64; }
+}

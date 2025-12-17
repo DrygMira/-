@@ -37,6 +37,23 @@ public final class HashSHA256Util {
                 .getLong();
     }
 
+    /**
+     * loginId = last 8 bytes of sha256(login UTF-8), big-endian.
+     * (берём 8 байт справа и читаем как unsigned long в BE)
+     */
+    public static long loginIdFromLogin(String login) {
+        if (login == null || login.isBlank())
+            throw new IllegalArgumentException("login is blank");
+
+        byte[] h = sha256(login.getBytes(StandardCharsets.UTF_8));
+
+        long v = 0;
+        for (int i = 24; i < 32; i++) {
+            v = (v << 8) | (h[i] & 0xFFL);
+        }
+        return v;
+    }
+
     /** Инкрементальный SHA-256 (если нужно будет кормить по кускам). */
     public static final class Sha256 {
         private final SHA256Digest d = new SHA256Digest();
