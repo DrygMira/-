@@ -7,32 +7,27 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Здесь зраним сохранённые параметры пользователей (в основном до каково сообщения просмотрены ленты) */
+/** Здесь храним сохранённые параметры пользователей (в основном до какого сообщения просмотрены ленты) */
 public final class UserParamsDAO {
 
     private static volatile UserParamsDAO instance;
     private final SqliteDbController db = SqliteDbController.getInstance();
 
-    private UserParamsDAO() {
-    }
+    private UserParamsDAO() { }
 
     public static UserParamsDAO getInstance() {
         if (instance == null) {
             synchronized (UserParamsDAO.class) {
-                if (instance == null) {
-                    instance = new UserParamsDAO();
-                }
+                if (instance == null) instance = new UserParamsDAO();
             }
         }
         return instance;
     }
 
-    /**
-     * UPSERT методом ON CONFLICT — одним SQL-запросом.
-     * Если запись существует -> обновляем поля.
-     * Если нет -> вставляем новую запись.
-     */
-    public void upsert(UserParamEntry param) throws SQLException {
+    // -------------------- UPSERT --------------------
+
+    /** UPSERT с внешним соединением. Соединение НЕ закрывает. */
+    public void upsert(Connection c, UserParamEntry param) throws SQLException {
         String sql = """
             INSERT INTO users_params (
                 loginId,
@@ -52,9 +47,7 @@ public final class UserParamsDAO {
                 signature      = excluded.signature
             """;
 
-        try (Connection c = db.getConnection();
-             PreparedStatement ps = c.prepareStatement(sql)) {
-
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setLong(1, param.getLoginId());
             ps.setString(2, param.getParam());
             ps.setLong(3, param.getBchChannelId());
@@ -66,10 +59,17 @@ public final class UserParamsDAO {
         }
     }
 
-    /**
-     * Получить параметр по loginId + param.
-     */
-    public UserParamEntry getByUserIdAndParam(long loginId, String paramName) throws SQLException {
+    /** UPSERT без внешнего соединения. Сам открывает/закрывает. */
+    public void upsert(UserParamEntry param) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            upsert(c, param);
+        }
+    }
+
+    // -------------------- SELECT --------------------
+
+    /** Получить параметр с внешним соединением. Соединение НЕ закрывает. */
+    public UserParamEntry getByUserIdAndParam(Connection c, long loginId, String paramName) throws SQLException {
         String sql = """
             SELECT
                 loginId,
@@ -83,9 +83,7 @@ public final class UserParamsDAO {
             WHERE loginId = ? AND param = ?
             """;
 
-        try (Connection c = db.getConnection();
-             PreparedStatement ps = c.prepareStatement(sql)) {
-
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setLong(1, loginId);
             ps.setString(2, paramName);
             try (ResultSet rs = ps.executeQuery()) {
@@ -95,10 +93,15 @@ public final class UserParamsDAO {
         }
     }
 
-    /**
-     * Получить все параметры пользователя.
-     */
-    public List<UserParamEntry> getByUserId(long loginId) throws SQLException {
+    /** Получить параметр без внешнего соединения. Сам открывает/закрывает. */
+    public UserParamEntry getByUserIdAndParam(long loginId, String paramName) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return getByUserIdAndParam(c, loginId, paramName);
+        }
+    }
+
+    /** Получить все параметры пользователя с внешним соединением. Соединение НЕ закрывает. */
+    public List<UserParamEntry> getByUserId(Connection c, long loginId) throws SQLException {
         String sql = """
             SELECT
                 loginId,
@@ -115,9 +118,7 @@ public final class UserParamsDAO {
 
         List<UserParamEntry> result = new ArrayList<>();
 
-        try (Connection c = db.getConnection();
-             PreparedStatement ps = c.prepareStatement(sql)) {
-
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setLong(1, loginId);
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) result.add(mapRow(rs));
@@ -126,6 +127,15 @@ public final class UserParamsDAO {
 
         return result;
     }
+
+    /** Получить все параметры пользователя без внешнего соединения. Сам открывает/закрывает. */
+    public List<UserParamEntry> getByUserId(long loginId) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return getByUserId(c, loginId);
+        }
+    }
+
+    // -------------------- MAPPER --------------------
 
     private UserParamEntry mapRow(ResultSet rs) throws SQLException {
         return new UserParamEntry(

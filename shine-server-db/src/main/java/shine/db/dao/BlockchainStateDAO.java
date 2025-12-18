@@ -21,12 +21,14 @@ public final class BlockchainStateDAO {
         return instance;
     }
 
+    /** Получить по blockchainId без внешнего соединения. Сам открывает/закрывает. */
     public BlockchainStateEntry getByBlockchainId(long blockchainId) throws SQLException {
         try (Connection c = db.getConnection()) {
             return getByBlockchainId(c, blockchainId);
         }
     }
 
+    /** Получить по blockchainId с внешним соединением. Соединение НЕ закрывает. */
     public BlockchainStateEntry getByBlockchainId(Connection c, long blockchainId) throws SQLException {
         String sql = """
             SELECT
@@ -60,12 +62,14 @@ public final class BlockchainStateDAO {
         }
     }
 
+    /** UPSERT без внешнего соединения. Сам открывает/закрывает. */
     public void upsert(BlockchainStateEntry e) throws SQLException {
         try (Connection c = db.getConnection()) {
             upsert(c, e);
         }
     }
 
+    /** UPSERT с внешним соединением. Соединение НЕ закрывает. */
     public void upsert(Connection c, BlockchainStateEntry e) throws SQLException {
         String sql = """
             INSERT INTO blockchain_state (
@@ -87,7 +91,7 @@ public final class BlockchainStateDAO {
                 line7_last_number, line7_last_hash,
                 updated_at_ms
             ) VALUES (
-                ?,?,?,?,?,?,?,?,      -- ✅ было 7, стало 8
+                ?,?,?,?,?,?,?,?,
                 ?,?,
                 ?,?,
                 ?,?,
