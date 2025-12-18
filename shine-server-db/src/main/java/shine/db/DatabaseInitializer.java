@@ -21,6 +21,7 @@ import java.sql.Statement;
  *  - users_params
  *  - ip_geo_cache
  *  - blockchain_state (MVP)
+ *  - blocks
  */
 public class DatabaseInitializer {
 
@@ -190,7 +191,6 @@ public class DatabaseInitializer {
                 );
                 """);
 
-            // Индексы под быстрые проверки/поиск
             st.executeUpdate("""
                 CREATE INDEX IF NOT EXISTS idx_blockchain_state_user_login
                 ON blockchain_state (user_login);
@@ -199,6 +199,46 @@ public class DatabaseInitializer {
             st.executeUpdate("""
                 CREATE INDEX IF NOT EXISTS idx_blockchain_state_updated_at
                 ON blockchain_state (updated_at_ms);
+                """);
+
+            // 6. blocks
+            st.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS blocks (
+                    loginId               INTEGER NOT NULL,
+                    blockchainId          INTEGER NOT NULL,
+                    blockGlobalNumber     INTEGER NOT NULL,
+                    blockGlobalPreHashe   TEXT    NOT NULL,
+
+                    blockLineIndex        INTEGER NOT NULL,
+                    blockLineNumber       INTEGER NOT NULL,
+                    blockLinePreHashe     TEXT    NOT NULL,
+
+                    msgType               INTEGER NOT NULL,
+
+                    blockByte             BLOB,
+
+                    toLoginId             INTEGER NOT NULL,
+                    toBlockchainId        INTEGER NOT NULL,
+                    toBlockGlobalNumber   INTEGER NOT NULL,
+                    toBlockHashe          TEXT    NOT NULL,
+
+                    -- Выбранный PK (см. BlocksDAO)
+                    PRIMARY KEY (loginId, blockchainId, blockGlobalNumber, blockLineIndex, blockLineNumber),
+
+                    -- Связи (по желанию можно ослабить/убрать, если будут "частичные" данные)
+                    FOREIGN KEY (loginId) REFERENCES solana_users(loginId)
+                );
+                """);
+
+            // Индексы под типовые запросы: по цепочке/глобальному номеру и по "to*"
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_blocks_chain_global
+                ON blocks (loginId, blockchainId, blockGlobalNumber);
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_blocks_to_target
+                ON blocks (toLoginId, toBlockchainId, toBlockGlobalNumber);
                 """);
         }
     }
