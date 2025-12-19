@@ -42,11 +42,7 @@ public class Net_RefreshSession_Request extends Net_Request {
         this.sessionPwd = sessionPwd;
     }
 
-    public String getClientInfo() {
-        return clientInfo;
-    }
+    public String getClientInfo() { return clientInfo; }
 
-    public void setClientInfo(String clientInfo) {
-        this.clientInfo = clientInfo;
-    }
+    public void setClientInfo(String clientInfo) { this.clientInfo = clientInfo; }
 }

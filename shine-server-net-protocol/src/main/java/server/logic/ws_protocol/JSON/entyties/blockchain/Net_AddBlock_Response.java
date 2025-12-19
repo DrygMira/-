@@ -2,7 +2,7 @@ package server.logic.ws_protocol.JSON.entyties.blockchain;
 
 import server.logic.ws_protocol.JSON.entyties.Net_Response;
 
-public final class Net_AddBlock_new_Response extends Net_Response {
+public final class Net_AddBlock_Response extends Net_Response {
 
     private String reasonCode;               // null если ok
 

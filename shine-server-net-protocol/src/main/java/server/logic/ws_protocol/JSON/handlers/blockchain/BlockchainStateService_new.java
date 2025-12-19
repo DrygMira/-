@@ -1,5 +1,6 @@
 package server.logic.ws_protocol.JSON.handlers.blockchain;
 
+import server.logic.ws_protocol.WireCodes;
 import shine.db.SqliteDbController;
 import shine.db.dao.BlockchainStateDAO;
 import shine.db.dao.BlocksDAO;
@@ -10,6 +11,8 @@ import shine.db.entities.SolanaUserEntry;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.Types;
+import java.util.Base64;
 
 /**
  * BlockchainStateService_new — атомарное добавление блока:
@@ -22,6 +25,25 @@ import java.sql.SQLException;
  * - DAO-методы с Connection НЕ закрывают соединение
  */
 public final class BlockchainStateService_new {
+
+    /** Результат атомарного addBlock */
+    public static final class AddBlockResult {
+        public final int lineIndex;                  // 0..7 (пока ставим 0)
+        public final int httpStatus;                 // WireCodes.Status.*
+        public final String reasonCode;              // null если ok
+        public final BlockchainStateEntry stateAfter; // состояние после (может быть null)
+
+        public AddBlockResult(int lineIndex, int httpStatus, String reasonCode, BlockchainStateEntry stateAfter) {
+            this.lineIndex = lineIndex;
+            this.httpStatus = httpStatus;
+            this.reasonCode = reasonCode;
+            this.stateAfter = stateAfter;
+        }
+
+        public boolean isOk() {
+            return httpStatus == WireCodes.Status.OK;
+        }
+    }
 
     private static volatile BlockchainStateService_new instance;
 
@@ -42,25 +64,32 @@ public final class BlockchainStateService_new {
     }
 
     /**
-     * Атомарно добавляет блок (в рамках одной транзакции).
-     *
-     * @param login           логин (для поиска loginId)
-     * @param blockchainId    id блокчейна
-     * @param globalNumber    глобальный номер
-     * @param prevGlobalHash  предыдущий глобальный хэш
-     * @param blockBytesB64   блок (в Base64) — если у тебя уже byte[], сделай перегрузку
+     * Атомарно добавляет блок (в рамках одной транзакции) и возвращает результат,
+     * чтобы хэндлер мог заполнить ответ клиенту.
      */
-    public void addBlockAtomically(
+    public AddBlockResult addBlockAtomically(
             String login,
             long blockchainId,
             int globalNumber,
             String prevGlobalHash,
             String blockBytesB64
-    ) throws Exception {
+    ) {
 
-        // ⚠️ Тут я не трогаю твою бизнес-логику парсинга blockBytesB64.
-        // Просто предполагаю, что у тебя есть метод декодирования.
-        byte[] blockBytes = decodeBase64(blockBytesB64);
+        // Пока не парсим lineIndex из блока — ставим 0, чтобы протокол работал.
+        // Позже сделаем реальный разбор (и это же место будет правильным для вычисления хэшей).
+        final int lineIndex = 0;
+
+        byte[] blockBytes;
+        try {
+            blockBytes = decodeBase64(blockBytesB64);
+        } catch (Exception e) {
+            return new AddBlockResult(
+                    lineIndex,
+                    WireCodes.Status.BAD_REQUEST,
+                    "bad_block_base64",
+                    null
+            );
+        }
 
         try (Connection c = db.getConnection()) {
             boolean oldAutoCommit = c.getAutoCommit();
@@ -69,51 +98,72 @@ public final class BlockchainStateService_new {
                 // 1) получаем loginId по login
                 SolanaUserEntry u = solanaUsersDAO.getByLogin(c, login);
                 if (u == null) {
-                    throw new IllegalStateException("Не найден пользователь в solana_users по login=" + login);
+                    c.rollback();
+                    return new AddBlockResult(
+                            lineIndex,
+                            WireCodes.Status.NOT_FOUND,
+                            "user_not_found",
+                            null
+                    );
                 }
                 long loginId = u.getLoginId();
 
                 // 2) вставляем блок в blocks
-                insertBlockRow(c, loginId, blockchainId, globalNumber, prevGlobalHash, blockBytes);
+                insertBlockRow(c, loginId, blockchainId, globalNumber, prevGlobalHash, blockBytes, lineIndex);
 
-                // 3) обновляем агрегатное состояние (если у тебя там отдельная логика — подключи сюда)
-                //    Ниже — базовый пример, ты можешь заменить на свои расчёты lineHash/lineNumber и т.д.
+                // 3) обновляем агрегатное состояние blockchain_state
                 BlockchainStateEntry st = stateDAO.getByBlockchainId(c, blockchainId);
                 if (st == null) {
-                    throw new IllegalStateException("Не найден blockchain_state для blockchainId=" + blockchainId);
+                    c.rollback();
+                    return new AddBlockResult(
+                            lineIndex,
+                            WireCodes.Status.NOT_FOUND,
+                            "blockchain_state_not_found",
+                            null
+                    );
                 }
 
+                // MVP: обновляем “последний глобальный номер”.
+                // Хэш тут сейчас оставлен как заглушка — лучше поставить фактический хэш нового блока.
                 st.setLastGlobalNumber(globalNumber);
-                st.setLastGlobalHash(nn(prevGlobalHash)); // или новый hash, если ты его вычисляешь
+                st.setLastGlobalHash(nn(prevGlobalHash)); // TODO: заменить на hash нового блока
                 st.setUpdatedAtMs(System.currentTimeMillis());
 
+                // (линии пока не трогаем — позже внесём логику lineNumber/lineHash)
                 stateDAO.upsert(c, st);
 
                 c.commit();
+                return new AddBlockResult(lineIndex, WireCodes.Status.OK, null, st);
+
             } catch (Exception e) {
-                c.rollback();
-                throw e;
+                try { c.rollback(); } catch (SQLException ignore) {}
+                return new AddBlockResult(
+                        lineIndex,
+                        WireCodes.Status.INTERNAL_ERROR,
+                        "internal_error",
+                        null
+                );
             } finally {
-                c.setAutoCommit(oldAutoCommit);
+                try { c.setAutoCommit(oldAutoCommit); } catch (SQLException ignore) {}
             }
+        } catch (Exception e) {
+            return new AddBlockResult(
+                    lineIndex,
+                    WireCodes.Status.INTERNAL_ERROR,
+                    "db_error",
+                    null
+            );
         }
     }
 
-    /**
-     * Вставка/обновление строки блока в таблицу blocks.
-     *
-     * Раньше у тебя тут был SQL, который пытался использовать колонку user_login —
-     * из-за этого и падало "table blocks has no column named user_login".
-     *
-     * Теперь всё делаем через BlocksDAO, где имена колонок гарантированно совпадают со схемой.
-     */
     private void insertBlockRow(
             Connection c,
             long loginId,
             long blockchainId,
             int globalNumber,
             String prevGlobalHash,
-            byte[] blockBytes
+            byte[] blockBytes,
+            int lineIndex
     ) throws SQLException {
 
         BlockEntry e = new BlockEntry();
@@ -123,9 +173,8 @@ public final class BlockchainStateService_new {
         e.setBlockGlobalNumber(globalNumber);
         e.setBlockGlobalPreHashe(nn(prevGlobalHash));
 
-        // ⚠️ Эти поля (линии/типы/маршрутизация) заполни так, как у тебя реально устроен блок.
-        // Я ставлю дефолты, чтобы код компилился и логика была ясна.
-        e.setBlockLineIndex(0);
+        // Заглушки под линии — позже заменим на реальную логику из blockBytes.
+        e.setBlockLineIndex(lineIndex);
         e.setBlockLineNumber(0);
         e.setBlockLinePreHashe("");
 
@@ -138,7 +187,6 @@ public final class BlockchainStateService_new {
         e.setToBlockGlobalNumber(0);
         e.setToBlockHashe("");
 
-        // upsert — безопаснее, чем insert, если возможны повторы при ретраях
         blocksDAO.upsert(c, e);
     }
 
@@ -150,6 +198,6 @@ public final class BlockchainStateService_new {
 
     private static byte[] decodeBase64(String s) {
         if (s == null || s.isBlank()) return null;
-        return java.util.Base64.getDecoder().decode(s);
+        return Base64.getDecoder().decode(s);
     }
 }

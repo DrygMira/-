@@ -6,8 +6,7 @@ import server.logic.ws_protocol.JSON.entyties.Auth.Net_CreateAuthSession_Request
 import server.logic.ws_protocol.JSON.entyties.Auth.Net_RefreshSession_Request;
 import server.logic.ws_protocol.JSON.entyties.Auth.Net_CloseActiveSession_Request;
 import server.logic.ws_protocol.JSON.entyties.Auth.Net_ListSessions_Request;
-import server.logic.ws_protocol.JSON.entyties.blockchain.Net_AddBlock_new_Request;
-import server.logic.ws_protocol.JSON.entyties.blockchain.Net_AddBlock_new_Response;
+import server.logic.ws_protocol.JSON.entyties.blockchain.Net_AddBlock_Request;
 import server.logic.ws_protocol.JSON.entyties.tempToTest.Net_AddUser_Request;
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
 import server.logic.ws_protocol.JSON.handlers.auth.Net_AuthChallenge_Handler;
@@ -49,7 +48,7 @@ public final class JsonHandlerRegistry {
             "CreateAuthSession",  Net_CreateAuthSession_Request.class,
             "CloseActiveSession", Net_CloseActiveSession_Request.class,
             "ListSessions",       Net_ListSessions_Request.class,
-            "AddBlock",           Net_AddBlock_new_Request.class
+            "AddBlock",           Net_AddBlock_Request.class
     );
 
     private JsonHandlerRegistry() {

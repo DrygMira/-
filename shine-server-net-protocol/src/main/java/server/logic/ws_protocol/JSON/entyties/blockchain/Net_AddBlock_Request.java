@@ -2,7 +2,7 @@ package server.logic.ws_protocol.JSON.entyties.blockchain;
 
 import server.logic.ws_protocol.JSON.entyties.Net_Request;
 
-public final class Net_AddBlock_new_Request extends Net_Request {
+public final class Net_AddBlock_Request extends Net_Request {
 
     private String login;              // обязателен
     private long blockchainId;         // обязателен

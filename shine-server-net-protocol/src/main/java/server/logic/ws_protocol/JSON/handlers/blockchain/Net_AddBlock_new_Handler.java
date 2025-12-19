@@ -3,8 +3,8 @@ package server.logic.ws_protocol.JSON.handlers.blockchain;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.Net_Request;
 import server.logic.ws_protocol.JSON.entyties.Net_Response;
-import server.logic.ws_protocol.JSON.entyties.blockchain.Net_AddBlock_new_Request;
-import server.logic.ws_protocol.JSON.entyties.blockchain.Net_AddBlock_new_Response;
+import server.logic.ws_protocol.JSON.entyties.blockchain.Net_AddBlock_Request;
+import server.logic.ws_protocol.JSON.entyties.blockchain.Net_AddBlock_Response;
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
 import server.logic.ws_protocol.WireCodes;
 
@@ -12,7 +12,7 @@ public final class Net_AddBlock_new_Handler implements JsonMessageHandler {
 
     @Override
     public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
-        Net_AddBlock_new_Request req = (Net_AddBlock_new_Request) baseReq;
+        Net_AddBlock_Request req = (Net_AddBlock_Request) baseReq;
 
         var r = BlockchainStateService_new.getInstance().addBlockAtomically(
                 req.getLogin(),
@@ -22,7 +22,7 @@ public final class Net_AddBlock_new_Handler implements JsonMessageHandler {
                 req.getBlockBytesB64()
         );
 
-        Net_AddBlock_new_Response resp = new Net_AddBlock_new_Response();
+        Net_AddBlock_Response resp = new Net_AddBlock_Response();
         resp.setOp(req.getOp());
         resp.setRequestId(req.getRequestId());
         resp.setLineIndex(r.lineIndex);

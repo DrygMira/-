@@ -28,6 +28,7 @@ public final class WireCodes {
 
         public static final int ALREADY_EXISTS = 409; // пришёл блок < N+1
         public static final int NON_SEQUENTIAL = 412; // пришёл блок > N+1
+        public static final int NOT_FOUND = 422; // Нет такого полбзователя - типо добавляем блок к которому нет пользователя - хотя на деле такой статус наверное никогда не вернётся, тк это раньше проверяется
 
 
         private Status() {}
