@@ -4,13 +4,13 @@ import java.util.Arrays;
 
 /**
  * Агрегатная сущность текущего состояния блокчейна.
- * 1 строка = 1 blockchainId, плюс состояние линий 0..7.
+ * 1 строка = 1 blockchainName, плюс состояние линий 0..7.
  */
 public final class BlockchainStateEntry {
 
-    private long blockchainId;
+    private String blockchainName;
 
-    private String userLogin;
+    private String login;
     private String publicKeyBase64;
 
     private int sizeLimit;
@@ -35,8 +35,8 @@ public final class BlockchainStateEntry {
         this.lastGlobalHash = "";
     }
 
-    public BlockchainStateEntry(long blockchainId,
-                                String userLogin,
+    public BlockchainStateEntry(String blockchainName,
+                                String login,
                                 String publicKeyBase64,
                                 int sizeLimit,
                                 int sizeBytes,
@@ -46,8 +46,8 @@ public final class BlockchainStateEntry {
                                 int[] lastLineNumbers,
                                 String[] lastLineHashes,
                                 long updatedAtMs) {
-        this.blockchainId = blockchainId;
-        this.userLogin = userLogin;
+        this.blockchainName = blockchainName;
+        this.login = login;
         this.publicKeyBase64 = publicKeyBase64;
         this.sizeLimit = sizeLimit;
         this.sizeBytes = sizeBytes;
@@ -69,11 +69,11 @@ public final class BlockchainStateEntry {
         this.updatedAtMs = updatedAtMs;
     }
 
-    public long getBlockchainId() { return blockchainId; }
-    public void setBlockchainId(long blockchainId) { this.blockchainId = blockchainId; }
+    public String getBlockchainName() { return blockchainName; }
+    public void setBlockchainName(String blockchainName) { this.blockchainName = blockchainName; }
 
-    public String getUserLogin() { return userLogin; }
-    public void setUserLogin(String userLogin) { this.userLogin = userLogin; }
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
 
     public String getPublicKeyBase64() { return publicKeyBase64; }
     public void setPublicKeyBase64(String publicKeyBase64) { this.publicKeyBase64 = publicKeyBase64; }

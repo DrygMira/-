@@ -21,19 +21,19 @@ public final class BlockchainStateDAO {
         return instance;
     }
 
-    /** Получить по blockchainId без внешнего соединения. Сам открывает/закрывает. */
-    public BlockchainStateEntry getByBlockchainId(long blockchainId) throws SQLException {
+    /** Получить по blockchainName без внешнего соединения. Сам открывает/закрывает. */
+    public BlockchainStateEntry getByBlockchainName(String blockchainName) throws SQLException {
         try (Connection c = db.getConnection()) {
-            return getByBlockchainId(c, blockchainId);
+            return getByBlockchainName(c, blockchainName);
         }
     }
 
-    /** Получить по blockchainId с внешним соединением. Соединение НЕ закрывает. */
-    public BlockchainStateEntry getByBlockchainId(Connection c, long blockchainId) throws SQLException {
+    /** Получить по blockchainName с внешним соединением. Соединение НЕ закрывает. */
+    public BlockchainStateEntry getByBlockchainName(Connection c, String blockchainName) throws SQLException {
         String sql = """
             SELECT
-                blockchain_id,
-                user_login,
+                blockchainName,
+                login,
                 public_key_base64,
                 size_limit,
                 size_bytes,
@@ -50,11 +50,11 @@ public final class BlockchainStateDAO {
                 line7_last_number, line7_last_hash,
                 updated_at_ms
             FROM blockchain_state
-            WHERE blockchain_id = ?
+            WHERE blockchainName = ?
             """;
 
         try (PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setLong(1, blockchainId);
+            ps.setString(1, blockchainName);
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return null;
                 return mapRow(rs);
@@ -73,8 +73,8 @@ public final class BlockchainStateDAO {
     public void upsert(Connection c, BlockchainStateEntry e) throws SQLException {
         String sql = """
             INSERT INTO blockchain_state (
-                blockchain_id,
-                user_login,
+                blockchainName,
+                login,
                 public_key_base64,
                 size_limit,
                 size_bytes,
@@ -102,9 +102,9 @@ public final class BlockchainStateDAO {
                 ?,?,
                 ?
             )
-            ON CONFLICT(blockchain_id)
+            ON CONFLICT(blockchainName)
             DO UPDATE SET
-                user_login         = excluded.user_login,
+                login              = excluded.login,
                 public_key_base64  = excluded.public_key_base64,
                 size_limit         = excluded.size_limit,
                 size_bytes         = excluded.size_bytes,
@@ -132,8 +132,8 @@ public final class BlockchainStateDAO {
 
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             int i = 1;
-            ps.setLong(i++, e.getBlockchainId());
-            ps.setString(i++, nn(e.getUserLogin()));
+            ps.setString(i++, e.getBlockchainName());
+            ps.setString(i++, nn(e.getLogin()));
             ps.setString(i++, nn(e.getPublicKeyBase64()));
             ps.setInt(i++, e.getSizeLimit());
             ps.setInt(i++, e.getSizeBytes());
@@ -153,8 +153,8 @@ public final class BlockchainStateDAO {
 
     private BlockchainStateEntry mapRow(ResultSet rs) throws SQLException {
         BlockchainStateEntry e = new BlockchainStateEntry();
-        e.setBlockchainId(rs.getLong("blockchain_id"));
-        e.setUserLogin(rs.getString("user_login"));
+        e.setBlockchainName(rs.getString("blockchainName"));
+        e.setLogin(rs.getString("login"));
         e.setPublicKeyBase64(rs.getString("public_key_base64"));
 
         e.setSizeLimit(rs.getInt("size_limit"));

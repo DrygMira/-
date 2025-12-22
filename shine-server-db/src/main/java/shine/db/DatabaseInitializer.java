@@ -152,45 +152,45 @@ public class DatabaseInitializer {
                 ON ip_geo_cache (updated_at_ms);
                 """);
 
-            // 5. blockchain_state (MVP) — оставляю как было (там уже user_login TEXT)
+            // 5. blockchain_state (MVP) — теперь PK blockchainName + поле login
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS blockchain_state (
-                    blockchain_id           INTEGER NOT NULL PRIMARY KEY,
-                    user_login              TEXT    NOT NULL,
-                    public_key_base64       TEXT    NOT NULL,
+                    blockchainName         TEXT    NOT NULL PRIMARY KEY,
+                    login                  TEXT    NOT NULL,
+                    public_key_base64      TEXT    NOT NULL,
 
-                    size_limit              INTEGER NOT NULL,
-                    size_bytes              INTEGER NOT NULL,
+                    size_limit             INTEGER NOT NULL,
+                    size_bytes             INTEGER NOT NULL,
 
-                    file_size_bytes         INTEGER NOT NULL,
+                    file_size_bytes        INTEGER NOT NULL,
 
-                    last_global_number      INTEGER NOT NULL,
-                    last_global_hash        TEXT    NOT NULL,
-                    updated_at_ms           INTEGER NOT NULL,
+                    last_global_number     INTEGER NOT NULL,
+                    last_global_hash       TEXT    NOT NULL,
+                    updated_at_ms          INTEGER NOT NULL,
 
                     -- Линии 0..7 (MVP: максимум 8 линий)
-                    line0_last_number       INTEGER NOT NULL,
-                    line0_last_hash         TEXT    NOT NULL,
-                    line1_last_number       INTEGER NOT NULL,
-                    line1_last_hash         TEXT    NOT NULL,
-                    line2_last_number       INTEGER NOT NULL,
-                    line2_last_hash         TEXT    NOT NULL,
-                    line3_last_number       INTEGER NOT NULL,
-                    line3_last_hash         TEXT    NOT NULL,
-                    line4_last_number       INTEGER NOT NULL,
-                    line4_last_hash         TEXT    NOT NULL,
-                    line5_last_number       INTEGER NOT NULL,
-                    line5_last_hash         TEXT    NOT NULL,
-                    line6_last_number       INTEGER NOT NULL,
-                    line6_last_hash         TEXT    NOT NULL,
-                    line7_last_number       INTEGER NOT NULL,
-                    line7_last_hash         TEXT    NOT NULL
+                    line0_last_number      INTEGER NOT NULL,
+                    line0_last_hash        TEXT    NOT NULL,
+                    line1_last_number      INTEGER NOT NULL,
+                    line1_last_hash        TEXT    NOT NULL,
+                    line2_last_number      INTEGER NOT NULL,
+                    line2_last_hash        TEXT    NOT NULL,
+                    line3_last_number      INTEGER NOT NULL,
+                    line3_last_hash        TEXT    NOT NULL,
+                    line4_last_number      INTEGER NOT NULL,
+                    line4_last_hash        TEXT    NOT NULL,
+                    line5_last_number      INTEGER NOT NULL,
+                    line5_last_hash        TEXT    NOT NULL,
+                    line6_last_number      INTEGER NOT NULL,
+                    line6_last_hash        TEXT    NOT NULL,
+                    line7_last_number      INTEGER NOT NULL,
+                    line7_last_hash        TEXT    NOT NULL
                 );
                 """);
 
             st.executeUpdate("""
-                CREATE INDEX IF NOT EXISTS idx_blockchain_state_user_login
-                ON blockchain_state (user_login);
+                CREATE INDEX IF NOT EXISTS idx_blockchain_state_login
+                ON blockchain_state (login);
                 """);
 
             st.executeUpdate("""
@@ -198,26 +198,26 @@ public class DatabaseInitializer {
                 ON blockchain_state (updated_at_ms);
                 """);
 
-            // 6. blocks — PK удалён полностью
+            // 6. blocks — PK удалён полностью, to* теперь nullable
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS blocks (
                     login                TEXT    NOT NULL,
-                    bchName               TEXT    NOT NULL,
-                    blockGlobalNumber     INTEGER NOT NULL,
-                    blockGlobalPreHashe   TEXT    NOT NULL,
+                    bchName              TEXT    NOT NULL,
+                    blockGlobalNumber    INTEGER NOT NULL,
+                    blockGlobalPreHashe  TEXT    NOT NULL,
 
-                    blockLineIndex        INTEGER NOT NULL,
-                    blockLineNumber       INTEGER NOT NULL,
-                    blockLinePreHashe     TEXT    NOT NULL,
+                    blockLineIndex       INTEGER NOT NULL,
+                    blockLineNumber      INTEGER NOT NULL,
+                    blockLinePreHashe    TEXT    NOT NULL,
 
-                    msgType               INTEGER NOT NULL,
+                    msgType              INTEGER NOT NULL,
 
-                    blockByte             BLOB,
+                    blockByte            BLOB,
 
-                    to_login              TEXT,
-                    toBchName             TEXT    NOT NULL,
-                    toBlockGlobalNumber   INTEGER NOT NULL,
-                    toBlockHashe          TEXT    NOT NULL,
+                    to_login             TEXT,
+                    toBchName            TEXT,
+                    toBlockGlobalNumber  INTEGER,
+                    toBlockHashe         TEXT,
 
                     FOREIGN KEY (login) REFERENCES solana_users(login)
                 );

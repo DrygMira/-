@@ -184,9 +184,14 @@ public final class BlocksDAO {
             if (e.getToLogin() != null) ps.setString(i++, e.getToLogin());
             else ps.setNull(i++, Types.VARCHAR);
 
-            ps.setString(i++, nn(e.getToBchName()));
-            ps.setInt(i++, e.getToBlockGlobalNumber());
-            ps.setString(i++, nn(e.getToBlockHashe()));
+            if (e.getToBchName() != null) ps.setString(i++, e.getToBchName());
+            else ps.setNull(i++, Types.VARCHAR);
+
+            if (e.getToBlockGlobalNumber() != null) ps.setInt(i++, e.getToBlockGlobalNumber());
+            else ps.setNull(i++, Types.INTEGER);
+
+            if (e.getToBlockHashe() != null) ps.setString(i++, e.getToBlockHashe());
+            else ps.setNull(i++, Types.VARCHAR);
 
             ps.setString(i++, e.getLogin());
             ps.setString(i++, e.getBchName());
@@ -273,9 +278,14 @@ public final class BlocksDAO {
         if (e.getToLogin() != null) ps.setString(i++, e.getToLogin());
         else ps.setNull(i++, Types.VARCHAR);
 
-        ps.setString(i++, nn(e.getToBchName()));
-        ps.setInt(i++, e.getToBlockGlobalNumber());
-        ps.setString(i++, nn(e.getToBlockHashe()));
+        if (e.getToBchName() != null) ps.setString(i++, e.getToBchName());
+        else ps.setNull(i++, Types.VARCHAR);
+
+        if (e.getToBlockGlobalNumber() != null) ps.setInt(i++, e.getToBlockGlobalNumber());
+        else ps.setNull(i++, Types.INTEGER);
+
+        if (e.getToBlockHashe() != null) ps.setString(i++, e.getToBlockHashe());
+        else ps.setNull(i++, Types.VARCHAR);
     }
 
     private BlockEntry mapRow(ResultSet rs) throws SQLException {
@@ -295,9 +305,17 @@ public final class BlocksDAO {
         e.setBlockByte(rs.getBytes("blockByte"));
 
         e.setToLogin(rs.getString("to_login"));
-        e.setToBchName(rs.getString("toBchName"));
-        e.setToBlockGlobalNumber(rs.getInt("toBlockGlobalNumber"));
-        e.setToBlockHashe(rs.getString("toBlockHashe"));
+
+        String toBchName = rs.getString("toBchName");
+        if (rs.wasNull()) toBchName = null;
+        e.setToBchName(toBchName);
+
+        Integer toBlockGlobalNumber = (Integer) rs.getObject("toBlockGlobalNumber");
+        e.setToBlockGlobalNumber(toBlockGlobalNumber);
+
+        String toBlockHashe = rs.getString("toBlockHashe");
+        if (rs.wasNull()) toBlockHashe = null;
+        e.setToBlockHashe(toBlockHashe);
 
         return e;
     }

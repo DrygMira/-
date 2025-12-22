@@ -7,7 +7,9 @@ package shine.db.entities;
  *  - login       TEXT NOT NULL
  *  - bchName     TEXT NOT NULL (идёт сразу после login)
  *  - to_login    TEXT nullable
- *  - toBchName   TEXT NOT NULL (идёт сразу после to_login)
+ *  - toBchName   TEXT nullable
+ *  - toBlockGlobalNumber INTEGER nullable
+ *  - toBlockHashe TEXT nullable
  *
  * PRIMARY KEY пока убран вообще.
  */
@@ -28,9 +30,9 @@ public class BlockEntry {
     private byte[] blockByte;             // BLOB
 
     private String toLogin;               // TEXT nullable
-    private String toBchName;             // TEXT
-    private int  toBlockGlobalNumber;     // int32
-    private String toBlockHashe;          // TEXT
+    private String toBchName;             // TEXT nullable
+    private Integer toBlockGlobalNumber;  // INTEGER nullable
+    private String toBlockHashe;          // TEXT nullable
 
     public BlockEntry() {}
 
@@ -45,7 +47,7 @@ public class BlockEntry {
                       byte[] blockByte,
                       String toLogin,
                       String toBchName,
-                      int toBlockGlobalNumber,
+                      Integer toBlockGlobalNumber,
                       String toBlockHashe) {
         this.login = login;
         this.bchName = bchName;
@@ -95,8 +97,8 @@ public class BlockEntry {
     public String getToBchName() { return toBchName; }
     public void setToBchName(String toBchName) { this.toBchName = toBchName; }
 
-    public int getToBlockGlobalNumber() { return toBlockGlobalNumber; }
-    public void setToBlockGlobalNumber(int toBlockGlobalNumber) { this.toBlockGlobalNumber = toBlockGlobalNumber; }
+    public Integer getToBlockGlobalNumber() { return toBlockGlobalNumber; }
+    public void setToBlockGlobalNumber(Integer toBlockGlobalNumber) { this.toBlockGlobalNumber = toBlockGlobalNumber; }
 
     public String getToBlockHashe() { return toBlockHashe; }
     public void setToBlockHashe(String toBlockHashe) { this.toBlockHashe = toBlockHashe; }
