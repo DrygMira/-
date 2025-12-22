@@ -276,7 +276,7 @@ public class Test_AddBlock_new_NoAuth {
                 "blockBytesB64": "%s"
               }
             }
-            """.formatted(requestId, TEST_LOGIN, blockchainId, globalNumber, prevGlobalHashHex, blockBytesB64);
+            """.formatted(requestId, TEST_LOGIN, blockchainName, globalNumber, prevGlobalHashHex, blockBytesB64);
     }
 
     // =================================================================================
