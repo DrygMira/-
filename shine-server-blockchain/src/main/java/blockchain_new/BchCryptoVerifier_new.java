@@ -1,5 +1,7 @@
 package blockchain_new;
 
+import utils.crypto.Ed25519Util;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -39,9 +41,9 @@ public final class BchCryptoVerifier_new {
 
         ByteBuffer bb = ByteBuffer.allocate(
                 DOMAIN.length +
-                1 + loginBytes.length +
-                32 + 32 +
-                rawBytes.length
+                        1 + loginBytes.length +
+                        32 + 32 +
+                        rawBytes.length
         ).order(ByteOrder.BIG_ENDIAN);
 
         bb.put(DOMAIN);
@@ -63,11 +65,23 @@ public final class BchCryptoVerifier_new {
         }
     }
 
-    // TODO: сюда подключается твой Ed25519 util
+    /**
+     * Проверка подписи Ed25519:
+     * verify(hash32, signature64, publicKey32)
+     */
     public static boolean verifySignature(byte[] hash32,
                                           byte[] signature64,
                                           byte[] publicKey32) {
-        // TODO: Ed25519.verify(hash32, signature64, publicKey32)
-        return true;
+        Objects.requireNonNull(hash32, "hash32 == null");
+        Objects.requireNonNull(signature64, "signature64 == null");
+        Objects.requireNonNull(publicKey32, "publicKey32 == null");
+
+        if (hash32.length != 32) throw new IllegalArgumentException("hash32 != 32");
+        if (signature64.length != 64) throw new IllegalArgumentException("signature64 != 64");
+        if (publicKey32.length != 32) throw new IllegalArgumentException("publicKey32 != 32");
+
+        // ⚠️ Подстрой под твой Ed25519Util:
+        // Идея ровно такая: verify(messageHash, signature, publicKey)
+        return Ed25519Util.verify(hash32, signature64, publicKey32);
     }
 }

@@ -25,7 +25,6 @@ public final class Net_AddBlock_new_Handler implements JsonMessageHandler {
         Net_AddBlock_Response resp = new Net_AddBlock_Response();
         resp.setOp(req.getOp());
         resp.setRequestId(req.getRequestId());
-        resp.setLineIndex(r.lineIndex);
 
         if (r.isOk()) {
             resp.setStatus(WireCodes.Status.OK);
@@ -35,13 +34,12 @@ public final class Net_AddBlock_new_Handler implements JsonMessageHandler {
             resp.setReasonCode(r.reasonCode);
         }
 
-        if (r.stateAfter != null) {
-            resp.setServerLastGlobalNumber(r.stateAfter.getLastGlobalNumber());
-            resp.setServerLastGlobalHash(r.stateAfter.getLastGlobalHash());
-
-            int line = (r.lineIndex >= 0 && r.lineIndex <= 7) ? r.lineIndex : 0;
-            resp.setServerLastLineNumber(r.stateAfter.getLastLineNumber(line));
-            resp.setServerLastLineHash(r.stateAfter.getLastLineHash(line));
+        // Даже при ошибке (например bad_global_sequence) можно вернуть “что сервер считает последним”
+        if (r.serverLastGlobalNumber != null) {
+            resp.setServerLastGlobalNumber(r.serverLastGlobalNumber);
+        }
+        if (r.serverLastGlobalHash != null) {
+            resp.setServerLastGlobalHash(r.serverLastGlobalHash);
         }
 
         return resp;
