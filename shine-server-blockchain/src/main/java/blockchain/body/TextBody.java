@@ -7,17 +7,6 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
-/**
- * TextBody_new — type=1, version=1.
- *
- * Полный bodyBytes:
- *   [2] type=1
- *   [2] version=1
- *   [payload...]
- *
- * Payload:
- *   UTF-8 bytes (N>0)
- */
 public final class TextBody implements BodyRecord {
 
     public static final short TYPE = 1;
@@ -25,22 +14,20 @@ public final class TextBody implements BodyRecord {
 
     public final String message;
 
-    /** Десериализация из полного bodyBytes (включая type/version). */
     public TextBody(byte[] bodyBytes) {
         Objects.requireNonNull(bodyBytes, "bodyBytes == null");
-        if (bodyBytes.length < 5) // минимум: 4 байта type/ver + 1 байт текста
-            throw new IllegalArgumentException("TextBody_new too short");
+        if (bodyBytes.length < 5)
+            throw new IllegalArgumentException("TextBody too short");
 
         ByteBuffer bb = ByteBuffer.wrap(bodyBytes).order(ByteOrder.BIG_ENDIAN);
         short type = bb.getShort();
         short ver  = bb.getShort();
         if (type != TYPE || ver != VER)
-            throw new IllegalArgumentException("Not TextBody_new: type=" + type + " ver=" + ver);
+            throw new IllegalArgumentException("Not TextBody: type=" + type + " ver=" + ver);
 
         byte[] payload = new byte[bb.remaining()];
         bb.get(payload);
 
-        // строгая проверка UTF-8
         var decoder = StandardCharsets.UTF_8
                 .newDecoder()
                 .onMalformedInput(CodingErrorAction.REPORT)
@@ -56,7 +43,6 @@ public final class TextBody implements BodyRecord {
             throw new IllegalArgumentException("Text message is blank");
     }
 
-    /** Создание из строки. */
     public TextBody(String message) {
         Objects.requireNonNull(message, "message == null");
         if (message.isBlank())

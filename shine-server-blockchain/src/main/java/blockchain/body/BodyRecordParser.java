@@ -3,12 +3,6 @@ package blockchain.body;
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 
-/**
- * BodyRecordParser_new — общий фабричный парсер body для нового формата.
- *
- * Правило совместимости (строгое):
- * - если (type, version) неизвестны → кидаем IllegalArgumentException
- */
 public final class BodyRecordParser {
 
     private BodyRecordParser() {}
@@ -21,7 +15,6 @@ public final class BodyRecordParser {
         short type = bb.getShort();
         short ver  = bb.getShort();
 
-        // Строгое сопоставление type+version → класс
         int key = ((type & 0xFFFF) << 16) | (ver & 0xFFFF);
 
         return switch (key) {
