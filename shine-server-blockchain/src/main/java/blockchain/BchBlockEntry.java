@@ -6,151 +6,146 @@ import java.util.Arrays;
 import java.util.Objects;
 
 /**
- * ============================================================================
- *  BchBlockEntry — запись блокчейна SHiNE (.bch)
- * ============================================================================
+ * BchBlockEntry_new — универсальный блок нового формата.
  *
  * RAW (BigEndian):
- *   [4]  recordSize        = RAW_HEADER_SIZE + body.length
- *   [4]  recordNumber
- *   [8]  timestamp         UNIX time (секунды)
- *   [M]  bodyBytes         (внутри body первые 4 байта = [type][ver])
+ *   [4]  recordSize        (int)  = RAW + signature + hash
+ *   [4]  recordNumber      (int)  глобальный номер блока
+ *   [8]  timestamp         (long) unix seconds
+ *   [2]  line              (short)
+ *   [4]  lineNumber        (int)
+ *   [N]  bodyBytes         (body, начинается с [type][version])
  *
- * FULL:
- *   RAW + signature64 + hash32
- *
- * ============================================================================
+ * TAIL:
+ *   [64] signature64 (Ed25519)
+ *   [32] hash32      (SHA-256)
  */
-public class BchBlockEntry {
+public final class BchBlockEntry {
 
-    // ---- Константы размеров ----
     public static final int SIGNATURE_LEN = 64;
-    public static final int HASH_LEN      = 32;
+    public static final int HASH_LEN = 32;
 
-    /** RAW заголовок теперь: size + number + timestamp */
-    public static final int RAW_HEADER_SIZE = 4 + 4 + 8; // 16
+    /** Размер фиксированного RAW-заголовка без body */
+    public static final int RAW_HEADER_SIZE = 4 + 4 + 8 + 2 + 4;
 
-    // ---- Поля RAW-заголовка ----
-    public final int   recordSize;        // [4]  M + 16
-    public final int   recordNumber;      // [4]
-    public final long  timestamp;         // [8]
-    public final byte[] body;             // [M]  тело записи (начинается с type/ver)
+    // --- RAW ---
+    public final int recordSize;
+    public final int recordNumber;
+    public final long timestamp;
+    public final short line;
+    public final int lineNumber;
+    public final byte[] bodyBytes;
 
-    // ---- Поля подписи и хэша ----
-    private byte[] signature64;           // [64]
-    private byte[] hash32;                // [32]
+    // --- TAIL ---
+    private final byte[] signature64;
+    private final byte[] hash32;
 
-    // ---- Кэшированные представления ----
-    public final byte[] rawBytes;         // RAW без подписи/хэша
-    private byte[] rawBytesWithSignatureAndHash; // FULL (может быть null)
+    // --- cached ---
+    private final byte[] fullBytes;
 
-    // ========================================================================
-    //                     КОНСТРУКТОР №1 — из полей (RAW only)
-    // ========================================================================
-    public BchBlockEntry(int recordNumber,
-                         long timestamp,
-                         byte[] body) {
-        Objects.requireNonNull(body, "body == null");
+    /* ===================================================================== */
+    /* ====================== Конструктор из байт ========================== */
+    /* ===================================================================== */
 
-        this.recordNumber = recordNumber;
-        this.timestamp    = timestamp;
-        this.body         = Arrays.copyOf(body, body.length);
-        this.recordSize   = body.length + RAW_HEADER_SIZE;
+    public BchBlockEntry(byte[] fullBytes) {
+        Objects.requireNonNull(fullBytes, "fullBytes == null");
+        if (fullBytes.length < RAW_HEADER_SIZE + SIGNATURE_LEN + HASH_LEN)
+            throw new IllegalArgumentException("Block too short");
 
-        ByteBuffer buf = ByteBuffer
-                .allocate(RAW_HEADER_SIZE + body.length)
-                .order(ByteOrder.BIG_ENDIAN);
+        ByteBuffer bb = ByteBuffer.wrap(fullBytes).order(ByteOrder.BIG_ENDIAN);
 
-        buf.putInt(recordSize);
-        buf.putInt(recordNumber);
-        buf.putLong(timestamp);
-        buf.put(body);
+        this.recordSize = bb.getInt();
+        if (recordSize != fullBytes.length)
+            throw new IllegalArgumentException("recordSize mismatch");
 
-        this.rawBytes = buf.array();
-    }
+        this.recordNumber = bb.getInt();
+        this.timestamp = bb.getLong();
+        this.line = bb.getShort();
+        this.lineNumber = bb.getInt();
 
-    // ========================================================================
-    //             КОНСТРУКТОР №2 — из полного массива (RAW + SIG + HASH)
-    // ========================================================================
-    public BchBlockEntry(byte[] rawWithSigAndHash) {
-        Objects.requireNonNull(rawWithSigAndHash, "rawWithSigAndHash == null");
-        if (rawWithSigAndHash.length < RAW_HEADER_SIZE + SIGNATURE_LEN + HASH_LEN)
-            throw new IllegalArgumentException("Слишком мало данных для полного блока");
+        int bodyLen = recordSize - RAW_HEADER_SIZE - SIGNATURE_LEN - HASH_LEN;
+        if (bodyLen <= 0)
+            throw new IllegalArgumentException("Invalid body length");
 
-        ByteBuffer probe = ByteBuffer.wrap(rawWithSigAndHash).order(ByteOrder.BIG_ENDIAN);
-        int rs = probe.getInt(); // recordSize
-        if (rs < RAW_HEADER_SIZE)
-            throw new IllegalArgumentException("Некорректный recordSize: " + rs);
-        if (rawWithSigAndHash.length < rs + SIGNATURE_LEN + HASH_LEN)
-            throw new IllegalArgumentException("Данные короче, чем raw+sig+hash");
-
-        this.rawBytes = Arrays.copyOfRange(rawWithSigAndHash, 0, rs);
-
-        ByteBuffer buf = ByteBuffer.wrap(this.rawBytes).order(ByteOrder.BIG_ENDIAN);
-        this.recordSize   = buf.getInt();
-        this.recordNumber = buf.getInt();
-        this.timestamp    = buf.getLong();
-
-        int bodyLen = this.recordSize - RAW_HEADER_SIZE;
-        if (bodyLen < 0 || bodyLen != this.rawBytes.length - RAW_HEADER_SIZE)
-            throw new IllegalArgumentException("Неконсистентная длина тела блока");
-
-        this.body = new byte[bodyLen];
-        buf.get(this.body);
-
-        // подпись + хэш
-        ByteBuffer tail = ByteBuffer
-                .wrap(rawWithSigAndHash, rs, SIGNATURE_LEN + HASH_LEN)
-                .order(ByteOrder.BIG_ENDIAN);
+        this.bodyBytes = new byte[bodyLen];
+        bb.get(this.bodyBytes);
 
         this.signature64 = new byte[SIGNATURE_LEN];
-        tail.get(this.signature64);
-        this.hash32 = new byte[HASH_LEN];
-        tail.get(this.hash32);
+        bb.get(this.signature64);
 
-        this.rawBytesWithSignatureAndHash =
-                Arrays.copyOf(rawWithSigAndHash, rs + SIGNATURE_LEN + HASH_LEN);
+        this.hash32 = new byte[HASH_LEN];
+        bb.get(this.hash32);
+
+        this.fullBytes = Arrays.copyOf(fullBytes, fullBytes.length);
     }
 
-    // ========================================================================
-    //                        Добавить подпись и хэш
-    // ========================================================================
-    public BchBlockEntry addSignatureAndHash(byte[] signature64, byte[] hash32) {
+    /* ===================================================================== */
+    /* ====================== Конструктор сборки ============================ */
+    /* ===================================================================== */
+
+    public BchBlockEntry(int recordNumber,
+                         long timestamp,
+                         short line,
+                         int lineNumber,
+                         byte[] bodyBytes,
+                         byte[] signature64,
+                         byte[] hash32) {
+
+        Objects.requireNonNull(bodyBytes, "bodyBytes == null");
         Objects.requireNonNull(signature64, "signature64 == null");
         Objects.requireNonNull(hash32, "hash32 == null");
-        if (signature64.length != SIGNATURE_LEN) throw new IllegalArgumentException("signature64 != 64");
-        if (hash32.length != HASH_LEN) throw new IllegalArgumentException("hash32 != 32");
 
+        if (signature64.length != SIGNATURE_LEN)
+            throw new IllegalArgumentException("signature64 != 64");
+        if (hash32.length != HASH_LEN)
+            throw new IllegalArgumentException("hash32 != 32");
+
+        this.recordNumber = recordNumber;
+        this.timestamp = timestamp;
+        this.line = line;
+        this.lineNumber = lineNumber;
+        this.bodyBytes = Arrays.copyOf(bodyBytes, bodyBytes.length);
         this.signature64 = Arrays.copyOf(signature64, SIGNATURE_LEN);
         this.hash32 = Arrays.copyOf(hash32, HASH_LEN);
 
-        byte[] full = new byte[this.rawBytes.length + SIGNATURE_LEN + HASH_LEN];
-        System.arraycopy(this.rawBytes, 0, full, 0, this.rawBytes.length);
-        System.arraycopy(this.signature64, 0, full, this.rawBytes.length, SIGNATURE_LEN);
-        System.arraycopy(this.hash32, 0, full, this.rawBytes.length + SIGNATURE_LEN, HASH_LEN);
-        this.rawBytesWithSignatureAndHash = full;
-        return this;
+        this.recordSize =
+                RAW_HEADER_SIZE +
+                bodyBytes.length +
+                SIGNATURE_LEN +
+                HASH_LEN;
+
+        ByteBuffer bb = ByteBuffer.allocate(recordSize).order(ByteOrder.BIG_ENDIAN);
+        bb.putInt(recordSize);
+        bb.putInt(recordNumber);
+        bb.putLong(timestamp);
+        bb.putShort(line);
+        bb.putInt(lineNumber);
+        bb.put(bodyBytes);
+        bb.put(this.signature64);
+        bb.put(this.hash32);
+
+        this.fullBytes = bb.array();
     }
 
-    // ========================================================================
-    //                              Геттеры
-    // ========================================================================
-    public byte[] getSignature64() { return signature64 == null ? null : Arrays.copyOf(signature64, SIGNATURE_LEN); }
-    public byte[] getHash32()      { return hash32 == null ? null : Arrays.copyOf(hash32, HASH_LEN); }
-    public byte[] getRawBytesWithSignatureAndHash() {
-        return rawBytesWithSignatureAndHash == null ? null : Arrays.copyOf(rawBytesWithSignatureAndHash, rawBytesWithSignatureAndHash.length);
+
+    public byte[] getRawBytes() {
+        int rawLen = recordSize - SIGNATURE_LEN - HASH_LEN;
+        byte[] raw = new byte[rawLen];
+        System.arraycopy(fullBytes, 0, raw, 0, rawLen);
+        return raw;
     }
 
-    // ========================================================================
-    //                              Отладка
-    // ========================================================================
-    @Override
-    public String toString() {
-        return String.format(
-                "BchBlock[num=%d, time=%d, raw=%d, full=%s]",
-                recordNumber, timestamp,
-                rawBytes.length,
-                rawBytesWithSignatureAndHash == null ? "null" : String.valueOf(rawBytesWithSignatureAndHash.length)
-        );
+    /* ===================================================================== */
+
+    public byte[] getSignature64() {
+        return Arrays.copyOf(signature64, SIGNATURE_LEN);
+    }
+
+    public byte[] getHash32() {
+        return Arrays.copyOf(hash32, HASH_LEN);
+    }
+
+    public byte[] toBytes() {
+        return Arrays.copyOf(fullBytes, fullBytes.length);
     }
 }

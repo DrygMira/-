@@ -1,7 +1,7 @@
 package server.logic.ws_protocol.JSON.handlers.blockchain;
 
-import blockchain_new.BchBlockEntry_new;
-import blockchain_new.BchCryptoVerifier_new;
+import blockchain.BchBlockEntry;
+import blockchain.BchCryptoVerifier;
 import server.logic.ws_protocol.WireCodes;
 import shine.db.SqliteDbController;
 import shine.db.dao.BlockchainStateDAO;
@@ -102,9 +102,9 @@ public final class BlockchainStateService_new {
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_base64", 0, "");
         }
 
-        final BchBlockEntry_new block;
+        final BchBlockEntry block;
         try {
-            block = new BchBlockEntry_new(blockBytes);
+            block = new BchBlockEntry(blockBytes);
         } catch (Exception e) {
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_format", 0, "");
         }
@@ -158,7 +158,7 @@ public final class BlockchainStateService_new {
                 byte[] prevLineHash32 = prevGlobalHash32; // пока линии не используем
 
                 // 5) крипто-проверка
-                boolean ok = BchCryptoVerifier_new.verifyAll(
+                boolean ok = BchCryptoVerifier.verifyAll(
                         login,
                         prevGlobalHash32,
                         prevLineHash32,

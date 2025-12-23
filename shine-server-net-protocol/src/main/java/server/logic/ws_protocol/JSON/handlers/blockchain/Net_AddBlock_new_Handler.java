@@ -35,9 +35,7 @@ public final class Net_AddBlock_new_Handler implements JsonMessageHandler {
         }
 
         // Даже при ошибке (например bad_global_sequence) можно вернуть “что сервер считает последним”
-        if (r.serverLastGlobalNumber != null) {
-            resp.setServerLastGlobalNumber(r.serverLastGlobalNumber);
-        }
+        resp.setServerLastGlobalNumber(r.serverLastGlobalNumber);
         if (r.serverLastGlobalHash != null) {
             resp.setServerLastGlobalHash(r.serverLastGlobalHash);
         }

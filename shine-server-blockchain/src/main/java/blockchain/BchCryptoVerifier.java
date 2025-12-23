@@ -1,4 +1,4 @@
-package blockchain_new;
+package blockchain;
 
 import utils.crypto.Ed25519Util;
 
@@ -8,11 +8,11 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.util.Objects;
 
-public final class BchCryptoVerifier_new {
+public final class BchCryptoVerifier {
 
     private static final byte[] DOMAIN = "SHiNE".getBytes(StandardCharsets.US_ASCII);
 
-    private BchCryptoVerifier_new() {}
+    private BchCryptoVerifier() {}
 
     /**
      * preimage =
