@@ -79,4 +79,25 @@ public final class JsonParsers {
         } catch (Exception ignored) {}
         return res;
     }
+
+    public static String errorCode(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+
+            // поддержка старого формата (верхний уровень)
+            if (root.has("errorCode")) return root.get("errorCode").asText();
+            // поддержка нового формата (верхний уровень)
+            if (root.has("code")) return root.get("code").asText();
+
+            JsonNode payload = root.get("payload");
+            if (payload != null) {
+                // поддержка старого формата (внутри payload)
+                if (payload.has("errorCode")) return payload.get("errorCode").asText();
+                // поддержка нового формата (внутри payload)
+                if (payload.has("code")) return payload.get("code").asText();
+            }
+        } catch (Exception ignored) {}
+
+        return null;
+    }
 }

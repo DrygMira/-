@@ -66,6 +66,32 @@ public final class SolanaUsersDAO {
         }
     }
 
+    // -------------------- EXISTS --------------------
+
+    /** Проверка существования по login (case-insensitive) с внешним соединением. Соединение НЕ закрывает. */
+    public boolean existsByLogin(Connection c, String login) throws SQLException {
+        String sql = """
+            SELECT 1
+            FROM solana_users
+            WHERE LOWER(login) = LOWER(?)
+            LIMIT 1
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, login);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    /** Проверка существования по login (case-insensitive) без внешнего соединения. Сам открывает/закрывает. */
+    public boolean existsByLogin(String login) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return existsByLogin(c, login);
+        }
+    }
+
     // -------------------- SELECT --------------------
 
     /** Получить по login (case-insensitive) с внешним соединением. Соединение НЕ закрывает. */

@@ -45,6 +45,18 @@ public class Net_AddUser_Handler implements JsonMessageHandler {
         try {
             SolanaUsersDAO dao = SolanaUsersDAO.getInstance();
 
+            // ✅ Новая логика: если пользователь уже есть — возвращаем понятную ошибку
+            SolanaUserEntry exists = dao.getByLogin(req.getLogin());
+            if (exists != null) {
+                log.info("⚠️ AddUser: user already exists, login={}", req.getLogin());
+                return NetExceptionResponseFactory.error(
+                        req,
+                        409, // CONFLICT
+                        "USER_ALREADY_EXISTS",
+                        "Пользователь с таким login уже существует в системе"
+                );
+            }
+
             SolanaUserEntry user = new SolanaUserEntry(
                     req.getLogin(),
                     req.getBlockchainName(),

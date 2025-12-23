@@ -13,19 +13,30 @@ public class AddUserIT {
         try (WsTestClient client = new WsTestClient(TestConfig.WS_URI)) {
 
             String reqId = "it-adduser-1";
-            String resp = client.request(reqId, JsonBuilders.addUser(reqId), Duration.ofSeconds(5));
+            String reqJson = JsonBuilders.addUser(reqId);
+
+            TestLog.section("AddUserIT: AddUser");
+            TestLog.req("AddUser requestId=" + reqId, reqJson);
+
+            String resp = client.request(reqId, reqJson, Duration.ofSeconds(5));
+            TestLog.resp("AddUser responseId=" + reqId, resp);
 
             int st = JsonParsers.status(resp);
 
-            // ВАЖНО: тут подставь свой реальный код "уже существует", если он не 200.
-            // Я оставляю пример: 409.
             boolean created = (st == 200);
             boolean already = (st == 409);
+
+            if (already) {
+                String code = JsonParsers.errorCode(resp);
+                // если сервер кладет code в payload.code — парсер должен это поддерживать (см. ниже)
+                assertEquals("USER_ALREADY_EXISTS", code,
+                        "Expected errorCode=USER_ALREADY_EXISTS, but got: " + code + ", resp=" + resp);
+            }
 
             if (created) {
                 System.out.println("✅ AddUser: создан/добавлен (status=200)");
             } else if (already) {
-                System.out.println("✅ AddUser: возможно уже есть в базе (status=409)");
+                System.out.println("✅ AddUser: уже есть в системе (status=409, USER_ALREADY_EXISTS)");
             } else {
                 fail("❌ AddUser: неожиданный status=" + st + ", resp=" + resp);
             }
