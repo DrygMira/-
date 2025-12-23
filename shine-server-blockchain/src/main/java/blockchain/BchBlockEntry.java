@@ -9,14 +9,14 @@ import java.util.Objects;
  * BchBlockEntry_new — универсальный блок нового формата.
  *
  * RAW (BigEndian):
- *   [4]  recordSize        (int)  = RAW + signature + hash
+ *   [4]  recordSize        (int)  = размер RAW (включая этот заголовок), БЕЗ signature+hash
  *   [4]  recordNumber      (int)  глобальный номер блока
  *   [8]  timestamp         (long) unix seconds
  *   [2]  line              (short)
  *   [4]  lineNumber        (int)
  *   [N]  bodyBytes         (body, начинается с [type][version])
  *
- * TAIL:
+ * TAIL (НЕ входит в recordSize):
  *   [64] signature64 (Ed25519)
  *   [32] hash32      (SHA-256)
  */
@@ -29,7 +29,7 @@ public final class BchBlockEntry {
     public static final int RAW_HEADER_SIZE = 4 + 4 + 8 + 2 + 4;
 
     // --- RAW ---
-    public final int recordSize;
+    public final int recordSize;     // только RAW, без signature+hash
     public final int recordNumber;
     public final long timestamp;
     public final short line;
@@ -55,7 +55,7 @@ public final class BchBlockEntry {
         ByteBuffer bb = ByteBuffer.wrap(fullBytes).order(ByteOrder.BIG_ENDIAN);
 
         this.recordSize = bb.getInt();
-        if (recordSize != fullBytes.length)
+        if (recordSize + SIGNATURE_LEN + HASH_LEN != fullBytes.length)
             throw new IllegalArgumentException("recordSize mismatch");
 
         this.recordNumber = bb.getInt();
@@ -63,7 +63,7 @@ public final class BchBlockEntry {
         this.line = bb.getShort();
         this.lineNumber = bb.getInt();
 
-        int bodyLen = recordSize - RAW_HEADER_SIZE - SIGNATURE_LEN - HASH_LEN;
+        int bodyLen = recordSize - RAW_HEADER_SIZE;
         if (bodyLen <= 0)
             throw new IllegalArgumentException("Invalid body length");
 
@@ -108,14 +108,13 @@ public final class BchBlockEntry {
         this.signature64 = Arrays.copyOf(signature64, SIGNATURE_LEN);
         this.hash32 = Arrays.copyOf(hash32, HASH_LEN);
 
-        this.recordSize =
-                RAW_HEADER_SIZE +
-                bodyBytes.length +
-                SIGNATURE_LEN +
-                HASH_LEN;
+        // recordSize теперь только RAW (header + body), без signature+hash
+        this.recordSize = RAW_HEADER_SIZE + bodyBytes.length;
 
-        ByteBuffer bb = ByteBuffer.allocate(recordSize).order(ByteOrder.BIG_ENDIAN);
-        bb.putInt(recordSize);
+        int fullLen = this.recordSize + SIGNATURE_LEN + HASH_LEN;
+
+        ByteBuffer bb = ByteBuffer.allocate(fullLen).order(ByteOrder.BIG_ENDIAN);
+        bb.putInt(this.recordSize);
         bb.putInt(recordNumber);
         bb.putLong(timestamp);
         bb.putShort(line);
@@ -127,9 +126,8 @@ public final class BchBlockEntry {
         this.fullBytes = bb.array();
     }
 
-
     public byte[] getRawBytes() {
-        int rawLen = recordSize - SIGNATURE_LEN - HASH_LEN;
+        int rawLen = recordSize; // теперь это ровно RAW, без signature+hash
         byte[] raw = new byte[rawLen];
         System.arraycopy(fullBytes, 0, raw, 0, rawLen);
         return raw;
