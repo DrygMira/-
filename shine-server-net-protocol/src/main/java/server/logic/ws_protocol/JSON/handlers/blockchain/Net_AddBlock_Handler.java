@@ -17,12 +17,10 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
 
         Net_AddBlock_Request req = (Net_AddBlock_Request) baseReq;
 
-        // todo если пришёл запрос на  добавление то надо блочить работу с этим блокчейном по         req.getBlockchainName(),
-        // с помощью класса BlockchainLocks и разлочивать работу только в конце  завершения работы этого хэндлера, что бы не случилось паралельной работы двух потоков с одним и тем же блокчейном!
-        ReentrantLock lock = BlockchainLocks.lockFor(req.getBlockchainName());
+        String bchName = req.getBlockchainName();
+        ReentrantLock lock = BlockchainLocks.lockFor(bchName);
         lock.lock();
         try {
-
             var r = BlockchainStateService.getInstance().addBlockAtomically(
                     req.getBlockchainName(),
                     req.getGlobalNumber(),
@@ -42,7 +40,6 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
                 resp.setReasonCode(r.reasonCode);
             }
 
-            // Даже при ошибке (например bad_global_sequence) можно вернуть “что сервер считает последним”
             resp.setServerLastGlobalNumber(r.serverLastGlobalNumber);
             if (r.serverLastGlobalHash != null) {
                 resp.setServerLastGlobalHash(r.serverLastGlobalHash);

@@ -8,7 +8,6 @@ import shine.db.SqliteDbController;
 import shine.db.dao.BlockchainStateDAO;
 import shine.db.dao.BlocksDAO;
 import shine.db.dao.SolanaUsersDAO;
-import shine.db.entities.BlockEntry;
 import shine.db.entities.BlockchainStateEntry;
 import shine.db.entities.SolanaUserEntry;
 import utils.blockchain.BlockchainNameUtil;
@@ -56,6 +55,7 @@ public final class BlockchainStateService {
     private final BlocksDAO blocksDAO = BlocksDAO.getInstance();
     private final BlockchainStateDAO stateDAO = BlockchainStateDAO.getInstance();
     private final SolanaUsersDAO solanaUsersDAO = SolanaUsersDAO.getInstance();
+    private final BlockchainDbWriter dbWriter = new BlockchainDbWriter(blocksDAO, stateDAO);
 
     private BlockchainStateService() {}
 
@@ -75,17 +75,12 @@ public final class BlockchainStateService {
             String blockBytesB64
     ) {
 
-        // Базовая валидация
         if (blockchainName == null || blockchainName.isBlank())
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "empty_blockchain_name", 0, "");
 
-        // Можно быстро проверить, что login согласован с blockchainName (если хочешь строгость)
-        String loginFromBlockchainName = BlockchainNameUtil.loginFromBlockchainName(blockchainName);
-        if (loginFromBlockchainName == null || loginFromBlockchainName.isBlank())
+        String login = BlockchainNameUtil.loginFromBlockchainName(blockchainName);
+        if (login == null || login.isBlank())
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_blockchain_name", 0, "");
-
-        //  todo действительно давай прото брать логин из имени блокчена и не передавать его отдельно в запросе!
-        String login = loginFromBlockchainName;
 
         byte[] blockBytes;
         try {
@@ -94,19 +89,19 @@ public final class BlockchainStateService {
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_base64", 0, "");
         }
 
-        //  todo ну и ещё тут нужно проверить что не только сам формат блока верный, но и запись в этом блоке верная - тоесть что её можно распарсить!
         final BchBlockEntry block;
         try {
             block = new BchBlockEntry(blockBytes);
-
-            // проверяем, что body распарсится и валидируется
-            BodyRecordParser.parse(block.bodyBytes).check();
-
         } catch (Exception e) {
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_format", 0, "");
         }
 
-        // Проверка, что глобальный номер совпадает
+        try {
+            BodyRecordParser.parse(block.bodyBytes).check();
+        } catch (Exception e) {
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_body", 0, "");
+        }
+
         if (block.recordNumber != globalNumber) {
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "global_number_mismatch", 0, "");
         }
@@ -115,7 +110,6 @@ public final class BlockchainStateService {
             boolean oldAutoCommit = c.getAutoCommit();
             c.setAutoCommit(false);
             try {
-                // 1) пользователь (ключ подписи берём из loginKey)
                 SolanaUserEntry u = solanaUsersDAO.getByLogin(c, login);
                 if (u == null) {
                     c.rollback();
@@ -128,49 +122,39 @@ public final class BlockchainStateService {
                     return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_user_login_key", 0, "");
                 }
 
-                // 2) состояние блокчейна
                 BlockchainStateEntry st = stateDAO.getByBlockchainName(c, blockchainName);
 
-                //todo тут надо учесть тот случай что если это 0 блок тоесть начало блокчейна то логично что ещё нет самого файла блокчейна и по этому нет и BlockchainStateEntry
-                boolean isGenesis = (globalNumber == 0);
+                int serverLastNum;
+                String serverLastHash;
 
                 if (st == null) {
-                    if (!isGenesis) {
+                    if (globalNumber != 0) {
                         c.rollback();
                         return new AddBlockResult(WireCodes.Status.NOT_FOUND, "blockchain_state_not_found", 0, "");
                     }
-                    st = new BlockchainStateEntry();
-                    st.setBlockchainName(blockchainName);
-                    st.setLogin(login);
-                    st.setLastGlobalNumber(-1);
-                    st.setLastGlobalHash("");
-                    st.setLastLineNumber(0, -1);
-                    st.setLastLineHash(0, "");
+                    serverLastNum = -1;
+                    serverLastHash = "";
+                } else {
+                    serverLastNum = st.getLastGlobalNumber();
+                    serverLastHash = nn(st.getLastGlobalHash());
                 }
 
-                // 3) проверяем последовательность глобального номера
-                int expected = st.getLastGlobalNumber() + 1;
+                int expected = serverLastNum + 1;
                 if (globalNumber != expected) {
                     c.rollback();
-                    return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_global_number", st.getLastGlobalNumber(), nn(st.getLastGlobalHash()));
+                    return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_global_number", serverLastNum, serverLastHash);
                 }
 
-                // 4) prev hashes (пока line == global)
                 byte[] prevGlobalHash32 = hexTo32(nn(prevGlobalHashHex));
-                byte[] serverPrevGlobal32 = hexTo32(nn(st.getLastGlobalHash()));
+                byte[] serverPrevGlobal32 = (st == null) ? new byte[32] : hexTo32(nn(st.getLastGlobalHash()));
 
-                // чтобы не принимали «левый prev»:
                 if (!bytesEq(prevGlobalHash32, serverPrevGlobal32)) {
                     c.rollback();
-                    return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_prev_global_hash", st.getLastGlobalNumber(), nn(st.getLastGlobalHash()));
+                    return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_prev_global_hash", serverLastNum, serverLastHash);
                 }
 
-                byte[] prevLineHash32 = prevGlobalHash32; // пока линии не используем
-//todo точно так же как и глобальный проверяем преведущий хэш по линии.  он пока не используется, в том плане что у нас везде линия 0 и приведущий хэш по линии по сути равен приведущему глобальному хэшу, но его тоже надо проверять.
-// по сути можно сказать он используется просто пока везде только одна линия с индексом 0
+                byte[] prevLineHash32 = prevGlobalHash32;
 
-
-                // 5) крипто-проверка
                 boolean ok = BchCryptoVerifier.verifyAll(
                         login,
                         prevGlobalHash32,
@@ -183,28 +167,24 @@ public final class BlockchainStateService {
 
                 if (!ok) {
                     c.rollback();
-                    return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_signature_or_hash", st.getLastGlobalNumber(), nn(st.getLastGlobalHash()));
+                    return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_signature_or_hash", serverLastNum, serverLastHash);
                 }
 
-
-                //todo сам код добавление блока вынести в отдельный класс - тк там надо потом усложнить действие
-                // 6) вставка блока
-                insertBlockRow(c, login, blockchainName, globalNumber, prevGlobalHashHex, blockBytes);
-
-                // 7) обновление состояния — hash теперь = hash32 нового блока (HEX)
                 String newHashHex = toHex(block.getHash32());
-                st.setLastGlobalNumber(globalNumber);
-                st.setLastGlobalHash(newHashHex);
 
-                // линии пока равны глобалу
-                st.setLastLineNumber(0, globalNumber);
-                st.setLastLineHash(0, newHashHex);
-
-                st.setUpdatedAtMs(System.currentTimeMillis());
-                stateDAO.upsert(c, st);
+                dbWriter.appendBlockAndState(
+                        c,
+                        login,
+                        blockchainName,
+                        globalNumber,
+                        nn(prevGlobalHashHex),
+                        blockBytes,
+                        st,
+                        newHashHex
+                );
 
                 c.commit();
-                return new AddBlockResult(WireCodes.Status.OK, null, st.getLastGlobalNumber(), nn(st.getLastGlobalHash()));
+                return new AddBlockResult(WireCodes.Status.OK, null, globalNumber, newHashHex);
 
             } catch (Exception e) {
                 try { c.rollback(); } catch (SQLException ignore) {}
@@ -215,40 +195,6 @@ public final class BlockchainStateService {
         } catch (Exception e) {
             return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "db_error", 0, "");
         }
-    }
-
-    private void insertBlockRow(
-            Connection c,
-            String login,
-            String blockchainName,
-            int globalNumber,
-            String prevGlobalHashHex,
-            byte[] blockBytes
-    ) throws SQLException {
-
-        BlockEntry e = new BlockEntry();
-
-        e.setLogin(login);
-        e.setBchName(blockchainName);
-
-        e.setBlockGlobalNumber(globalNumber);
-        e.setBlockGlobalPreHashe(nn(prevGlobalHashHex));
-
-        // линии пока не используем (равны глобалу)
-        e.setBlockLineIndex(0);
-        e.setBlockLineNumber(globalNumber);
-        e.setBlockLinePreHashe(nn(prevGlobalHashHex));
-
-        e.setMsgType(0);
-        e.setBlockByte(blockBytes);
-
-        // nullable ссылки (как ты просил ранее)
-        e.setToLogin(null);
-        e.setToBchName(null);
-        e.setToBlockGlobalNumber(null);
-        e.setToBlockHashe(null);
-
-        blocksDAO.upsert(c, e);
     }
 
     // -------------------- utils --------------------

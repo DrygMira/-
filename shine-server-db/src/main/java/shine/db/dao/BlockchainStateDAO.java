@@ -99,7 +99,6 @@ public final class BlockchainStateDAO {
                 ?,?,
                 ?,?,
                 ?,?,
-                ?,?,
                 ?,?
             )
             ON CONFLICT(blockchainName)
