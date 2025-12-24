@@ -40,7 +40,7 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
     private final SolanaUsersDAO solanaUsersDAO = SolanaUsersDAO.getInstance();
 
     // Writer отвечает за транзакции/атомарность и консистентность БД
-    private final BlockchainDbWriter dbWriter = new BlockchainDbWriter(blocksDAO, stateDAO);
+    private final BlockchainWriter dbWriter = new BlockchainWriter(blocksDAO, stateDAO);
 
     @Override
     public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) {
