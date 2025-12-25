@@ -10,12 +10,34 @@ import utils.config.AppConfig;
 import java.time.Duration;
 
 /**
- * WsServer — поднимает Jetty WS на /ws (порт 8080).
+ * WsServer — поднимает Jetty WS на /ws.
+ *
+ * ВАЖНО:
+ *  - перед стартом сервера выполняем recovery tmp-блокчейнов.
+ *  - если обнаружена несогласованность, которую сервер сам чинить не может —
+ *    recovery бросает исключение и сервер не стартует.
  */
 public final class WsServer {
+
     private static final Logger log = LoggerFactory.getLogger(WsServer.class);
 
     public static void main(String[] args) throws Exception {
+
+        // ============================================================
+        // 0) Восстановление консистентности blockchain файлов
+        // ============================================================
+        try {
+            BlockchainTmpRecoveryOnStartup.runRecoveryOrThrow();
+        } catch (Exception e) {
+            // Уже должно быть “большое” уведомление через BlockchainAdminNotifier,
+            // но на всякий случай логируем ещё раз.
+            log.error("❌ Сервер НЕ будет запущен: критическая ошибка восстановления blockchain tmp-файлов.", e);
+            throw e; // останавливаем запуск
+        }
+
+        // ============================================================
+        // 1) Настройки порта
+        // ============================================================
         AppConfig config = AppConfig.getInstance();
         int port = 7070;
         try {
@@ -27,7 +49,9 @@ public final class WsServer {
             log.info("Не удалось прочитать параметр server.port, используем порт по умолчанию {}", port);
         }
 
-
+        // ============================================================
+        // 2) Запуск Jetty WS
+        // ============================================================
         Server server = new Server(port);
 
         ServletContextHandler context = new ServletContextHandler();
