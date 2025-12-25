@@ -36,7 +36,6 @@ public final class BlockchainStateDAO {
                 login,
                 public_key_base64,
                 size_limit,
-                size_bytes,
                 file_size_bytes,
                 last_global_number,
                 last_global_hash,
@@ -77,7 +76,6 @@ public final class BlockchainStateDAO {
                 login,
                 public_key_base64,
                 size_limit,
-                size_bytes,
                 file_size_bytes,
                 last_global_number,
                 last_global_hash,
@@ -91,7 +89,8 @@ public final class BlockchainStateDAO {
                 line6_last_number, line6_last_hash,
                 line7_last_number, line7_last_hash
             ) VALUES (
-                ?,?,?,?,?,?,?,?,
+                ?,?,?,?,?,
+                ?,?,?,?,
                 ?,?,
                 ?,?,
                 ?,?,
@@ -106,7 +105,6 @@ public final class BlockchainStateDAO {
                 login              = excluded.login,
                 public_key_base64  = excluded.public_key_base64,
                 size_limit         = excluded.size_limit,
-                size_bytes         = excluded.size_bytes,
                 file_size_bytes    = excluded.file_size_bytes,
                 last_global_number = excluded.last_global_number,
                 last_global_hash   = excluded.last_global_hash,
@@ -135,8 +133,10 @@ public final class BlockchainStateDAO {
             ps.setString(i++, e.getBlockchainName());
             ps.setString(i++, nn(e.getLogin()));
             ps.setString(i++, nn(e.getPublicKeyBase64()));
+
             ps.setLong(i++, e.getSizeLimit());
             ps.setLong(i++, e.getFileSizeBytes());
+
             ps.setInt(i++, e.getLastGlobalNumber());
             ps.setString(i++, nn(e.getLastGlobalHash()));
             ps.setLong(i++, e.getUpdatedAtMs());
@@ -157,7 +157,8 @@ public final class BlockchainStateDAO {
         e.setLogin(rs.getString("login"));
         e.setPublicKeyBase64(rs.getString("public_key_base64"));
 
-        e.setSizeLimit(rs.getInt("size_limit"));
+        // size_limit теперь long, читаем long
+        e.setSizeLimit(rs.getLong("size_limit"));
         e.setFileSizeBytes(rs.getLong("file_size_bytes"));
 
         e.setLastGlobalNumber(rs.getInt("last_global_number"));
