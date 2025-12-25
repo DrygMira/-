@@ -1,6 +1,8 @@
 package server.logic.ws_protocol.JSON.handlers.blockchain;
 
 import blockchain.BchBlockEntry;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import shine.db.SqliteDbController;
 import shine.db.dao.BlockchainStateDAO;
 import shine.db.dao.BlocksDAO;
@@ -27,6 +29,8 @@ import java.sql.SQLException;
  *  - Если сервер упадёт между (2) и (3), останется tmp — твой recovery при старте починит.
  */
 public final class BlockchainWriter {
+
+    private static final Logger log = LoggerFactory.getLogger(BlockchainWriter.class);
 
     private final SqliteDbController db;
     private final BlocksDAO blocksDAO;
@@ -86,12 +90,20 @@ public final class BlockchainWriter {
             try {
                 oldBytes = fs.readBlockchain(blockchainName);
             } catch (Exception e) {
+                // ✅ Добавили подробный лог: это очень важная точка
+                log.error("Ошибка чтения старого файла блокчейна перед записью tmp (login={}, blockchainName={}, oldFileSize={}, blockNumber={})",
+                        login, blockchainName, oldFileSize, block.recordNumber, e);
+
                 // Здесь лучше падать: state говорит, что файл есть, а прочитать нельзя.
                 throw new SQLException("Cannot read old blockchain file for: " + blockchainName, e);
             }
 
             // (на будущее) можно проверять согласованность: oldBytes.length == oldFileSize
             // но ты всё равно будешь делать recovery при старте — оставим как подсказку.
+            if (oldBytes.length != (int) oldFileSize) {
+                log.warn("Несовпадение размера файла блокчейна: state говорит oldFileSize={}, а реально прочитали oldBytes.length={} (login={}, blockchainName={}, blockNumber={})",
+                        oldFileSize, oldBytes.length, login, blockchainName, block.recordNumber);
+            }
 
             tmpBytes = concat(oldBytes, newBlockFullBytes);
         }
@@ -101,6 +113,9 @@ public final class BlockchainWriter {
         try {
             fs.writeBlockchainTmp(blockchainName, tmpBytes);
         } catch (Exception e) {
+            // ✅ Добавили подробный лог: это тоже критично
+            log.error("Ошибка записи tmp файла блокчейна (login={}, blockchainName={}, tmpBytesLen={}, oldFileSize={}, newFileSize={}, blockNumber={})",
+                    login, blockchainName, tmpBytes.length, oldFileSize, newFileSize, block.recordNumber, e);
             throw new SQLException("Cannot write tmp blockchain file for: " + blockchainName, e);
         }
 
@@ -130,6 +145,10 @@ public final class BlockchainWriter {
             } catch (Exception e) {
                 try { c.rollback(); } catch (SQLException ignore) {}
 
+                // ✅ ВАЖНО: логируем причину отката + контекст
+                log.error("Ошибка транзакции БД при добавлении блока (rollback выполнен) (login={}, blockchainName={}, blockNumber={}, prevHash={}, newHash={}, oldFileSize={}, newFileSize={})",
+                        login, blockchainName, block.recordNumber, prevGlobalHashHex, newHashHex, oldFileSize, newFileSize, e);
+
                 if (e instanceof SQLException se) throw se;
                 throw new SQLException("appendBlockAndState failed (db tx)", e);
 
@@ -150,6 +169,10 @@ public final class BlockchainWriter {
                 try {
                     fs.atomicReplaceBlockchainFile(blockchainName);
                 } catch (Exception moveError) {
+                    // ✅ Очень важная ситуация: БД уже committed, а файл не заменился
+                    log.error("БД закоммичена, но атомарная замена файла блокчейна не удалась. tmp оставлен для recovery. (login={}, blockchainName={}, blockNumber={}, newHash={}, tmpBytesLen={})",
+                            login, blockchainName, block.recordNumber, newHashHex, tmpBytes.length, moveError);
+
                     // Здесь ВАЖНО: мы уже не можем откатить БД.
                     // Оставляем tmp и даём наверх ошибку — клиент увидит internal_error,
                     // а ты при старте починишь файловую часть.

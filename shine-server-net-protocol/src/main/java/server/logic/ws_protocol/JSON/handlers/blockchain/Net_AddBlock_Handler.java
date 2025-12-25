@@ -2,6 +2,8 @@ package server.logic.ws_protocol.JSON.handlers.blockchain;
 
 import blockchain.BchBlockEntry;
 import blockchain.BchCryptoVerifier;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.Net_Request;
 import server.logic.ws_protocol.JSON.entyties.Net_Response;
@@ -32,6 +34,8 @@ import java.util.concurrent.locks.ReentrantLock;
  *  7) Возвращаем клиенту serverLastGlobalNumber/serverLastGlobalHash.
  */
 public final class Net_AddBlock_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_AddBlock_Handler.class);
 
     // DAO (перегрузки сами создают/закрывают Connection внутри)
     private final BlocksDAO blocksDAO = BlocksDAO.getInstance();
@@ -98,12 +102,15 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
     ) {
         // 1) Быстрая валидация входных параметров
         if (blockchainName == null || blockchainName.isBlank()) {
+            log.warn("AddBlock: пустой blockchainName (globalNumber={})", globalNumber);
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "empty_blockchain_name", 0, "");
         }
 
         // 2) Из имени блокчейна вытаскиваем login (как ты и хотел — через util)
         String login = BlockchainNameUtil.loginFromBlockchainName(blockchainName);
         if (login == null || login.isBlank()) {
+            log.warn("AddBlock: плохой blockchainName='{}' => login не получился (globalNumber={})",
+                    blockchainName, globalNumber);
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_blockchain_name", 0, "");
         }
 
@@ -112,6 +119,8 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
         try {
             blockBytes = decodeBase64(blockBytesB64);
         } catch (Exception e) {
+            log.warn("AddBlock: некорректный base64 блока (login={}, blockchainName={}, globalNumber={})",
+                    login, blockchainName, globalNumber, e);
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_base64", 0, "");
         }
 
@@ -120,6 +129,8 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
         try {
             block = new BchBlockEntry(blockBytes);
         } catch (Exception e) {
+            log.warn("AddBlock: не удалось распарсить BchBlockEntry (login={}, blockchainName={}, globalNumber={}, bytesLen={})",
+                    login, blockchainName, globalNumber, blockBytes.length, e);
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_format", 0, "");
         }
 
@@ -127,11 +138,15 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
         try {
             block.body.check();
         } catch (Exception e) {
+            log.warn("AddBlock: body.check() не прошёл (login={}, blockchainName={}, globalNumber={}, bodyType={}, bodyVersion={})",
+                    login, blockchainName, globalNumber, safeBodyType(block), safeBodyVersion(block), e);
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_body", 0, "");
         }
 
         // 6) Защита от рассинхрона: recordNumber внутри блока должен совпадать с заявленным globalNumber
         if (block.recordNumber != globalNumber) {
+            log.warn("AddBlock: global_number_mismatch (login={}, blockchainName={}, заявлен={}, внутриБлока={})",
+                    login, blockchainName, globalNumber, block.recordNumber);
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "global_number_mismatch", 0, "");
         }
 
@@ -140,15 +155,22 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
         try {
             u = solanaUsersDAO.getByLogin(login); // перегрузка: сама открывает/закрывает соединение
         } catch (Exception e) {
+            // ✅ ВОТ ТУТ ТВОЯ ОШИБКА РАНЬШЕ ТЕРЯЛАСЬ: теперь будет stacktrace в логе
+            log.error("AddBlock: ошибка БД при чтении пользователя (login={}, blockchainName={}, globalNumber={})",
+                    login, blockchainName, globalNumber, e);
             return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "db_error", 0, "");
         }
 
         if (u == null) {
+            log.warn("AddBlock: user_not_found (login={}, blockchainName={}, globalNumber={})",
+                    login, blockchainName, globalNumber);
             return new AddBlockResult(WireCodes.Status.NOT_FOUND, "user_not_found", 0, "");
         }
 
         byte[] loginKey32 = u.getLoginKeyByte();
         if (loginKey32 == null || loginKey32.length != 32) {
+            log.warn("AddBlock: bad_user_login_key (login={}, blockchainName={}, globalNumber={}, keyLen={})",
+                    login, blockchainName, globalNumber, (loginKey32 == null ? -1 : loginKey32.length));
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_user_login_key", 0, "");
         }
 
@@ -157,6 +179,9 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
         try {
             st = stateDAO.getByBlockchainName(blockchainName); // перегрузка: сама открывает/закрывает соединение
         } catch (Exception e) {
+            // ✅ ВОТ ТУТ ТВОЯ ОШИБКА РАНЬШЕ ТЕРЯЛАСЬ: теперь будет stacktrace в логе
+            log.error("AddBlock: ошибка БД при чтении blockchain_state (login={}, blockchainName={}, globalNumber={})",
+                    login, blockchainName, globalNumber, e);
             return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "db_error", 0, "");
         }
 
@@ -165,6 +190,8 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
         final String serverLastHash;
         if (st == null) {
             if (globalNumber != 0) {
+                log.warn("AddBlock: blockchain_state_not_found, но globalNumber != 0 (login={}, blockchainName={}, globalNumber={})",
+                        login, blockchainName, globalNumber);
                 return new AddBlockResult(WireCodes.Status.NOT_FOUND, "blockchain_state_not_found", 0, "");
             }
             serverLastNum = -1;
@@ -177,6 +204,8 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
         // 10) Проверяем, что клиент присылает следующий блок ровно (last+1)
         int expected = serverLastNum + 1;
         if (globalNumber != expected) {
+            log.warn("AddBlock: bad_global_number (login={}, blockchainName={}, пришёл={}, ожидали={}, serverLastNum={}, serverLastHash={})",
+                    login, blockchainName, globalNumber, expected, serverLastNum, serverLastHash);
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_global_number", serverLastNum, serverLastHash);
         }
 
@@ -187,10 +216,14 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
             prevGlobalHash32 = hexTo32(nn(prevGlobalHashHex));
             serverPrevGlobal32 = (st == null) ? new byte[32] : hexTo32(nn(st.getLastGlobalHash()));
         } catch (Exception e) {
+            log.warn("AddBlock: bad_prev_global_hash_format (login={}, blockchainName={}, globalNumber={}, prevGlobalHashHex='{}')",
+                    login, blockchainName, globalNumber, nn(prevGlobalHashHex), e);
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_prev_global_hash_format", serverLastNum, serverLastHash);
         }
 
         if (!bytesEq(prevGlobalHash32, serverPrevGlobal32)) {
+            log.warn("AddBlock: bad_prev_global_hash (login={}, blockchainName={}, globalNumber={}, clientPrev='{}', serverPrev='{}')",
+                    login, blockchainName, globalNumber, nn(prevGlobalHashHex), nn(st != null ? st.getLastGlobalHash() : ""));
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_prev_global_hash", serverLastNum, serverLastHash);
         }
 
@@ -209,6 +242,8 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
         );
 
         if (!ok) {
+            log.warn("AddBlock: bad_signature_or_hash (login={}, blockchainName={}, globalNumber={})",
+                    login, blockchainName, globalNumber);
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_signature_or_hash", serverLastNum, serverLastHash);
         }
 
@@ -226,10 +261,15 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
                     newHashHex
             );
         } catch (Exception e) {
+            // ✅ ВОТ ЭТО САМОЕ ВАЖНОЕ: если упал writer/БД/файлы — теперь будет stacktrace в логах
+            log.error("AddBlock: внутренняя ошибка при записи блока (login={}, blockchainName={}, globalNumber={}, newHash={})",
+                    login, blockchainName, globalNumber, newHashHex, e);
             return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "internal_error", serverLastNum, serverLastHash);
         }
 
         // 16) Успех
+        log.info("✅ AddBlock ok: login={}, blockchainName={}, globalNumber={}, newHash={}",
+                login, blockchainName, globalNumber, newHashHex);
         return new AddBlockResult(WireCodes.Status.OK, null, globalNumber, newHashHex);
     }
 
@@ -300,5 +340,13 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
             out[i * 2 + 1] = HEX[v & 0x0F];
         }
         return new String(out);
+    }
+
+    private static String safeBodyType(BchBlockEntry b) {
+        try { return String.valueOf(b.body.type()); } catch (Exception e) { return "unknown"; }
+    }
+
+    private static String safeBodyVersion(BchBlockEntry b) {
+        try { return String.valueOf(b.body.version()); } catch (Exception e) { return "unknown"; }
     }
 }
