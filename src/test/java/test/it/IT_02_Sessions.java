@@ -12,7 +12,7 @@ import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class SessionsIT {
+public class IT_02_Sessions {
 
     // ANSI цвета
     private static final String R = "\u001B[0m";

@@ -10,7 +10,7 @@ import java.time.Duration;
 
 import static org.junit.jupiter.api.Assertions.*;
 
-public class AddUserIT {
+public class IT_01_AddUser {
 
     // ANSI цвета (работает в большинстве терминалов)
     private static final String R = "\u001B[0m";
