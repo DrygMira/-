@@ -19,8 +19,16 @@ public final class NetExceptionResponseFactory {
                                                String message) {
 
         Net_Exception_Response resp = new Net_Exception_Response();
-        resp.setOp(req.getOp());
-        resp.setRequestId(req.getRequestId());
+
+        // ✅ НЕ падаем, даже если req == null
+        if (req != null) {
+            resp.setOp(req.getOp());
+            resp.setRequestId(req.getRequestId());
+        } else {
+            resp.setOp(null);
+            resp.setRequestId(null);
+        }
+
         resp.setStatus(status);
         resp.setCode(code);
         resp.setMessage(message);
