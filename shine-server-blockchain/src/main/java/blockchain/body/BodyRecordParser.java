@@ -18,8 +18,9 @@ public final class BodyRecordParser {
         int key = ((type & 0xFFFF) << 16) | (ver & 0xFFFF);
 
         return switch (key) {
-            case 0x0000_0001 -> new HeaderBody(bodyBytes); // type=0, ver=1
-            case 0x0001_0001 -> new TextBody(bodyBytes);   // type=1, ver=1
+            case 0x0000_0001 -> new HeaderBody(bodyBytes);    // type=0, ver=1
+            case 0x0001_0001 -> new TextBody(bodyBytes);      // type=1, ver=1
+            case 0x0002_0001 -> new ReactionBody(bodyBytes);  // type=2, ver=1
             default -> throw new IllegalArgumentException(String.format(
                     "Unknown body type/version: type=%d ver=%d (key=0x%08X)",
                     (type & 0xFFFF), (ver & 0xFFFF), key

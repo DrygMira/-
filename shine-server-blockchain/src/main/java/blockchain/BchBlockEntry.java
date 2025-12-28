@@ -79,6 +79,15 @@ public final class BchBlockEntry {
         // ✅ Сразу парсим BodyRecord (и если неизвестный type/version — тут же упадём)
         this.body = BodyRecordParser.parse(this.bodyBytes);
 
+        // ✅ УРОВЕНЬ B: проверка ожидаемой линии по типу body
+        short expectedLine = this.body.expectedLineIndex();
+        if (this.lineIndex != expectedLine) {
+            throw new IllegalArgumentException(
+                    "Body is in wrong lineIndex: expected=" + expectedLine + " actual=" + this.lineIndex +
+                    " (type=" + this.body.type() + " ver=" + this.body.version() + ")"
+            );
+        }
+
         this.signature64 = new byte[SIGNATURE_LEN];
         bb.get(this.signature64);
 
@@ -118,6 +127,15 @@ public final class BchBlockEntry {
         // ✅ И при сборке — тоже сразу парсим body (чтобы объект был цельным)
         this.body = BodyRecordParser.parse(this.bodyBytes);
 
+        // ✅ УРОВЕНЬ B: проверка ожидаемой линии по типу body
+        short expectedLine = this.body.expectedLineIndex();
+        if (this.lineIndex != expectedLine) {
+            throw new IllegalArgumentException(
+                    "Body is in wrong lineIndex: expected=" + expectedLine + " actual=" + this.lineIndex +
+                    " (type=" + this.body.type() + " ver=" + this.body.version() + ")"
+            );
+        }
+
         this.signature64 = Arrays.copyOf(signature64, SIGNATURE_LEN);
         this.hash32 = Arrays.copyOf(hash32, HASH_LEN);
 
@@ -140,13 +158,11 @@ public final class BchBlockEntry {
     }
 
     public byte[] getRawBytes() {
-        int rawLen = recordSize; // теперь это ровно RAW, без signature+hash
+        int rawLen = recordSize; // ровно RAW, без signature+hash
         byte[] raw = new byte[rawLen];
         System.arraycopy(fullBytes, 0, raw, 0, rawLen);
         return raw;
     }
-
-    /* ===================================================================== */
 
     public byte[] getSignature64() {
         return Arrays.copyOf(signature64, SIGNATURE_LEN);

@@ -7,6 +7,17 @@ import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.util.Objects;
 
+/**
+ * TextBody — type=1, ver=1.
+ *
+ * bodyBytes:
+ *   [2] type=1
+ *   [2] ver=1
+ *   [N] utf8 message
+ *
+ * ЛИНИЯ:
+ *  - строго lineIndex=1
+ */
 public final class TextBody implements BodyRecord {
 
     public static final short TYPE = 1;
@@ -52,6 +63,11 @@ public final class TextBody implements BodyRecord {
 
     @Override public short type() { return TYPE; }
     @Override public short version() { return VER; }
+
+    @Override
+    public short expectedLineIndex() {
+        return 1;
+    }
 
     @Override
     public TextBody check() {

@@ -14,6 +14,9 @@ import java.util.Objects;
  *   [8] tag ASCII "SHiNE001"
  *   [1] loginLength=N (uint8)
  *   [N] login UTF-8
+ *
+ * ЛИНИЯ:
+ *  - строго lineIndex=0 (genesis)
  */
 public final class HeaderBody implements BodyRecord {
 
@@ -63,6 +66,11 @@ public final class HeaderBody implements BodyRecord {
 
     @Override public short type() { return TYPE; }
     @Override public short version() { return VER; }
+
+    @Override
+    public short expectedLineIndex() {
+        return 0;
+    }
 
     @Override
     public HeaderBody check() {
