@@ -1,6 +1,5 @@
 package test.it;
 
-import test.it.utils.ItRunContext;
 import test.it.utils.TestLog;
 
 import java.io.IOException;
@@ -8,14 +7,11 @@ import java.nio.file.*;
 import java.util.Comparator;
 
 /**
- * Ручной запуск всех IT тестов БЕЗ JUnit / Suite, но С ПРЕДВАРИТЕЛЬНОЙ очисткой data/.
  *
  * Делает:
  *  1) чистит папку data/
- *  2) запускает все тесты по очереди (через IT_RunAllMain.runAll())
- *  3) возвращает код = число упавших тестов
  */
-public class IT_RunAllCleanMain {
+public class IT_CleanAllDate {
 
     private static final String DATA_DIR = "data";
 
@@ -32,8 +28,6 @@ public class IT_RunAllCleanMain {
             System.exit(1);
         }
 
-//        int failed = IT_RunAllMain.runAll();
-//        System.exit(failed);
     }
 
     private static void cleanupDataDir(String dirName) throws IOException {
