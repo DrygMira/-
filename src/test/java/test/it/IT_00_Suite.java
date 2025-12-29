@@ -2,7 +2,6 @@ package test.it;
 
 import org.junit.platform.suite.api.SelectClasses;
 import org.junit.platform.suite.api.Suite;
-import test.it.ws.*;
 
 /**
  * Сьют, который запускает IT тесты строго в заданном порядке.

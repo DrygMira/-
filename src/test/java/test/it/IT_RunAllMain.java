@@ -2,7 +2,6 @@ package test.it;
 
 import test.it.utils.ItRunContext;
 import test.it.utils.TestLog;
-import test.it.ws.IT_03_AddBlock_NoAuth;
 
 /**
  * Ручной запуск всех IT тестов БЕЗ JUnit / Suite.

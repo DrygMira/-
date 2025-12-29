@@ -1,4 +1,4 @@
-package test.it.ws;
+package test.it.addBlockUtils;
 
 import blockchain.BchBlockEntry;
 import blockchain.BchCryptoVerifier;

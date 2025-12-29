@@ -1,4 +1,4 @@
-package test.it.ws;
+package test.it.addBlockUtils;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;

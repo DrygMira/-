@@ -100,3 +100,22 @@ shadowJar {
         )
     }
 }
+
+
+tasks.named('test') {
+    enabled = false
+}
+
+tasks.register('itCleanRun', JavaExec) {
+    group = "build"
+    description = "Clean data → kill 7070 → start WS → run all IT tests"
+
+    classpath = sourceSets.test.runtimeClasspath
+    mainClass = "test.it.IT_RunAllCleanStartWsMain"
+
+    // пробрасываем системные флаги (по желанию)
+    systemProperty "it.debug", System.getProperty("it.debug", "true")
+    systemProperty "it.login", System.getProperty("it.login", "anya24")
+
+    dependsOn testClasses
+}
