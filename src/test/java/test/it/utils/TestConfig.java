@@ -34,9 +34,6 @@ public final class TestConfig {
     // Любая строка клиента (для логов)
     public static final String TEST_CLIENT_INFO = "it-tests";
 
-    // Папка данных (которую будет чистить IT_RunAllMain)
-    public static final String DATA_DIR = "data";
-
     /** login для прогона (по умолчанию DEFAULT_LOGIN, можно переопределить -Dit.login=...). */
     public static String LOGIN() {
         return System.getProperty("it.login", DEFAULT_LOGIN);
