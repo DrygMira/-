@@ -2,10 +2,7 @@ package test.it;
 
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
-import test.it.utils.JsonBuilders;
-import test.it.utils.JsonParsers;
-import test.it.utils.TestConfig;
-import test.it.utils.WsTestClient;
+import test.it.utils.*;
 
 import java.time.Duration;
 import java.util.List;
@@ -39,10 +36,6 @@ public class IT_02_Sessions {
         System.out.println(G + "✅ " + s + R);
     }
 
-    private static void warn(String s) {
-        System.out.println(Y + "⚠️ " + s + R);
-    }
-
     private static void boom(String s) {
         System.out.println(RED + "****************************************************************" + R);
         System.out.println(RED + "❌ " + s + R);
@@ -72,8 +65,16 @@ public class IT_02_Sessions {
         }
     }
 
+    public static void main(String[] args) {
+        ItRunContext.initIfNeeded();
+        ensureUserExists();
+        new IT_02_Sessions().sessions_flow_shouldCreateListRefreshCloseCorrectly();
+    }
+
     @BeforeAll
     static void ensureUserExists() {
+        ItRunContext.initIfNeeded();
+
         title("SessionsIT (BeforeAll): предусловие — пользователь должен существовать (AddUser: 200 или 409)");
 
         try (WsTestClient client = new WsTestClient(TestConfig.WS_URI)) {
@@ -86,7 +87,6 @@ public class IT_02_Sessions {
 
             int st = JsonParsers.status(resp);
 
-            // 200 или "уже есть" — ок
             if (st == 200) {
                 ok("BeforeAll: пользователь создан/добавлен (status=200)");
             } else if (st == 409) {
@@ -106,7 +106,11 @@ public class IT_02_Sessions {
 
     @Test
     void sessions_flow_shouldCreateListRefreshCloseCorrectly() {
+        ItRunContext.initIfNeeded();
+
         title("SessionsIT: полный сценарий сессий (создать 2, проверить list, refresh/close, проверить очистку)");
+        System.out.println("Используем:");
+        System.out.println("  login = " + TestConfig.LOGIN());
         System.out.println("Ожидание сценария:");
         System.out.println("  1) Создаём SESSION1 через AuthChallenge + CreateAuthSession");
         System.out.println("  2) Создаём SESSION2 и делаем ListSessions внутри неё (AUTH_STATUS_USER) → должны быть SESSION1 и SESSION2");
@@ -120,7 +124,6 @@ public class IT_02_Sessions {
         String s2Id, s2Pwd;
 
         try {
-            // --- create session1 ---
             stepTitle("ШАГ 1: создать SESSION1 (AuthChallenge -> CreateAuthSession)");
             try (WsTestClient c = new WsTestClient(TestConfig.WS_URI)) {
                 String r1 = "it-auth-1";
@@ -150,7 +153,6 @@ public class IT_02_Sessions {
                 ok("SESSION1 получена: sessionId=" + s1Id + ", sessionPwd=[получен]");
             }
 
-            // --- create session2 and list inside (AUTH_STATUS_USER) ---
             stepTitle("ШАГ 2: создать SESSION2 и ListSessions внутри неё (AUTH_STATUS_USER) → должны быть SESSION1+SESSION2");
             try (WsTestClient c = new WsTestClient(TestConfig.WS_URI)) {
                 String r1 = "it-auth-2";
@@ -178,7 +180,6 @@ public class IT_02_Sessions {
                 assertNotNull(s2Pwd);
                 ok("SESSION2 получена: sessionId=" + s2Id + ", sessionPwd=[получен]");
 
-                // list inside session2 (у тебя это AUTH_STATUS_USER без подписи)
                 String r3 = "it-list-in-session2";
                 String req3 = JsonBuilders.listSessions(r3, 0L, "");
                 send("ListSessions(in SESSION2)", req3);
@@ -194,7 +195,6 @@ public class IT_02_Sessions {
                 ok("Проверка OK: список содержит SESSION1 и SESSION2");
             }
 
-            // --- list in AUTH_IN_PROGRESS (подпись по nonce) ---
             stepTitle("ШАГ 3: ListSessions в AUTH_IN_PROGRESS (nonce+signature) → должны быть SESSION1+SESSION2");
             try (WsTestClient c = new WsTestClient(TestConfig.WS_URI)) {
                 String r1 = "it-auth-list";
@@ -228,7 +228,6 @@ public class IT_02_Sessions {
                 ok("Проверка OK: AUTH_IN_PROGRESS список содержит SESSION1 и SESSION2");
             }
 
-            // --- refresh session1 and close session2 (from session1) ---
             stepTitle("ШАГ 4: Refresh SESSION1 (входим) и Close SESSION2 (из SESSION1)");
             try (WsTestClient c = new WsTestClient(TestConfig.WS_URI)) {
 
@@ -252,7 +251,6 @@ public class IT_02_Sessions {
                 ok("SESSION2 закрыта");
             }
 
-            // --- verify only session1 remains (AUTH_IN_PROGRESS list) ---
             stepTitle("ШАГ 5: ListSessions(AUTH_IN_PROGRESS) → должна остаться только SESSION1");
             try (WsTestClient c = new WsTestClient(TestConfig.WS_URI)) {
                 String r1 = "it-auth-list2";
@@ -284,7 +282,6 @@ public class IT_02_Sessions {
                 ok("Проверка OK: осталась только SESSION1");
             }
 
-            // --- close session1 in AUTH_IN_PROGRESS ---
             stepTitle("ШАГ 6: Close SESSION1 в AUTH_IN_PROGRESS");
             try (WsTestClient c = new WsTestClient(TestConfig.WS_URI)) {
                 String r1 = "it-auth-close-s1";
@@ -310,7 +307,6 @@ public class IT_02_Sessions {
                 ok("SESSION1 закрыта");
             }
 
-            // --- verify empty list ---
             stepTitle("ШАГ 7: ListSessions(AUTH_IN_PROGRESS) → ожидаем пустой список");
             try (WsTestClient c = new WsTestClient(TestConfig.WS_URI)) {
                 String r1 = "it-auth-list-empty";

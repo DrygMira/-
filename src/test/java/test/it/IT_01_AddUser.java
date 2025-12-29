@@ -1,10 +1,7 @@
 package test.it;
 
 import org.junit.jupiter.api.Test;
-import test.it.utils.JsonBuilders;
-import test.it.utils.JsonParsers;
-import test.it.utils.TestConfig;
-import test.it.utils.WsTestClient;
+import test.it.utils.*;
 
 import java.time.Duration;
 
@@ -12,7 +9,7 @@ import static org.junit.jupiter.api.Assertions.*;
 
 public class IT_01_AddUser {
 
-    // ANSI цвета (работает в большинстве терминалов)
+    // ANSI цвета
     private static final String R = "\u001B[0m";
     private static final String G = "\u001B[32m";
     private static final String Y = "\u001B[33m";
@@ -33,23 +30,29 @@ public class IT_01_AddUser {
         System.out.println(G + "✅ " + s + R);
     }
 
-    private static void warn(String s) {
-        System.out.println(Y + "⚠️ " + s + R);
-    }
-
     private static void boom(String s) {
         System.out.println(RED + "****************************************************************" + R);
         System.out.println(RED + "❌ " + s + R);
         System.out.println(RED + "****************************************************************" + R);
     }
 
+    public static void main(String[] args) {
+        // чтобы тест можно было запускать вообще без JUnit
+        ItRunContext.initIfNeeded();
+        new IT_01_AddUser().addUser_shouldReturn200_orAlreadyExists();
+    }
+
     @Test
     void addUser_shouldReturn200_orAlreadyExists() {
+        ItRunContext.initIfNeeded();
+
         title("AddUserIT: проверка добавления пользователя (200 OK) или 'уже существует' (409 USER_ALREADY_EXISTS)");
+        System.out.println("Используем:");
+        System.out.println("  login          = " + TestConfig.LOGIN());
+        System.out.println("  blockchainName = " + TestConfig.BCH_NAME());
         System.out.println("Ожидание:");
-        System.out.println("  - сервер принимает AddUser и возвращает:");
-        System.out.println("      * 200 (пользователь создан/добавлен)");
-        System.out.println("      * либо 409 + payload.code=USER_ALREADY_EXISTS (если уже есть)\n");
+        System.out.println("  - 200 (создан)");
+        System.out.println("  - или 409 + payload.code=USER_ALREADY_EXISTS\n");
 
         try (WsTestClient client = new WsTestClient(TestConfig.WS_URI)) {
 
@@ -73,12 +76,9 @@ public class IT_01_AddUser {
             boolean already = (st == 409);
 
             if (already) {
-                // ВАЖНО: payload.code (не errorCode)
                 String code = JsonParsers.errorCode(resp);
-
                 System.out.println("ℹ️ server_code=" + code);
 
-                // Если 409 пришёл, требуем понятный code
                 try {
                     assertEquals("USER_ALREADY_EXISTS", code,
                             "Expected code=USER_ALREADY_EXISTS, but got: " + code + ", resp=" + resp);
@@ -99,7 +99,6 @@ public class IT_01_AddUser {
             }
 
         } catch (AssertionError | RuntimeException e) {
-            // чтобы “красным” было видно даже если Gradle/IDE печатает стек отдельно
             boom("ТЕСТ УПАЛ: AddUserIT. Причина: " + e.getMessage());
             throw e;
         }

@@ -23,8 +23,8 @@ public final class JsonBuilders {
                 }
                 """.formatted(
                 requestId,
-                TestConfig.TEST_LOGIN(),
-                TestConfig.TEST_BCH_NAME(),
+                TestConfig.LOGIN(),
+                TestConfig.BCH_NAME(),
                 TestConfig.LOGIN_PUBKEY_B64(),
                 TestConfig.DEVICE_PUBKEY_B64(),
                 TestConfig.TEST_BCH_LIMIT
@@ -38,7 +38,7 @@ public final class JsonBuilders {
                   "requestId": "%s",
                   "payload": { "login": "%s" }
                 }
-                """.formatted(requestId, TestConfig.TEST_LOGIN());
+                """.formatted(requestId, TestConfig.LOGIN());
     }
 
     public static String createAuthSession(String requestId, String authNonce, String storagePwd) {

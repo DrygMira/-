@@ -5,8 +5,15 @@ import java.util.Base64;
 /**
  * Конфиг для IT тестов.
  *
+ * ЛОГИКА:
+ *  - login по умолчанию берём из DEFAULT_LOGIN
+ *  - можно переопределить запуском:
+ *      -Dit.login=anya24
+ *      -Dit.bchSuffix=001
+ *
  * ВАЖНО:
- *  - login/blockchainName/ключи берём из ItRunContext (случайные на каждый прогон).
+ *  - ключи/имя блокчейна вычисляются из login (через ItRunContext).
+ *  - тесты можно запускать по отдельности, ItRunContext сам инициализируется при первом обращении.
  */
 public final class TestConfig {
 
@@ -15,8 +22,11 @@ public final class TestConfig {
     // Твой WS URI
     public static final String WS_URI = "ws://localhost:7070/ws";
 
+    // ======= По умолчанию (можно поменять под свою среду) =======
+    public static final String DEFAULT_LOGIN = "anya24";
+
     // Суффикс блокчейна по твоему правилу: login + 3 цифры
-    public static final String BCH_SUFFIX_3 = "001";
+    public static final String DEFAULT_BCH_SUFFIX_3 = "001";
 
     // Лимит блокчейна для AddUser
     public static final long TEST_BCH_LIMIT = 50_000_000L;
@@ -24,13 +34,25 @@ public final class TestConfig {
     // Любая строка клиента (для логов)
     public static final String TEST_CLIENT_INFO = "it-tests";
 
-    public static String TEST_LOGIN() {
-        return ItRunContext.login();
+    // Папка данных (которую будет чистить IT_RunAllMain)
+    public static final String DATA_DIR = "data";
+
+    /** login для прогона (по умолчанию DEFAULT_LOGIN, можно переопределить -Dit.login=...). */
+    public static String LOGIN() {
+        return System.getProperty("it.login", DEFAULT_LOGIN);
     }
 
-    public static String TEST_BCH_NAME() {
-        return ItRunContext.blockchainName();
+    /** Суффикс для имени блокчейна (по умолчанию DEFAULT_BCH_SUFFIX_3, можно переопределить -Dit.bchSuffix=...). */
+    public static String BCH_SUFFIX_3() {
+        return System.getProperty("it.bchSuffix", DEFAULT_BCH_SUFFIX_3);
     }
+
+    /** blockchainName по правилу: login + суффикс. */
+    public static String BCH_NAME() {
+        return LOGIN() + BCH_SUFFIX_3();
+    }
+
+    // ======= Ключи (берём из ItRunContext) =======
 
     public static byte[] LOGIN_PRIV_KEY() {
         return ItRunContext.loginPrivKey();
