@@ -7,6 +7,7 @@ import blockchain.body.ReactionBody;
 import blockchain.body.TextBody;
 import test.it.utils.JsonParsers;
 import test.it.utils.TestConfig;
+import test.it.utils.TestLog;
 import utils.crypto.Ed25519Util;
 
 import java.nio.ByteBuffer;
@@ -31,6 +32,13 @@ import static org.junit.jupiter.api.Assertions.*;
  *
  * Важно:
  *  - Этот класс НЕ занимается красивыми логами. Только логика + проверки.
+ *
+ * ДОБАВЛЕНО:
+ *  - При it.debug=true печатаем:
+ *      * какой блок шлём (global/line/lineNum)
+ *      * локальный hash
+ *      * serverLastGlobalHash
+ *      * итоги проверок
  */
 public final class AddBlockFlow {
 
@@ -72,7 +80,7 @@ public final class AddBlockFlow {
         );
 
         String req = buildAddBlockJson(TestConfig.BCH_NAME(), 0, ZERO64, base64(header.fullBytes));
-        String resp = WsJsonOneShot.request(req, timeout);
+        String resp = WsJsonOneShot.request("AddBlock#HEADER", req, timeout);
 
         assert200("AddBlock(HEADER)", resp);
 
@@ -81,6 +89,12 @@ public final class AddBlockFlow {
         assertEquals(64, serverLastGlobalHash0.trim().length(), "HEADER: serverLastGlobalHash must be 64 hex chars");
 
         String localHash0 = bytesToHex64(header.hash32);
+
+        if (TestConfig.DEBUG()) {
+            TestLog.ok("HEADER: локальный hash=" + localHash0);
+            TestLog.ok("HEADER: serverLastGlobalHash=" + serverLastGlobalHash0);
+        }
+
         assertEquals(localHash0, serverLastGlobalHash0, "HEADER: serverLastGlobalHash должен совпасть с локальным hash");
 
         // обновляем локальное состояние
@@ -90,6 +104,10 @@ public final class AddBlockFlow {
 
         lineLastNumber[LINE_HEADER] = 0;
         lineLastHashHex[LINE_HEADER] = localHash0;
+
+        if (TestConfig.DEBUG()) {
+            TestLog.ok("HEADER: проверка OK, состояние обновлено (globalLastNumber=0)");
+        }
     }
 
     /** Шлём следующий TEXT блок в line=1. */
@@ -110,7 +128,8 @@ public final class AddBlockFlow {
         );
 
         String req = buildAddBlockJson(TestConfig.BCH_NAME(), nextGlobal, globalLastHashHex, base64(b.fullBytes));
-        String resp = WsJsonOneShot.request(req, timeout);
+        String op = "AddBlock#TEXT (global=" + nextGlobal + ", line=1, lineNum=" + lineNum + ")";
+        String resp = WsJsonOneShot.request(op, req, timeout);
 
         assert200("AddBlock(TEXT)", resp);
 
@@ -119,6 +138,12 @@ public final class AddBlockFlow {
         assertEquals(64, serverLastGlobalHash.trim().length(), "TEXT: serverLastGlobalHash must be 64 hex chars");
 
         String localHash = bytesToHex64(b.hash32);
+
+        if (TestConfig.DEBUG()) {
+            TestLog.ok("TEXT: локальный hash=" + localHash);
+            TestLog.ok("TEXT: serverLastGlobalHash=" + serverLastGlobalHash);
+        }
+
         assertEquals(localHash, serverLastGlobalHash, "TEXT: serverLastGlobalHash должен совпасть с локальным hash");
 
         // обновляем состояние
@@ -126,6 +151,10 @@ public final class AddBlockFlow {
         globalLastHashHex = localHash;
         lineLastNumber[LINE_TEXT] = lineNum;
         lineLastHashHex[LINE_TEXT] = localHash;
+
+        if (TestConfig.DEBUG()) {
+            TestLog.ok("TEXT: проверка OK, состояние обновлено (globalLastNumber=" + globalLastNumber + ")");
+        }
 
         return b;
     }
@@ -157,7 +186,8 @@ public final class AddBlockFlow {
         );
 
         String req = buildAddBlockJson(TestConfig.BCH_NAME(), nextGlobal, globalLastHashHex, base64(b.fullBytes));
-        String resp = WsJsonOneShot.request(req, timeout);
+        String op = "AddBlock#REACT (global=" + nextGlobal + ", line=2, lineNum=" + lineNum + ")";
+        String resp = WsJsonOneShot.request(op, req, timeout);
 
         assert200("AddBlock(REACT)", resp);
 
@@ -166,6 +196,12 @@ public final class AddBlockFlow {
         assertEquals(64, serverLastGlobalHash.trim().length(), "REACT: serverLastGlobalHash must be 64 hex chars");
 
         String localHash = bytesToHex64(b.hash32);
+
+        if (TestConfig.DEBUG()) {
+            TestLog.ok("REACT: локальный hash=" + localHash);
+            TestLog.ok("REACT: serverLastGlobalHash=" + serverLastGlobalHash);
+        }
+
         assertEquals(localHash, serverLastGlobalHash, "REACT: serverLastGlobalHash должен совпасть с локальным hash");
 
         // обновляем состояние
@@ -173,6 +209,10 @@ public final class AddBlockFlow {
         globalLastHashHex = localHash;
         lineLastNumber[LINE_REACT] = lineNum;
         lineLastHashHex[LINE_REACT] = localHash;
+
+        if (TestConfig.DEBUG()) {
+            TestLog.ok("REACT: проверка OK, состояние обновлено (globalLastNumber=" + globalLastNumber + ")");
+        }
 
         return b;
     }
@@ -355,6 +395,9 @@ public final class AddBlockFlow {
     private static void assert200(String op, String resp) {
         int st = JsonParsers.status(resp);
         assertEquals(200, st, op + ": expected status=200, but got=" + st + ", resp=" + resp);
+        if (TestConfig.DEBUG()) {
+            TestLog.ok(op + ": status=200");
+        }
     }
 
     private static String extractPayloadString(String json, String field) {

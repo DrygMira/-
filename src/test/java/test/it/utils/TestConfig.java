@@ -14,6 +14,10 @@ import java.util.Base64;
  * ВАЖНО:
  *  - ключи/имя блокчейна вычисляются из login (через ItRunContext).
  *  - тесты можно запускать по отдельности, ItRunContext сам инициализируется при первом обращении.
+ *
+ * ЛОГИ:
+ *  - детальный вывод включается флагом:
+ *      -Dit.debug=true
  */
 public final class TestConfig {
 
@@ -33,6 +37,11 @@ public final class TestConfig {
 
     // Любая строка клиента (для логов)
     public static final String TEST_CLIENT_INFO = "it-tests";
+
+    /** DEBUG-режим: подробные логи отправки/получения/ожиданий (по умолчанию false). */
+    public static boolean DEBUG() {
+        return Boolean.parseBoolean(System.getProperty("it.debug", "true"));
+    }
 
     /** login для прогона (по умолчанию DEFAULT_LOGIN, можно переопределить -Dit.login=...). */
     public static String LOGIN() {

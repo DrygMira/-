@@ -3,22 +3,22 @@ package test.it.utils;
 /**
  * TestLog — единое место для:
  *  - ANSI цветов
- *  - стандартных красивых сообщений (title/ok/boom/line/step/send/recv)
+ *  - стандартных красивых сообщений (title/line/step/send/recv)
  *
- * Включение/выключение подробных логов:
- *   -Dit.verbose=false
- *
- * По умолчанию verbose=true (удобно для ручного прогона).
+ * РЕЖИМЫ:
+ *  - it.debug=false (по умолчанию):
+ *      печатаем ТОЛЬКО итог: PASS/FAIL по каждому тесту
+ *  - it.debug=true:
+ *      печатаем всё: ожидания, отправка/ответ (JSON), промежуточные проверки
  */
 public final class TestLog {
     private TestLog() {}
 
     // ============================
-    // VERBOSE
+    // DEBUG SWITCH
     // ============================
 
-    // включается так: ./gradlew test -Dit.verbose=true
-    public static final boolean VERBOSE = Boolean.parseBoolean(System.getProperty("it.verbose", "true"));
+    public static final boolean DEBUG = TestConfig.DEBUG();
 
     // ============================
     // ANSI COLORS
@@ -34,54 +34,55 @@ public final class TestLog {
     // BASIC OUTPUT
     // ============================
 
+    /** Дебаг-инфо (печатается только при DEBUG=true). */
     public static void info(String s) {
-        if (VERBOSE) System.out.println(s);
+        if (DEBUG) System.out.println(s);
     }
 
     public static void line() {
-        if (!VERBOSE) return;
+        if (!DEBUG) return;
         System.out.println(C + "------------------------------------------------------------" + R);
     }
 
-    /** Короткое заглавие. */
+    /** Короткое заглавие (только DEBUG). */
     public static void title(String s) {
-        if (!VERBOSE) return;
+        if (!DEBUG) return;
         System.out.println(C + "\n============================================================" + R);
         System.out.println(C + s + R);
         System.out.println(C + "============================================================\n" + R);
     }
 
-    /**
-     * Длинное заглавие (под многострочный текст).
-     *
-     * Пример:
-     * TestLog.titleBlock("""
-     *   ТЕСТ: ...
-     *   Ожидание: ...
-     * """);
-     */
+    /** Длинное заглавие (только DEBUG). */
     public static void titleBlock(String multiLineText) {
-        if (!VERBOSE) return;
+        if (!DEBUG) return;
         System.out.println(C + "\n============================================================" + R);
         System.out.println(C + multiLineText + R);
         System.out.println(C + "============================================================\n" + R);
     }
 
+    /** Заголовок шага (только DEBUG). */
     public static void stepTitle(String s) {
-        if (!VERBOSE) return;
+        if (!DEBUG) return;
         System.out.println(C + "\n-------------------- " + s + " --------------------" + R);
     }
 
+    /** Промежуточное ОК (только DEBUG). */
     public static void ok(String s) {
-        if (!VERBOSE) return;
+        if (!DEBUG) return;
+        System.out.println(G + "✅ " + s + R);
+    }
+
+    /** Итоговый PASS (печатается ВСЕГДА). */
+    public static void pass(String s) {
         System.out.println(G + "✅ " + s + R);
     }
 
     public static void warn(String s) {
-        if (!VERBOSE) return;
+        if (!DEBUG) return;
         System.out.println(Y + "⚠️ " + s + R);
     }
 
+    /** FAIL (печатается ВСЕГДА). */
     public static void boom(String s) {
         System.out.println(RED + "****************************************************************" + R);
         System.out.println(RED + "❌ " + s + R);
@@ -89,14 +90,14 @@ public final class TestLog {
     }
 
     public static void send(String op, String json) {
-        if (!VERBOSE) return;
+        if (!DEBUG) return;
         System.out.println("📤 [" + op + "] Request JSON:");
         System.out.println(json);
         line();
     }
 
     public static void recv(String op, String json) {
-        if (!VERBOSE) return;
+        if (!DEBUG) return;
         System.out.println("📥 [" + op + "] Response JSON:");
         System.out.println(json);
         line();
@@ -117,11 +118,11 @@ public final class TestLog {
     public static int runOne(String testName, Runnable body) {
         try {
             body.run();
-            ok(testName + ": OK");
+            pass(testName + ": OK");
             return 0;
         } catch (Throwable t) {
             boom(testName + ": FAIL. Причина: " + t.getMessage());
-            if (VERBOSE) t.printStackTrace(System.out);
+            if (DEBUG) t.printStackTrace(System.out);
             return 1;
         }
     }

@@ -4,6 +4,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import test.it.utils.TestConfig;
+import test.it.utils.TestLog;
 import test.it.utils.WsTestClient;
 
 import java.time.Duration;
@@ -32,15 +33,33 @@ public final class WsJsonOneShot {
     private WsJsonOneShot() {}
 
     /**
-     * Отправить JSON строкой и вернуть JSON ответ строкой.
-     * Соединение создаётся и закрывается ВНУТРИ.
+     * Старый API (без имени операции) — оставляем для совместимости.
      */
     public static String request(String json, Duration timeout) {
+        return request("WS", json, timeout);
+    }
+
+    /**
+     * Отправить JSON строкой и вернуть JSON ответ строкой.
+     * Соединение создаётся и закрывается ВНУТРИ.
+     *
+     * Если включён it.debug=true — печатаем request/response.
+     */
+    public static String request(String op, String json, Duration timeout) {
         String patched = forceRequestId(json, FIXED_REQUEST_ID);
 
+        if (TestConfig.DEBUG()) {
+            TestLog.send(op, prettyOrRaw(patched));
+        }
+
         try (WsTestClient client = new WsTestClient(TestConfig.WS_URI)) {
-            // requestId нам нужен только как ключ ожидания в WsTestClient
-            return client.request(FIXED_REQUEST_ID, patched, timeout);
+            String resp = client.request(FIXED_REQUEST_ID, patched, timeout);
+
+            if (TestConfig.DEBUG()) {
+                TestLog.recv(op, prettyOrRaw(resp));
+            }
+
+            return resp;
         }
     }
 
@@ -55,6 +74,15 @@ public final class WsJsonOneShot {
 
             obj.put("requestId", requestId);
             return MAPPER.writeValueAsString(obj);
+        } catch (Exception ignore) {
+            return json;
+        }
+    }
+
+    private static String prettyOrRaw(String json) {
+        try {
+            JsonNode n = MAPPER.readTree(json);
+            return MAPPER.writerWithDefaultPrettyPrinter().writeValueAsString(n);
         } catch (Exception ignore) {
             return json;
         }

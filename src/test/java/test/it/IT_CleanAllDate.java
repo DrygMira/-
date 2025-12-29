@@ -1,5 +1,6 @@
 package test.it;
 
+import test.it.utils.TestConfig;
 import test.it.utils.TestLog;
 
 import java.io.IOException;
@@ -24,7 +25,7 @@ public class IT_CleanAllDate {
             cleanupDataDir(DATA_DIR);
         } catch (Throwable t) {
             TestLog.boom("Не смог очистить data/. Причина: " + t.getMessage());
-            if (TestLog.VERBOSE) t.printStackTrace(System.out);
+            if (TestConfig.DEBUG()) t.printStackTrace(System.out);
             System.exit(1);
         }
 

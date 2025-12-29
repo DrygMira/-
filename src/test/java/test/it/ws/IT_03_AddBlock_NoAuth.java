@@ -4,8 +4,8 @@ import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Test;
 import test.it.utils.ItRunContext;
 import test.it.utils.JsonBuilders;
-import test.it.utils.JsonParsers;
 import test.it.utils.TestConfig;
+import test.it.utils.TestLog;
 
 import java.time.Duration;
 
@@ -38,6 +38,7 @@ public class IT_03_AddBlock_NoAuth {
         ItRunContext.initIfNeeded();
         ensureUserExists();
         new IT_03_AddBlock_NoAuth().addBlock_shouldAppendHeaderThenTextThenReaction();
+        TestLog.pass("IT_03_AddBlock_NoAuth: OK");
     }
 
     @BeforeAll
@@ -47,23 +48,11 @@ public class IT_03_AddBlock_NoAuth {
         // ВАЖНО:
         //  - requestId тут не важен, но пусть будет.
         //  - отдельная авторизация не нужна, но пользователь должен существовать.
-        String reqJson = JsonBuilders.addUser("it03-adduser-beforeall");
-/**
-        String resp = WsJsonOneShot.request(reqJson, Duration.ofSeconds(5));
-        int st = JsonParsers.status(resp);
-
-        if (st == 200) {
-            // ok
-            return;
-        }
-        if (st == 409) {
-            String code = JsonParsers.errorCode(resp);
-            if ("USER_ALREADY_EXISTS".equals(code)) return;
-            fail("User precondition failed. status=409, code=" + code + ", resp=" + resp);
-        }
-
-        fail("User precondition failed. status=" + st + ", resp=" + resp);
- */
+        //
+        // Если хочешь реально включить предусловие здесь — просто раскомментируй блок,
+        // но сейчас у тебя он закомментирован.
+//        String reqJson = JsonBuilders.addUser("it03-adduser-beforeall");
+            // ничего не делаем — предусловие временно отключено
     }
 
     @Test
@@ -73,24 +62,41 @@ public class IT_03_AddBlock_NoAuth {
         // таймаут на каждый one-shot запрос
         Duration t = Duration.ofSeconds(8);
 
+        if (TestConfig.DEBUG()) {
+            TestLog.titleBlock("""
+                    IT_03_AddBlock_NoAuth: сценарий AddBlock без отдельной авторизации
+                    Используем:
+                      login          = %s
+                      blockchainName  = %s
+                    debug=true: покажем отправку/ответ (JSON) и проверки hash
+                    """.formatted(TestConfig.LOGIN(), TestConfig.BCH_NAME()));
+        }
+
         // 1) состояние + сборка + отправка
         AddBlockFlow flow = new AddBlockFlow();
 
         // =========================================================
         // ШАГ 0: ВАЖНО — первым всегда HEADER global=0
         // =========================================================
+        if (TestConfig.DEBUG()) TestLog.stepTitle("ШАГ 0: AddBlock HEADER (global=0, line=0, lineNum=0)");
         flow.sendHeader0(t);
 
         // =========================================================
         // ШАГ 1..3: TEXT (line=1)
         // =========================================================
+        if (TestConfig.DEBUG()) TestLog.stepTitle("ШАГ 1: AddBlock TEXT#1 (line=1)");
         AddBlockFlow.BuiltBlock text1 = flow.sendNextText("Hello #1 from IT_03 test", t);
+
+        if (TestConfig.DEBUG()) TestLog.stepTitle("ШАГ 2: AddBlock TEXT#2 (line=1)");
         flow.sendNextText("Hello #2 from IT_03 test", t);
+
+        if (TestConfig.DEBUG()) TestLog.stepTitle("ШАГ 3: AddBlock TEXT#3 (line=1)");
         flow.sendNextText("Hello #3 from IT_03 test", t);
 
         // =========================================================
         // ШАГ 4: REACT#1 (line=2) -> на TEXT#1 (global=1, hash=text1)
         // =========================================================
+        if (TestConfig.DEBUG()) TestLog.stepTitle("ШАГ 4: AddBlock REACT#1 (line=2) -> на TEXT#1 (global=1)");
         flow.sendNextReaction(
                 1,                       // reactionCode (пример: 1 = like)
                 TestConfig.BCH_NAME(),    // toBlockchainName
@@ -105,5 +111,8 @@ public class IT_03_AddBlock_NoAuth {
         assertEquals(1, flow.lineLastNumber(AddBlockFlow.LINE_REACT), "В line=2 должен быть 1 блок");
         assertNotNull(flow.globalLastHashHex());
         assertEquals(64, flow.globalLastHashHex().length());
+
+        // Итог (в обычном режиме это будет единственная строка)
+        TestLog.pass("IT_03_AddBlock_NoAuth: OK");
     }
 }
