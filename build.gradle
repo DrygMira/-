@@ -52,22 +52,6 @@ dependencies {
 
 
 
-//
-//
-//    // -------------------- ТЕСТЫ --------------------
-//    testImplementation platform('org.junit:junit-bom:5.11.4')
-//    testImplementation 'org.junit.jupiter:junit-jupiter'
-//    testImplementation 'org.junit.platform:junit-platform-suite-api'
-//    testRuntimeOnly  'org.junit.platform:junit-platform-suite-engine'
-//
-//    testRuntimeOnly "org.junit.platform:junit-platform-launcher"
-//
-//    // Suite (чтобы запустить классы в заданном порядке)
-//    testImplementation "org.junit.platform:junit-platform-suite:1.10.2"
-//
-//    // Нужно, чтобы TestExecutionListener (RussianSummaryListener) корректно подхватывался
-//    testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
-//}
 
     // -------------------- ТЕСТЫ (JUnit 5) --------------------
     // Один BOM на всё семейство JUnit (Jupiter + Platform модули)

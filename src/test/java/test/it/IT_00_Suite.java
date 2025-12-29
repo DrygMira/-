@@ -9,9 +9,6 @@ import test.it.ws.*;
  *
  * Запуск:
  *   ./gradlew test --tests test.it.IT_00_Suite
- *
- * Важно:
- *  - ItRunContext.initOnce() будет вызван слушателем RussianSummaryListener ДО тестов.
  */
 @Suite
 @SelectClasses({

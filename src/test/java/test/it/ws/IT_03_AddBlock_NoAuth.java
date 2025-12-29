@@ -35,10 +35,13 @@ import static org.junit.jupiter.api.Assertions.*;
 public class IT_03_AddBlock_NoAuth {
 
     public static void main(String[] args) {
-        ItRunContext.initIfNeeded();
-        ensureUserExists();
-        new IT_03_AddBlock_NoAuth().addBlock_shouldAppendHeaderThenTextThenReaction();
-        TestLog.pass("IT_03_AddBlock_NoAuth: OK");
+        int failed = run();
+        System.exit(failed);
+    }
+
+    /** Запуск одного теста (standalone). Возвращает 0 если ок, 1 если упал. */
+    public static int run() {
+        return TestLog.runOne("IT_03_AddBlock_NoAuth", IT_03_AddBlock_NoAuth::testBody);
     }
 
     @BeforeAll
@@ -57,10 +60,16 @@ public class IT_03_AddBlock_NoAuth {
 
     @Test
     void addBlock_shouldAppendHeaderThenTextThenReaction() {
+        // JUnit-режим: как обычно
+        testBody();
+    }
+
+    private static void testBody() {
         ItRunContext.initIfNeeded();
+        ensureUserExists();
 
         // таймаут на каждый one-shot запрос
-        Duration t = Duration.ofSeconds(8);
+        Duration t = Duration.ofSeconds(1);
 
         if (TestConfig.DEBUG()) {
             TestLog.titleBlock("""

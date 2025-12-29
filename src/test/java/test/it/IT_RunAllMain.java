@@ -56,7 +56,7 @@ public class IT_RunAllMain {
         // 3) IT_03_AddBlock_NoAuth (оставлен как есть, поэтому запускаем через его main)
         //    Если он упадёт — он кинет исключение. Мы перехватим и посчитаем как fail=1.
         TestLog.stepTitle("RUN: IT_03_AddBlock_NoAuth (main)");
-        int f3 = 0;   //TestLog.runOne("IT_03_AddBlock_NoAuth", () -> IT_03_AddBlock_NoAuth.main(new String[0]));
+        int f3 = IT_03_AddBlock_NoAuth.run();
         failed += f3; passed += (f3 == 0 ? 1 : 0);
 
         // Итоговый короткий отчёт
