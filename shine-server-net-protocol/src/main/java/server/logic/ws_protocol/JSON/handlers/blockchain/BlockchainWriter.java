@@ -40,6 +40,9 @@ public final class BlockchainWriter {
 
     private static final Logger log = LoggerFactory.getLogger(BlockchainWriter.class);
 
+    private static final String ZERO_HASH_64 =
+            "0000000000000000000000000000000000000000000000000000000000000000";
+
     private final SqliteDbController db;
     private final BlocksDAO blocksDAO;
     private final BlockchainStateDAO stateDAO;
@@ -294,7 +297,13 @@ public final class BlockchainWriter {
 
         e.setBlockLineIndex(block.lineIndex);
         e.setBlockLineNumber(block.lineNumber);
-        e.setBlockLinePreHashe(prevLineHashHex);
+
+        // ✅ минимальная правка: для genesis сохраняем именно "64 нуля", а не пустую строку/NULL
+        String linePre = prevLineHashHex;
+        if (block.recordNumber == 0 && (linePre == null || linePre.isBlank())) {
+            linePre = ZERO_HASH_64;
+        }
+        e.setBlockLinePreHashe(linePre);
 
         e.setMsgType(block.body.type());
 
