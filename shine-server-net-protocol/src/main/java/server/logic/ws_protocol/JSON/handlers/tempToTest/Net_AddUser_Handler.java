@@ -98,6 +98,7 @@ public class Net_AddUser_Handler implements JsonMessageHandler {
                 // 4. Создаём INITIAL blockchain_state
                 BlockchainStateEntry st = new BlockchainStateEntry();
                 st.setBlockchainName(req.getBlockchainName());
+                st.setLogin(req.getLogin());
                 st.setBlockchainKey(req.getLoginKey()); // Base64(32)
                 st.setLastGlobalNumber(-1);
                 st.setLastGlobalHash("");
@@ -106,7 +107,6 @@ public class Net_AddUser_Handler implements JsonMessageHandler {
                 st.setUpdatedAtMs(System.currentTimeMillis());
 
                 stateDAO.upsert(c, st);
-
 
                 c.commit();
             }
