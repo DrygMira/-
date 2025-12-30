@@ -15,7 +15,7 @@ import java.sql.Statement;
  * DatabaseInitializer — создание новой SQLite-БД по схеме SHiNE.
  *
  * Таблицы:
- *  - solana_users     (login TEXT PK, bchName TEXT)
+ *  - solana_users     (login TEXT PK, deviceKey TEXT, solanaKey TEXT)
  *  - active_sessions  (login TEXT FK)
  *  - users_params     (login TEXT FK, UNIQUE(login,param))
  *  - ip_geo_cache
@@ -81,7 +81,8 @@ public class DatabaseInitializer {
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS solana_users (
                     login       TEXT    NOT NULL PRIMARY KEY,
-                    deviceKey   TEXT    NOT NULL
+                    deviceKey   TEXT    NOT NULL,
+                    solanaKey   TEXT    NULLABLE
                 );
                 """);
 

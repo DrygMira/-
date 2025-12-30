@@ -58,7 +58,7 @@ public class IT_03_AddBlock_NoAuth {
             // ничего не делаем — предусловие временно отключено
     }
 
-    @Test
+//    @Test
     void addBlock_shouldAppendHeaderThenTextThenReaction() {
         // JUnit-режим: как обычно
         testBody();

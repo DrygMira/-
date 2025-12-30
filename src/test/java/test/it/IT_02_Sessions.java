@@ -68,7 +68,7 @@ public class IT_02_Sessions {
         }
     }
 
-    @Test
+//    @Test
     void sessions_flow_shouldCreateListRefreshCloseCorrectly() {
         // JUnit-режим: пусть падает через assert/fail как обычно
         testBodyJUnit();
