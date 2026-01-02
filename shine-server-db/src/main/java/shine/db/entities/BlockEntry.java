@@ -11,6 +11,9 @@ package shine.db.entities;
  *  - toBlockGlobalNumber INTEGER nullable
  *  - toBlockHashe TEXT nullable
  *
+ * ДОБАВЛЕНО:
+ *  - msgSubType  INTEGER (uint16 по смыслу, храним как int)
+ *
  * PRIMARY KEY пока убран вообще.
  */
 public class BlockEntry {
@@ -26,6 +29,7 @@ public class BlockEntry {
     private String blockLinePreHashe;     // TEXT
 
     private int  msgType;                 // int16 (храним как int)
+    private int  msgSubType;              // int16 (храним как int)
 
     private byte[] blockByte;             // BLOB
 
@@ -44,6 +48,7 @@ public class BlockEntry {
                       int blockLineNumber,
                       String blockLinePreHashe,
                       int msgType,
+                      int msgSubType,
                       byte[] blockByte,
                       String toLogin,
                       String toBchName,
@@ -57,6 +62,7 @@ public class BlockEntry {
         this.blockLineNumber = blockLineNumber;
         this.blockLinePreHashe = blockLinePreHashe;
         this.msgType = msgType;
+        this.msgSubType = msgSubType;
         this.blockByte = blockByte;
         this.toLogin = toLogin;
         this.toBchName = toBchName;
@@ -87,6 +93,9 @@ public class BlockEntry {
 
     public int getMsgType() { return msgType; }
     public void setMsgType(int msgType) { this.msgType = msgType; }
+
+    public int getMsgSubType() { return msgSubType; }
+    public void setMsgSubType(int msgSubType) { this.msgSubType = msgSubType; }
 
     public byte[] getBlockByte() { return blockByte; }
     public void setBlockByte(byte[] blockByte) { this.blockByte = blockByte; }

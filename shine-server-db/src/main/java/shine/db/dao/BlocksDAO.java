@@ -45,12 +45,13 @@ public final class BlocksDAO {
                 blockLineNumber,
                 blockLinePreHashe,
                 msgType,
+                msgSubType,
                 blockByte,
                 to_login,
                 toBchName,
                 toBlockGlobalNumber,
                 toBlockHashe
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
         try (PreparedStatement ps = c.prepareStatement(sql)) {
@@ -104,6 +105,7 @@ public final class BlocksDAO {
                 blockLineNumber,
                 blockLinePreHashe,
                 msgType,
+                msgSubType,
                 blockByte,
                 to_login,
                 toBchName,
@@ -157,6 +159,7 @@ public final class BlocksDAO {
                 blockGlobalPreHashe   = ?,
                 blockLinePreHashe     = ?,
                 msgType               = ?,
+                msgSubType            = ?,
                 blockByte             = ?,
                 to_login              = ?,
                 toBchName             = ?,
@@ -176,6 +179,7 @@ public final class BlocksDAO {
             ps.setString(i++, nn(e.getBlockGlobalPreHashe()));
             ps.setString(i++, nn(e.getBlockLinePreHashe()));
             ps.setInt(i++, e.getMsgType());
+            ps.setInt(i++, e.getMsgSubType());
 
             byte[] bytes = e.getBlockByte();
             if (bytes != null) ps.setBytes(i++, bytes);
@@ -270,6 +274,7 @@ public final class BlocksDAO {
         ps.setString(i++, nn(e.getBlockLinePreHashe()));
 
         ps.setInt(i++, e.getMsgType());
+        ps.setInt(i++, e.getMsgSubType());
 
         byte[] bytes = e.getBlockByte();
         if (bytes != null) ps.setBytes(i++, bytes);
@@ -301,6 +306,7 @@ public final class BlocksDAO {
         e.setBlockLinePreHashe(rs.getString("blockLinePreHashe"));
 
         e.setMsgType(rs.getInt("msgType"));
+        e.setMsgSubType(rs.getInt("msgSubType"));
 
         e.setBlockByte(rs.getBytes("blockByte"));
 

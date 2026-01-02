@@ -42,7 +42,7 @@ import java.util.Objects;
  * ЛИНИЯ:
  *  - строго lineIndex=3 (выделяем отдельную линию под связи).
  */
-public final class ConnectionBody implements BodyRecord {
+public final class ConnectionBody implements BodyRecord, BodyHasTarget {
 
     public static final short TYPE = 3;
     public static final short VER  = 1;
@@ -279,4 +279,16 @@ public final class ConnectionBody implements BodyRecord {
         }
         return new String(out);
     }
+
+    /* ===================================================================== */
+    /* ====================== BodyToFields контракт ========================= */
+    /* ===================================================================== */
+
+    @Override public String toLogin() { return toLogin; }
+
+    @Override public String toBchName() { return toBlockchainName; }
+
+    @Override public Integer toBlockGlobalNumber() { return toBlockGlobalNumber; }
+
+    @Override public String toBlockHashe() { return toBlockHashHex(); }
 }

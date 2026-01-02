@@ -41,7 +41,7 @@ import java.util.Objects;
  *  - для subType=NEW запрещены поля ссылки и запрещены любые “лишние байты” в хвосте
  *  - для subType=REPLY/REPOST хвост обязан быть ровно по формату и без мусора в конце
  */
-public final class TextBody implements BodyRecord {
+public final class TextBody implements BodyRecord, BodyHasTarget {
 
     public static final short TYPE = 1;
     public static final short VER  = 1;
@@ -219,8 +219,6 @@ public final class TextBody implements BodyRecord {
 
     @Override public short type() { return TYPE; }
     @Override public short version() { return VER; }
-
-    /** ✅ ВАЖНО: теперь BodyRecord требует subType() */
     @Override public short subType() { return subType; }
 
     @Override
@@ -362,5 +360,27 @@ public final class TextBody implements BodyRecord {
             out[i * 2 + 1] = HEX[v & 0x0F];
         }
         return new String(out);
+    }
+
+    /* ===================================================================== */
+    /* ====================== BodyToFields контракт ========================= */
+    /* ===================================================================== */
+
+    /** В формате TextBody login цели не хранится => null. */
+    @Override public String toLogin() { return null; }
+
+    @Override
+    public String toBchName() {
+        return (subType == SUB_REPLY || subType == SUB_REPOST) ? toBlockchainName : null;
+    }
+
+    @Override
+    public Integer toBlockGlobalNumber() {
+        return (subType == SUB_REPLY || subType == SUB_REPOST) ? toBlockGlobalNumber : null;
+    }
+
+    @Override
+    public String toBlockHashe() {
+        return (subType == SUB_REPLY || subType == SUB_REPOST) ? toBlockHashHex() : null;
     }
 }

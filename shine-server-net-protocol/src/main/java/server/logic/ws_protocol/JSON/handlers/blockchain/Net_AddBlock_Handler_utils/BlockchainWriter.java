@@ -1,7 +1,7 @@
 package server.logic.ws_protocol.JSON.handlers.blockchain.Net_AddBlock_Handler_utils;
 
 import blockchain.BchBlockEntry;
-import blockchain.body.ReactionBody;
+import blockchain.body.BodyHasTarget;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import shine.db.SqliteDbController;
@@ -281,7 +281,12 @@ public final class BlockchainWriter {
      * Важно:
      *  - blockLinePreHashe = prevLineHashHex (а НЕ prevGlobalHashHex)
      *  - msgType = body.type()
-     *  - Для ReactionBody заполняем toBchName/toBlockGlobalNumber/toBlockHashe (+ to_login если можем).
+     *  - msgSubType = body.subType()
+     *  - to* поля берём через BodyToFields (если body его поддерживает)
+     *
+     * Про toLogin:
+     *  - если body сам даёт toLogin — пишем его
+     *  - иначе, если есть toBchName — пробуем вычислить login из имени блокчейна (про запас)
      */
     private void insertBlockRow(
             Connection c,
@@ -311,6 +316,7 @@ public final class BlockchainWriter {
         e.setBlockLinePreHashe(linePre);
 
         e.setMsgType(block.body.type());
+        e.setMsgSubType(block.body.subType());
 
         e.setBlockByte(block.toBytes());
 
@@ -320,16 +326,20 @@ public final class BlockchainWriter {
         e.setToBlockGlobalNumber(null);
         e.setToBlockHashe(null);
 
-        // ReactionBody -> target fields
-        if (block.body instanceof ReactionBody rb) {
-            e.setToBchName(rb.toBlockchainName);
-            e.setToBlockGlobalNumber(rb.toBlockGlobalNumber);
-            e.setToBlockHashe(rb.toBlockHashHex());
+        // ✅ Универсально: если body поддерживает to-поля — пишем их
+        if (block.body instanceof BodyHasTarget tf) {
+
+            e.setToLogin(tf.toLogin());
+            e.setToBchName(tf.toBchName());
+            e.setToBlockGlobalNumber(tf.toBlockGlobalNumber());
+            e.setToBlockHashe(tf.toBlockHashe());
 
             // optional: try compute to_login from target chain name (для индекса idx_blocks_to_target)
-            String toLogin = BlockchainNameUtil.loginFromBlockchainName(rb.toBlockchainName);
-            if (toLogin != null && !toLogin.isBlank()) {
-                e.setToLogin(toLogin);
+            if (e.getToLogin() == null && e.getToBchName() != null) {
+                String toLogin = BlockchainNameUtil.loginFromBlockchainName(e.getToBchName());
+                if (toLogin != null && !toLogin.isBlank()) {
+                    e.setToLogin(toLogin);
+                }
             }
         }
 

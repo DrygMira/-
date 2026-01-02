@@ -31,7 +31,7 @@ import java.util.Objects;
  *  - Здесь мы НЕ проверяем, существует ли цель реакции.
  *  - Мы проверяем только корректность формата и целостность полей.
  */
-public final class ReactionBody implements BodyRecord {
+public final class ReactionBody implements BodyRecord, BodyHasTarget {
 
     public static final short TYPE = 2;
     public static final short VER  = 1;
@@ -172,11 +172,11 @@ public final class ReactionBody implements BodyRecord {
                   hash цели (hex)         : %s
                 }
                 """.formatted(
-                        st,
-                        toBlockchainName,
-                        toBlockGlobalNumber,
-                        toBlockHashHex()
-                );
+                st,
+                toBlockchainName,
+                toBlockGlobalNumber,
+                toBlockHashHex()
+        );
     }
 
     public String toBlockHashHex() {
@@ -189,4 +189,17 @@ public final class ReactionBody implements BodyRecord {
         }
         return new String(out);
     }
+
+    /* ===================================================================== */
+    /* ====================== BodyToFields контракт ========================= */
+    /* ===================================================================== */
+
+    /** В самом формате ReactionBody login цели не хранится => null. */
+    @Override public String toLogin() { return null; }
+
+    @Override public String toBchName() { return toBlockchainName; }
+
+    @Override public Integer toBlockGlobalNumber() { return toBlockGlobalNumber; }
+
+    @Override public String toBlockHashe() { return toBlockHashHex(); }
 }

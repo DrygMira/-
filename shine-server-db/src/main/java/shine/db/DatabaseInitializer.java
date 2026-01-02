@@ -21,6 +21,10 @@ import java.sql.Statement;
  *  - ip_geo_cache
  *  - blockchain_state (MVP)
  *  - blocks           (login TEXT, bchName TEXT, PK убран)
+ *
+ * ОБНОВЛЕНО:
+ *  - blocks: добавлено поле msgSubType (сразу после msgType)
+ *  - blocks: поля to* остаются nullable
  */
 public class DatabaseInitializer {
 
@@ -195,7 +199,7 @@ public class DatabaseInitializer {
                 ON blockchain_state (updated_at_ms);
                 """);
 
-            // 6. blocks — PK удалён полностью, to* теперь nullable
+            // 6. blocks — PK удалён полностью, to* теперь nullable, добавлен msgSubType
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS blocks (
                     login                TEXT    NOT NULL,
@@ -208,6 +212,7 @@ public class DatabaseInitializer {
                     blockLinePreHashe    TEXT    NOT NULL,
 
                     msgType              INTEGER NOT NULL,
+                    msgSubType           INTEGER NOT NULL,
 
                     blockByte            BLOB,
 
