@@ -18,10 +18,11 @@ public final class BodyRecordParser {
         int key = ((type & 0xFFFF) << 16) | (ver & 0xFFFF);
 
         return switch (key) {
-            case HeaderBody.KEY     -> new HeaderBody(bodyBytes);      // type=0, ver=1
-            case TextBody.KEY       -> new TextBody(bodyBytes);        // type=1, ver=1
-            case ReactionBody.KEY   -> new ReactionBody(bodyBytes);    // type=2, ver=1
-            case ConnectionBody.KEY -> new ConnectionBody(bodyBytes);  // type=3, ver=1
+            case HeaderBody.KEY     -> new HeaderBody(bodyBytes);      // type=0, ver=1          заглавие блокчейна
+            case TextBody.KEY       -> new TextBody(bodyBytes);        // type=1, ver=1          текст
+            case ReactionBody.KEY   -> new ReactionBody(bodyBytes);    // type=2, ver=1          реакции
+            case ConnectionBody.KEY -> new ConnectionBody(bodyBytes);  // type=3, ver=1          связи
+            case UserParamBody.KEY  -> new UserParamBody(bodyBytes);   // type=4, ver=1          параметры пользователя
             default -> throw new IllegalArgumentException(String.format(
                     "Unknown body type/version: type=%d ver=%d (key=0x%08X)",
                     (type & 0xFFFF), (ver & 0xFFFF), key
