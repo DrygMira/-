@@ -5,19 +5,11 @@ import java.util.Base64;
 /**
  * Конфиг для IT тестов.
  *
- * ЛОГИКА:
- *  - login по умолчанию берём из DEFAULT_LOGIN
- *  - можно переопределить запуском:
- *      -Dit.login=anya24
- *      -Dit.bchSuffix=001
+ * ДОБАВЛЕНО:
+ *  - Второй пользователь (LOGIN2) + его blockchainName и ключи.
  *
- * ВАЖНО:
- *  - ключи/имя блокчейна вычисляются из login (через ItRunContext).
- *  - тесты можно запускать по отдельности, ItRunContext сам инициализируется при первом обращении.
- *
- * ЛОГИ:
- *  - детальный вывод включается флагом:
- *      -Dit.debug=true
+ * Важно:
+ *  - Имена/ключи вычисляются детерминированно из логина (см. ItRunContext).
  */
 public final class TestConfig {
 
@@ -26,8 +18,11 @@ public final class TestConfig {
     // Твой WS URI
     public static final String WS_URI = "ws://localhost:7070/ws";
 
-    // ======= По умолчанию (можно поменять под свою среду) =======
+    // ======= Пользователь #1 (по умолчанию) =======
     public static final String DEFAULT_LOGIN = "Anya";
+
+    // ======= Пользователь #2 (новый) =======
+    public static final String DEFAULT_LOGIN2 = "Anya2";
 
     // Суффикс блокчейна по твоему правилу: login + 3 цифры
     public static final String DEFAULT_BCH_SUFFIX_3 = "001";
@@ -38,51 +33,59 @@ public final class TestConfig {
     // Любая строка клиента (для логов)
     public static final String TEST_CLIENT_INFO = "it-tests";
 
-    /** DEBUG-режим: подробные логи отправки/получения/ожиданий (по умолчанию false). */
+    /** DEBUG-режим: подробные логи (по умолчанию true, как у тебя). */
     public static boolean DEBUG() {
         return Boolean.parseBoolean(System.getProperty("it.debug", "true"));
     }
 
-    /** login для прогона (по умолчанию DEFAULT_LOGIN, можно переопределить -Dit.login=...). */
+    // =========================
+    // USER #1
+    // =========================
+
+    /** login для прогона (user1). */
     public static String LOGIN() {
         return System.getProperty("it.login", DEFAULT_LOGIN);
     }
 
-    /** Суффикс для имени блокчейна (по умолчанию DEFAULT_BCH_SUFFIX_3, можно переопределить -Dit.bchSuffix=...). */
+    /** Суффикс для имени блокчейна (user1). */
     public static String BCH_SUFFIX_3() {
         return System.getProperty("it.bchSuffix", DEFAULT_BCH_SUFFIX_3);
     }
 
-    /** blockchainName по правилу: login + суффикс. */
+    /** blockchainName по правилу: login + суффикс (user1). */
     public static String BCH_NAME() {
         return LOGIN() + BCH_SUFFIX_3();
     }
 
-    // ======= Ключи (берём из ItRunContext) =======
+    public static byte[] LOGIN_PRIV_KEY() { return ItRunContext.login1PrivKey(); }
+    public static byte[] LOGIN_PUB_KEY()  { return ItRunContext.login1PubKey(); }
+    public static byte[] DEVICE_PRIV_KEY(){ return ItRunContext.device1PrivKey(); }
+    public static byte[] DEVICE_PUB_KEY() { return ItRunContext.device1PubKey(); }
 
-    public static byte[] LOGIN_PRIV_KEY() {
-        return ItRunContext.loginPrivKey();
+    public static String LOGIN_PUBKEY_B64()  { return Base64.getEncoder().encodeToString(LOGIN_PUB_KEY()); }
+    public static String DEVICE_PUBKEY_B64() { return Base64.getEncoder().encodeToString(DEVICE_PUB_KEY()); }
+
+    // =========================
+    // USER #2
+    // =========================
+
+    /** login второго пользователя. Можно переопределить -Dit.login2=... */
+    public static String LOGIN2() {
+        return System.getProperty("it.login2", DEFAULT_LOGIN2);
     }
 
-    public static byte[] LOGIN_PUB_KEY() {
-        return ItRunContext.loginPubKey();
+    /** blockchainName второго: login2 + тот же суффикс. */
+    public static String BCH_NAME2() {
+        return LOGIN2() + BCH_SUFFIX_3();
     }
 
-    public static byte[] DEVICE_PRIV_KEY() {
-        return ItRunContext.devicePrivKey();
-    }
+    public static byte[] LOGIN2_PRIV_KEY()  { return ItRunContext.login2PrivKey(); }
+    public static byte[] LOGIN2_PUB_KEY()   { return ItRunContext.login2PubKey(); }
+    public static byte[] DEVICE2_PRIV_KEY() { return ItRunContext.device2PrivKey(); }
+    public static byte[] DEVICE2_PUB_KEY()  { return ItRunContext.device2PubKey(); }
 
-    public static byte[] DEVICE_PUB_KEY() {
-        return ItRunContext.devicePubKey();
-    }
-
-    public static String LOGIN_PUBKEY_B64() {
-        return Base64.getEncoder().encodeToString(LOGIN_PUB_KEY());
-    }
-
-    public static String DEVICE_PUBKEY_B64() {
-        return Base64.getEncoder().encodeToString(DEVICE_PUB_KEY());
-    }
+    public static String LOGIN2_PUBKEY_B64()  { return Base64.getEncoder().encodeToString(LOGIN2_PUB_KEY()); }
+    public static String DEVICE2_PUBKEY_B64() { return Base64.getEncoder().encodeToString(DEVICE2_PUB_KEY()); }
 
     /** Псевдо-пароль хранилища — достаточно для тестов. */
     public static String fakeStoragePwd() {

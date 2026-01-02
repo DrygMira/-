@@ -8,7 +8,37 @@ import java.util.Base64;
 public final class JsonBuilders {
     private JsonBuilders(){}
 
+    // =========================
+    // AddUser USER1 (как было)
+    // =========================
     public static String addUser(String requestId) {
+        return addUserAny(
+                requestId,
+                TestConfig.LOGIN(),
+                TestConfig.BCH_NAME(),
+                TestConfig.LOGIN_PUBKEY_B64(),
+                TestConfig.DEVICE_PUBKEY_B64()
+        );
+    }
+
+    // =========================
+    // AddUser USER2 (новое)
+    // =========================
+    public static String addUser2(String requestId) {
+        return addUserAny(
+                requestId,
+                TestConfig.LOGIN2(),
+                TestConfig.BCH_NAME2(),
+                TestConfig.LOGIN2_PUBKEY_B64(),
+                TestConfig.DEVICE2_PUBKEY_B64()
+        );
+    }
+
+    private static String addUserAny(String requestId,
+                                     String login,
+                                     String blockchainName,
+                                     String loginKeyB64,
+                                     String deviceKeyB64) {
         return """
                 {
                   "op": "AddUser",
@@ -23,10 +53,10 @@ public final class JsonBuilders {
                 }
                 """.formatted(
                 requestId,
-                TestConfig.LOGIN(),
-                TestConfig.BCH_NAME(),
-                TestConfig.LOGIN_PUBKEY_B64(),
-                TestConfig.DEVICE_PUBKEY_B64(),
+                login,
+                blockchainName,
+                loginKeyB64,
+                deviceKeyB64,
                 TestConfig.TEST_BCH_LIMIT
         );
     }
@@ -43,7 +73,7 @@ public final class JsonBuilders {
 
     public static String createAuthSession(String requestId, String authNonce, String storagePwd) {
         long timeMs = System.currentTimeMillis();
-        String sigB64 = signAuthorificated(authNonce, timeMs);
+        String sigB64 = signAuthorificated(authNonce, timeMs, TestConfig.DEVICE_PRIV_KEY());
 
         return """
                 {
@@ -105,12 +135,17 @@ public final class JsonBuilders {
     /**
      * Подпись для режима AUTH_IN_PROGRESS:
      * preimage = "AUTHORIFICATED:" + timeMs + authNonce
-     * подписываем devicePrivKey (как в твоём протоколе).
+     * подписываем devicePrivKey.
      */
-    public static String signAuthorificated(String authNonce, long timeMs) {
+    public static String signAuthorificated(String authNonce, long timeMs, byte[] devicePrivKey) {
         String preimageStr = "AUTHORIFICATED:" + timeMs + authNonce;
         byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
-        byte[] sig = Ed25519Util.sign(preimage, TestConfig.DEVICE_PRIV_KEY());
+        byte[] sig = Ed25519Util.sign(preimage, devicePrivKey);
         return Base64.getEncoder().encodeToString(sig);
+    }
+
+    // старый метод оставим для совместимости
+    public static String signAuthorificated(String authNonce, long timeMs) {
+        return signAuthorificated(authNonce, timeMs, TestConfig.DEVICE_PRIV_KEY());
     }
 }

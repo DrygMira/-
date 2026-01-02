@@ -3,9 +3,7 @@ package test.it.addBlockUtils;
 import blockchain.BchBlockEntry;
 import blockchain.BchCryptoVerifier;
 import blockchain.body.BodyRecord;
-import test.it.utils.TestConfig;
 import test.it.utils.TestLog;
-import utils.crypto.Ed25519Util;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -17,7 +15,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
  * AddBlockSender — "одна кнопка":
- *  - принимает ГОТОВЫЙ Body (HeaderBody/TextBody/ReactionBody)
+ *  - принимает ГОТОВЫЙ Body (HeaderBody/TextBody/ReactionBody/ConnectionBody/UserParamsBody и т.п.)
  *  - сам берёт номера/prev-hash из ChainState
  *  - строит raw/hash/signature
  *  - собирает BchBlockEntry (старый, без изменений)
@@ -25,8 +23,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  *  - проверяет serverLastGlobalHash == localHash
  *  - обновляет ChainState
  *
- * В тестах:
- *   sender.send(body, timeout);
+ * ИЗМЕНЕНО:
+ *  - sender больше НЕ завязан на TestConfig.LOGIN()/BCH_NAME()/ключи
+ *  - теперь он работает от параметров конкретного пользователя:
+ *      login, blockchainName, loginPrivKey
  */
 public final class AddBlockSender {
 
@@ -35,17 +35,22 @@ public final class AddBlockSender {
 
     private final ChainState state;
 
-    public AddBlockSender(ChainState state) {
+    private final String login;
+    private final String blockchainName;
+    private final byte[] loginPrivKey;
+
+    public AddBlockSender(ChainState state, String login, String blockchainName, byte[] loginPrivKey) {
         this.state = state;
+        this.login = login;
+        this.blockchainName = blockchainName;
+        this.loginPrivKey = (loginPrivKey == null ? null : loginPrivKey.clone());
+        if (this.loginPrivKey == null) throw new IllegalArgumentException("loginPrivKey == null");
     }
 
-    public ChainState state() {
-        return state;
-    }
+    public ChainState state() { return state; }
 
     /**
      * Отправить следующий блок по body.expectedLineIndex().
-     * Ничего не возвращает — состояние хранится в ChainState.
      */
     public void send(BodyRecord body, Duration timeout) {
         if (body == null) throw new IllegalArgumentException("body == null");
@@ -70,10 +75,9 @@ public final class AddBlockSender {
         byte[] prevLineHash32   = (lineIndex == 0) ? ZERO32 : state.prevLineHash32ForNext(lineIndex);
 
         long ts = System.currentTimeMillis() / 1000L;
-
         byte[] bodyBytes = body.toBytes();
 
-        // RAW bytes (ровно то, что подписываем/хэшируем)
+        // RAW bytes
         int recordSize = BchBlockEntry.RAW_HEADER_SIZE + bodyBytes.length;
 
         byte[] rawBytes = ByteBuffer.allocate(recordSize)
@@ -88,13 +92,13 @@ public final class AddBlockSender {
 
         // preimage -> sha256 -> signature
         byte[] preimage = BchCryptoVerifier.buildPreimage(
-                TestConfig.LOGIN(),
+                login,
                 prevGlobalHash32,
                 prevLineHash32,
                 rawBytes
         );
         byte[] hash32 = BchCryptoVerifier.sha256(preimage);
-        byte[] signature64 = Ed25519Util.sign(hash32, TestConfig.LOGIN_PRIV_KEY());
+        byte[] signature64 = utils.crypto.Ed25519Util.sign(hash32, loginPrivKey);
 
         // Собираем полный блок (BchBlockEntry не меняем)
         BchBlockEntry entry = new BchBlockEntry(
@@ -107,28 +111,30 @@ public final class AddBlockSender {
                 hash32
         );
 
-        // отправляем JSON
+        // JSON AddBlock
         String prevGlobalHashHex = (globalNumber == 0) ? ZERO64 : state.globalLastHashHex();
 
         String req = buildAddBlockJson(
-                TestConfig.BCH_NAME(),
+                blockchainName,
                 globalNumber,
                 prevGlobalHashHex,
                 base64(entry.toBytes())
         );
 
-        String op = "AddBlock (global=" + globalNumber + ", line=" + lineIndex + ", lineNum=" + lineNumber + ")";
+        String op = "AddBlock (user=" + login + ", bch=" + blockchainName +
+                ", global=" + globalNumber + ", line=" + lineIndex + ", lineNum=" + lineNumber + ")";
+
         String resp = WsJsonOneShot.request(op, req, timeout);
 
         assert200(op, resp);
 
-        String serverLastGlobalHash = extractPayloadString(resp, "serverLastGlobalHash");
+        String serverLastGlobalHash = JsonMini.extractPayloadString(resp, "serverLastGlobalHash");
         assertNotNull(serverLastGlobalHash, op + ": payload.serverLastGlobalHash must not be null");
         assertEquals(64, serverLastGlobalHash.trim().length(), op + ": serverLastGlobalHash must be 64 hex chars");
 
         String localHashHex = bytesToHex64(hash32);
 
-        if (TestConfig.DEBUG()) {
+        if (test.it.utils.TestConfig.DEBUG()) {
             TestLog.ok(op + ": localHash=" + localHashHex);
             TestLog.ok(op + ": serverLastGlobalHash=" + serverLastGlobalHash);
         }
@@ -138,7 +144,7 @@ public final class AddBlockSender {
         // обновляем ChainState
         state.applyAppendedBlock(globalNumber, lineIndex, lineNumber, hash32);
 
-        if (TestConfig.DEBUG()) {
+        if (test.it.utils.TestConfig.DEBUG()) {
             TestLog.ok(op + ": state updated");
         }
     }
@@ -166,17 +172,7 @@ public final class AddBlockSender {
     private static void assert200(String op, String resp) {
         int st = test.it.utils.JsonParsers.status(resp);
         assertEquals(200, st, op + ": expected status=200, but got=" + st + ", resp=" + resp);
-        if (TestConfig.DEBUG()) TestLog.ok(op + ": status=200");
-    }
-
-    private static String extractPayloadString(String json, String field) {
-        try {
-            com.fasterxml.jackson.databind.JsonNode root =
-                    new com.fasterxml.jackson.databind.ObjectMapper().readTree(json);
-            com.fasterxml.jackson.databind.JsonNode payload = root.get("payload");
-            if (payload != null && payload.has(field)) return payload.get(field).asText();
-        } catch (Exception ignore) {}
-        return null;
+        if (test.it.utils.TestConfig.DEBUG()) TestLog.ok(op + ": status=200");
     }
 
     private static String base64(byte[] bytes) {
