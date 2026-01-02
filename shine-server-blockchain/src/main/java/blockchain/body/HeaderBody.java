@@ -1,5 +1,7 @@
 package blockchain.body;
 
+import blockchain.LineIndex;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.StandardCharsets;
@@ -93,8 +95,7 @@ public final class HeaderBody implements BodyRecord {
 
     @Override
     public short expectedLineIndex() {
-        return 0;
-    }
+        return LineIndex.HEADER;    }
 
     @Override
     public HeaderBody check() {

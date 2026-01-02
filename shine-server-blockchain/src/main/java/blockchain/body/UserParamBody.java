@@ -1,5 +1,7 @@
 package blockchain.body;
 
+import blockchain.LineIndex;
+
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
 import java.nio.charset.CharacterCodingException;
@@ -138,7 +140,7 @@ public final class UserParamBody implements BodyRecord {
 
     @Override
     public short expectedLineIndex() {
-        return 4;
+        return LineIndex.USER_PARAM;
     }
 
     @Override

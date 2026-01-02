@@ -27,7 +27,7 @@ public final class TestConfig {
     public static final String WS_URI = "ws://localhost:7070/ws";
 
     // ======= По умолчанию (можно поменять под свою среду) =======
-    public static final String DEFAULT_LOGIN = "anya24";
+    public static final String DEFAULT_LOGIN = "Anya";
 
     // Суффикс блокчейна по твоему правилу: login + 3 цифры
     public static final String DEFAULT_BCH_SUFFIX_3 = "001";
