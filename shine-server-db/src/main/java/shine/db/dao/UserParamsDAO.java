@@ -7,7 +7,17 @@ import java.sql.*;
 import java.util.ArrayList;
 import java.util.List;
 
-/** Здесь храним сохранённые параметры пользователей (в основном до какого сообщения просмотрены ленты) */
+/**
+ * UserParamsDAO — хранение сохранённых параметров пользователя.
+ *
+ * Правило:
+ * - методы с Connection НЕ закрывают соединение
+ * - методы без Connection сами открывают и закрывают соединение
+ *
+ * ВАЖНО по логике времени:
+ * - сам DAO делает "технический upsert"
+ * - правила "не принимать более старый time_ms" должны проверяться в handler-е, в транзакции.
+ */
 public final class UserParamsDAO {
 
     private static volatile UserParamsDAO instance;
@@ -27,65 +37,68 @@ public final class UserParamsDAO {
     // -------------------- UPSERT --------------------
 
     /** UPSERT с внешним соединением. Соединение НЕ закрывает. */
-    public void upsert(Connection c, UserParamEntry param) throws SQLException {
+    public void upsert(Connection c, UserParamEntry e) throws SQLException {
         String sql = """
             INSERT INTO users_params (
                 login,
                 param,
-                bch_channel_id,
-                value,
                 time_ms,
-                pubkey_num,
+                value,
+                device_key,
                 signature
-            ) VALUES (?, ?, ?, ?, ?, ?, ?)
+            ) VALUES (?, ?, ?, ?, ?, ?)
             ON CONFLICT(login, param)
             DO UPDATE SET
-                bch_channel_id = excluded.bch_channel_id,
-                value          = excluded.value,
-                time_ms        = excluded.time_ms,
-                pubkey_num     = excluded.pubkey_num,
-                signature      = excluded.signature
+                time_ms    = excluded.time_ms,
+                value      = excluded.value,
+                device_key = excluded.device_key,
+                signature  = excluded.signature
             """;
 
         try (PreparedStatement ps = c.prepareStatement(sql)) {
-            ps.setString(1, param.getLogin());
-            ps.setString(2, param.getParam());
-            ps.setLong(3, param.getBchChannelId());
-            ps.setString(4, param.getValue());
-            ps.setLong(5, param.getTimeMs());
-            ps.setInt(6, param.getPubkeyNum());
-            ps.setString(7, param.getSignature());
+            ps.setString(1, e.getLogin());
+            ps.setString(2, e.getParam());
+            ps.setLong(3, e.getTimeMs());
+            ps.setString(4, e.getValue());
+
+            if (e.getDeviceKey() != null) ps.setString(5, e.getDeviceKey());
+            else ps.setNull(5, Types.VARCHAR);
+
+            if (e.getSignature() != null) ps.setString(6, e.getSignature());
+            else ps.setNull(6, Types.VARCHAR);
+
             ps.executeUpdate();
         }
     }
 
     /** UPSERT без внешнего соединения. Сам открывает/закрывает. */
-    public void upsert(UserParamEntry param) throws SQLException {
+    public void upsert(UserParamEntry e) throws SQLException {
         try (Connection c = db.getConnection()) {
-            upsert(c, param);
+            upsert(c, e);
         }
     }
 
     // -------------------- SELECT --------------------
 
-    /** Получить параметр с внешним соединением. Соединение НЕ закрывает. */
-    public UserParamEntry getByUserLoginAndParam(Connection c, String login, String paramName) throws SQLException {
+    /** Получить параметр по (login,param) с внешним соединением. Соединение НЕ закрывает. */
+    public UserParamEntry getByLoginAndParam(Connection c, String login, String param) throws SQLException {
         String sql = """
             SELECT
                 login,
                 param,
-                bch_channel_id,
-                value,
                 time_ms,
-                pubkey_num,
+                value,
+                device_key,
                 signature
             FROM users_params
             WHERE login = ? AND param = ?
+            LIMIT 1
             """;
 
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, login);
-            ps.setString(2, paramName);
+            ps.setString(2, param);
+
             try (ResultSet rs = ps.executeQuery()) {
                 if (!rs.next()) return null;
                 return mapRow(rs);
@@ -93,59 +106,62 @@ public final class UserParamsDAO {
         }
     }
 
-    /** Получить параметр без внешнего соединения. Сам открывает/закрывает. */
-    public UserParamEntry getByUserLoginAndParam(String login, String paramName) throws SQLException {
+    /** Получить параметр по (login,param) без внешнего соединения. Сам открывает/закрывает. */
+    public UserParamEntry getByLoginAndParam(String login, String param) throws SQLException {
         try (Connection c = db.getConnection()) {
-            return getByUserLoginAndParam(c, login, paramName);
+            return getByLoginAndParam(c, login, param);
         }
     }
 
-    /** Получить все параметры пользователя с внешним соединением. Соединение НЕ закрывает. */
-    public List<UserParamEntry> getByUserLogin(Connection c, String login) throws SQLException {
+    /** Получить все параметры пользователя с внешним соединением. */
+    public List<UserParamEntry> getByLogin(Connection c, String login) throws SQLException {
         String sql = """
             SELECT
                 login,
                 param,
-                bch_channel_id,
-                value,
                 time_ms,
-                pubkey_num,
+                value,
+                device_key,
                 signature
             FROM users_params
             WHERE login = ?
             ORDER BY time_ms DESC
             """;
 
-        List<UserParamEntry> result = new ArrayList<>();
-
+        List<UserParamEntry> list = new ArrayList<>();
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, login);
             try (ResultSet rs = ps.executeQuery()) {
-                while (rs.next()) result.add(mapRow(rs));
+                while (rs.next()) list.add(mapRow(rs));
             }
         }
-
-        return result;
+        return list;
     }
 
-    /** Получить все параметры пользователя без внешнего соединения. Сам открывает/закрывает. */
-    public List<UserParamEntry> getByUserLogin(String login) throws SQLException {
+    /** Получить все параметры пользователя без внешнего соединения. */
+    public List<UserParamEntry> getByLogin(String login) throws SQLException {
         try (Connection c = db.getConnection()) {
-            return getByUserLogin(c, login);
+            return getByLogin(c, login);
         }
     }
 
     // -------------------- MAPPER --------------------
 
-    private UserParamEntry mapRow(ResultSet rs) throws SQLException {
-        return new UserParamEntry(
-                rs.getString("login"),
-                rs.getString("param"),
-                rs.getLong("bch_channel_id"),
-                rs.getString("value"),
-                rs.getLong("time_ms"),
-                (short) rs.getInt("pubkey_num"),
-                rs.getString("signature")
-        );
+    private static UserParamEntry mapRow(ResultSet rs) throws SQLException {
+        UserParamEntry e = new UserParamEntry();
+        e.setLogin(rs.getString("login"));
+        e.setParam(rs.getString("param"));
+        e.setTimeMs(rs.getLong("time_ms"));
+        e.setValue(rs.getString("value"));
+
+        String dk = rs.getString("device_key");
+        if (rs.wasNull()) dk = null;
+        e.setDeviceKey(dk);
+
+        String sig = rs.getString("signature");
+        if (rs.wasNull()) sig = null;
+        e.setSignature(sig);
+
+        return e;
     }
 }

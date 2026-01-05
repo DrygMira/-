@@ -125,10 +125,9 @@ public class DatabaseInitializer {
                 CREATE TABLE IF NOT EXISTS users_params (
                     login          TEXT    NOT NULL,
                     param          TEXT    NOT NULL,
-                    bch_channel_id INTEGER NOT NULL DEFAULT 0,
-                    value          TEXT,
                     time_ms        INTEGER NOT NULL,
-                    pubkey_num     INTEGER NOT NULL,
+                    value          TEXT    NOT NULL,
+                    device_key     TEXT,
                     signature      TEXT,
                     FOREIGN KEY (login) REFERENCES solana_users(login),
                     UNIQUE (login, param)
