@@ -236,6 +236,16 @@ public class IT_03_AddBlock_NoAuth {
                 new byte[32]
         ), t);
 
+        // 6) USER2: Connection (UNFRIEND -> USER1)  — USER2 больше не друг USER1
+        if (TestConfig.DEBUG()) TestLog.stepTitle("USER2: Connection (UNFRIEND -> USER1)");
+        sender2.send(new ConnectionBody(
+                ConnectionBody.SUB_UNFRIEND,
+                TestConfig.LOGIN(),     // to_login (USER1)
+                TestConfig.BCH_NAME(),  // toBch (USER1 chain)
+                0,
+                new byte[32]
+        ), t);
+
         TestLog.pass("IT_03_AddBlock_NoAuth (combined): OK");
     }
 

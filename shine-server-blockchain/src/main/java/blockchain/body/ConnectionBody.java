@@ -12,17 +12,31 @@ import java.util.Objects;
  * ConnectionBody — type=3, ver=1. (Связь/отношение)
  *
  * Идея:
- *  - Это запись "у меня есть связь с X".
- *  - subType определяет вид связи:
+ *  - Это запись "у меня есть связь с X" ИЛИ "я отменяю связь с X".
+ *  - subType определяет вид связи и действие.
+ *
+ * subType (uint16):
+ *   УСТАНОВИТЬ связь:
  *      10 = FRIEND   (друг)
  *      20 = CONTACT  (контакт)
  *      30 = FOLLOW   (подписан на кого-то)
+ *
+ *   ОТМЕНИТЬ связь (событие, которое “снимает” прошлую связь):
+ *      11 = UNFRIEND     (больше не друг)
+ *      21 = UNCONTACT    (больше не контакт)
+ *      31 = UNFOLLOW     (больше не подписан)
+ *
+ * Важно про смысл:
+ *  - Состояние связи вычисляется по последнему блоку данной “категории”:
+ *      (toLogin, kind=FRIEND/CONTACT/FOLLOW)
+ *    Если последний subType — 10/20/30 => связь активна
+ *    Если последний subType — 11/21/31 => связь снята
  *
  * Формат bodyBytes (BigEndian):
  *   [2] type=3
  *   [2] ver=1
  *
- *   [2] subType (uint16) — вид связи (10/20/30)
+ *   [2] subType (uint16) — вид связи (10,20/30)
  *
  *   [1] toLoginLen (uint8)
  *   [N] toLogin UTF-8
@@ -50,10 +64,15 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget {
     /** Удобный ключ для BodyRecordParser: (type<<16)|ver */
     public static final int KEY = ((TYPE & 0xFFFF) << 16) | (VER & 0xFFFF);
 
-    // subType:
-    public static final short SUB_FRIEND  = 10;
-    public static final short SUB_CONTACT = 20;
-    public static final short SUB_FOLLOW  = 30;
+    // --- subType: SET ---
+    public static final short SUB_FRIEND   = 10;
+    public static final short SUB_CONTACT  = 20;
+    public static final short SUB_FOLLOW   = 30;
+
+    // --- subType: UNSET (снятие/отмена связи) ---
+    public static final short SUB_UNFRIEND   = 11; // больше не друг
+    public static final short SUB_UNCONTACT  = 21; // больше не контакт
+    public static final short SUB_UNFOLLOW   = 31; // больше не подписан
 
     public final short subType;
 
@@ -162,7 +181,31 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget {
     }
 
     private static boolean isValidSubType(short st) {
-        return st == SUB_FRIEND || st == SUB_CONTACT || st == SUB_FOLLOW;
+        return st == SUB_FRIEND || st == SUB_CONTACT || st == SUB_FOLLOW
+            || st == SUB_UNFRIEND || st == SUB_UNCONTACT || st == SUB_UNFOLLOW;
+    }
+
+    /** true если это событие установки связи (10/20/30). */
+    public boolean isSetAction() {
+        return subType == SUB_FRIEND || subType == SUB_CONTACT || subType == SUB_FOLLOW;
+    }
+
+    /** true если это событие снятия связи (11/21/31). */
+    public boolean isUnsetAction() {
+        return subType == SUB_UNFRIEND || subType == SUB_UNCONTACT || subType == SUB_UNFOLLOW;
+    }
+
+    /**
+     * Нормализованный “вид связи” без действия:
+     * FRIEND / CONTACT / FOLLOW
+     */
+    public short kind() {
+        return switch (subType) {
+            case SUB_FRIEND, SUB_UNFRIEND -> SUB_FRIEND;
+            case SUB_CONTACT, SUB_UNCONTACT -> SUB_CONTACT;
+            case SUB_FOLLOW, SUB_UNFOLLOW -> SUB_FOLLOW;
+            default -> throw new IllegalStateException("Unexpected subType: " + (subType & 0xFFFF));
+        };
     }
 
     /* ===================================================================== */
@@ -247,7 +290,18 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget {
             case SUB_FRIEND -> "FRIEND (10)";
             case SUB_CONTACT -> "CONTACT (20)";
             case SUB_FOLLOW -> "FOLLOW (30)";
+            case SUB_UNFRIEND -> "UNFRIEND (11)";
+            case SUB_UNCONTACT -> "UNCONTACT (21)";
+            case SUB_UNFOLLOW -> "UNFOLLOW (31)";
             default -> "UNKNOWN";
+        };
+
+        String action = isSetAction() ? "SET" : (isUnsetAction() ? "UNSET" : "?");
+        String kindStr = switch (kind()) {
+            case SUB_FRIEND -> "FRIEND";
+            case SUB_CONTACT -> "CONTACT";
+            case SUB_FOLLOW -> "FOLLOW";
+            default -> "?";
         };
 
         return """
@@ -255,6 +309,8 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget {
                   тип записи              : CONNECTION (type=3, ver=1)
                   ожидаемая линия         : 3
                   subType                 : %s
+                  действие                : %s
+                  вид связи               : %s
                   связь с login           : "%s"
                   блокчейн друга/цели      : "%s"
                   lastKnown globalNumber  : %d
@@ -262,6 +318,8 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget {
                 }
                 """.formatted(
                 st,
+                action,
+                kindStr,
                 toLogin,
                 toBlockchainName,
                 toBlockGlobalNumber,
@@ -281,7 +339,7 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget {
     }
 
     /* ===================================================================== */
-    /* ====================== BodyToFields контракт ========================= */
+    /* ====================== BodyHasTarget контракт ========================= */
     /* ===================================================================== */
 
     @Override public String toLogin() { return toLogin; }
