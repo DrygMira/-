@@ -31,7 +31,7 @@ import java.util.Base64;
  *  1) Проверяет, что пользователь существует и что device_key действительно его.
  *  2) Проверяет, что нет "более нового" значения этого param (time_ms монотонно растёт).
  *  3) Проверяет подпись Ed25519 по device_key.
- *  4) Пишет в БД (insert или update существующей записи), но только если time_ms новее.
+ *  4) Пишет в БД только если time_ms строго больше текущего сохранённого.
  *
  * БОЛЬШОЙ КОММЕНТ ПРО АВТОРИЗАЦИЮ НА БУДУЩЕЕ:
  * ---------------------------------------------------------------------------------
@@ -56,7 +56,6 @@ public class Net_UpsertUserParam_Handler implements JsonMessageHandler {
     public Net_Response handle(Net_Request baseRequest, ConnectionContext ctx) {
         Net_UpsertUserParam_Request req = (Net_UpsertUserParam_Request) baseRequest;
 
-        // ---- basic fields validation ----
         if (req.getLogin() == null || req.getLogin().isBlank()
                 || req.getParam() == null || req.getParam().isBlank()
                 || req.getTime_ms() == null || req.getTime_ms() <= 0
@@ -75,12 +74,11 @@ public class Net_UpsertUserParam_Handler implements JsonMessageHandler {
         final String login = req.getLogin().trim();
         final String param = req.getParam().trim();
         final long timeMs = req.getTime_ms();
-        final String value = req.getValue(); // value может быть пустой строкой — это ок
+        final String value = req.getValue();
         final String deviceKeyB64 = req.getDevice_key().trim();
         final String signatureB64 = req.getSignature().trim();
 
         try {
-            // 1) parse keys
             byte[] pubKey32;
             byte[] sig64;
             try {
@@ -112,7 +110,6 @@ public class Net_UpsertUserParam_Handler implements JsonMessageHandler {
                 );
             }
 
-            // подписываемая строка
             String signText = ShineSignatureConstants.USER_PARAMETER_PREFIX
                     + login
                     + param
@@ -121,7 +118,6 @@ public class Net_UpsertUserParam_Handler implements JsonMessageHandler {
 
             byte[] signBytes = signText.getBytes(StandardCharsets.UTF_8);
 
-            // 3) verify signature (до БД можно, но нам всё равно нужна БД-проверка device_key->login)
             boolean sigOk = Ed25519Util.verify(signBytes, sig64, pubKey32);
             if (!sigOk) {
                 return NetExceptionResponseFactory.error(
@@ -132,7 +128,6 @@ public class Net_UpsertUserParam_Handler implements JsonMessageHandler {
                 );
             }
 
-            // ---- DB checks + upsert in a transaction ----
             SqliteDbController db = SqliteDbController.getInstance();
             SolanaUsersDAO usersDAO = SolanaUsersDAO.getInstance();
             UserParamsDAO paramsDAO = UserParamsDAO.getInstance();
@@ -141,13 +136,11 @@ public class Net_UpsertUserParam_Handler implements JsonMessageHandler {
                 boolean oldAuto = c.getAutoCommit();
                 c.setAutoCommit(false);
 
-                // BEGIN IMMEDIATE — чтобы избежать гонок (две записи одного param параллельно)
                 try (Statement st = c.createStatement()) {
                     st.execute("BEGIN IMMEDIATE");
                 }
 
                 try {
-                    // 1) user exists + device_key is exactly his
                     SolanaUserEntry user = usersDAO.getByLogin(c, login);
                     if (user == null) {
                         c.rollback();
@@ -170,7 +163,6 @@ public class Net_UpsertUserParam_Handler implements JsonMessageHandler {
                         );
                     }
 
-                    // сравнение строкой: у тебя deviceKey хранится как Base64(32) (в идеале нормализовать)
                     if (!userDeviceKey.trim().equals(deviceKeyB64)) {
                         c.rollback();
                         return NetExceptionResponseFactory.error(
@@ -181,27 +173,35 @@ public class Net_UpsertUserParam_Handler implements JsonMessageHandler {
                         );
                     }
 
-                    // 2) no newer time_ms already stored
                     UserParamEntry existing = paramsDAO.getByLoginAndParam(c, login, param);
-                    if (existing != null) {
-                        long existingTime = existing.getTimeMs();
-                        if (existingTime > timeMs) {
-                            c.rollback();
-                            return NetExceptionResponseFactory.error(
-                                    req,
-                                    409,
-                                    "PARAM_NEWER_EXISTS",
-                                    "Уже есть более новое значение этого параметра (time_ms больше)"
-                            );
-                        }
-                        if (existingTime == timeMs) {
-                            // если пришёл тот же time_ms — можно либо принять как идемпотентно,
-                            // либо сравнить value/signature. Для MVP примем как идемпотентно,
-                            // но всё равно сделаем upsert (обновит value/signature тем же временем).
-                        }
+
+                    // если есть более новое — запрет
+                    if (existing != null && existing.getTimeMs() > timeMs) {
+                        c.rollback();
+                        return NetExceptionResponseFactory.error(
+                                req,
+                                409,
+                                "PARAM_NEWER_EXISTS",
+                                "Уже есть более новое значение этого параметра (time_ms больше)"
+                        );
                     }
 
-                    // 4) upsert
+                    // если time_ms равен — ничего не делаем (твой кейс)
+                    if (existing != null && existing.getTimeMs() == timeMs) {
+                        c.commit();
+                        c.setAutoCommit(oldAuto);
+
+                        Net_UpsertUserParam_Response resp = new Net_UpsertUserParam_Response();
+                        resp.setOp(req.getOp());
+                        resp.setRequestId(req.getRequestId());
+                        resp.setStatus(WireCodes.Status.OK);
+
+                        log.info("ℹ️ UpsertUserParam noop (same time_ms): login={}, param={}, time_ms={}",
+                                login, param, timeMs);
+                        return resp;
+                    }
+
+                    // иначе existing==null или existingTime < timeMs -> пишем
                     UserParamEntry e = new UserParamEntry(
                             login,
                             param,
