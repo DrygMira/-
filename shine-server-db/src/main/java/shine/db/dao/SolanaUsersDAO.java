@@ -10,16 +10,26 @@ import java.util.List;
 /**
  * SolanaUsersDAO — локальная таблица пользователей из Solana.
  *
- * Колонки:
- *  - login       TEXT (PK)
- *  - bchName     TEXT
- *  - loginKey    TEXT
- *  - deviceKey   TEXT
- *  - bchLimit    INTEGER (может быть NULL)
+ * Таблица: solana_users
  *
- * Правило:
- * - методы с Connection НЕ закрывают соединение
- * - методы без Connection сами открывают и закрывают соединение
+ * Колонки:
+ *  - login      TEXT PRIMARY KEY
+ *      Уникальный логин пользователя (case-insensitive используется на уровне запросов).
+ *
+ *  - deviceKey  TEXT NOT NULL
+ *      Публичный ключ устройства пользователя.
+ *      Хранится в Base64(32 bytes) или HEX(64 chars).
+ *
+ *  - solanaKey  TEXT NULLABLE
+ *      Публичный ключ Solana-аккаунта пользователя (если есть).
+ *
+ * Назначение таблицы:
+ *  - локальное сопоставление login → deviceKey / solanaKey
+ *  - используется для аутентификации, валидации подписей и связки с блокчейном
+ *
+ * Правило работы с соединениями:
+ *  - методы с Connection НЕ закрывают соединение
+ *  - методы без Connection сами открывают и закрывают соединение
  */
 public final class SolanaUsersDAO {
 
