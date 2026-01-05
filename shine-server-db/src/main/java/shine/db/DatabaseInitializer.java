@@ -15,16 +15,14 @@ import java.sql.Statement;
  * DatabaseInitializer — создание новой SQLite-БД по схеме SHiNE.
  *
  * Таблицы:
- *  - solana_users     (login TEXT PK, deviceKey TEXT, solanaKey TEXT)
- *  - active_sessions  (login TEXT FK)
- *  - users_params     (login TEXT FK, UNIQUE(login,param))
+ *  - solana_users
+ *  - active_sessions
+ *  - users_params
  *  - ip_geo_cache
- *  - blockchain_state (MVP)
- *  - blocks           (login TEXT, bchName TEXT, PK убран)
+ *  - blockchain_state
+ *  - blocks
+ *  - connections_state   (текущее состояние связей)
  *
- * ОБНОВЛЕНО:
- *  - blocks: добавлено поле msgSubType (сразу после msgType)
- *  - blocks: поля to* остаются nullable
  */
 public class DatabaseInitializer {
 
@@ -153,7 +151,7 @@ public class DatabaseInitializer {
                 ON ip_geo_cache (updated_at_ms);
                 """);
 
-            // 5. blockchain_state (MVP) — теперь PK blockchainName + поле login
+            // 5. blockchain_state
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS blockchain_state (
                     blockchainName         TEXT    NOT NULL PRIMARY KEY,
@@ -198,7 +196,7 @@ public class DatabaseInitializer {
                 ON blockchain_state (updated_at_ms);
                 """);
 
-            // 6. blocks — PK удалён полностью, to* теперь nullable, добавлен msgSubType
+            // 6. blocks
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS blocks (
                     login                TEXT    NOT NULL,
@@ -233,6 +231,93 @@ public class DatabaseInitializer {
             st.executeUpdate("""
                 CREATE INDEX IF NOT EXISTS idx_blocks_to_target
                 ON blocks (to_login, toBchName, toBlockGlobalNumber);
+                """);
+
+            // =====================================================================
+            // 7) connections_state — текущее состояние "кто с кем и какая связь"
+            // =====================================================================
+            st.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS connections_state (
+                    login               TEXT    NOT NULL,
+                    relType             INTEGER NOT NULL,   -- 10/20/30 (FRIEND/CONTACT/FOLLOW)
+                    to_login            TEXT    NOT NULL,
+                    toBchName           TEXT    NOT NULL,
+                    toBlockGlobalNumber INTEGER,
+                    toBlockHashe        TEXT,
+
+                    FOREIGN KEY (login) REFERENCES solana_users(login),
+
+                    -- состояние уникально по пользователю, типу связи и цели
+                    UNIQUE (login, relType, to_login)
+                );
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_connections_state_login
+                ON connections_state (login);
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_connections_state_to_login
+                ON connections_state (to_login);
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_connections_state_pair
+                ON connections_state (login, to_login);
+                """);
+
+            // =====================================================================
+            // 8) Trigger: при вставке connection-блоков в blocks — обновлять connections_state
+            //
+            // Правило:
+            //  - msgType=3 (ConnectionBody)
+            //  - subType 10/20/30  => добавить/обновить запись состояния
+            //  - subType 11/21/31  => удалить запись состояния (без ошибок, даже если её нет)
+            //
+            // Примечание:
+            //  - "повторное добавление" не должно падать => используем UPSERT (DO UPDATE)
+            //  - "удаление того, чего нет" не падает => обычный DELETE
+            // =====================================================================
+            st.executeUpdate("""
+                CREATE TRIGGER IF NOT EXISTS trg_blocks_connection_state_ai
+                AFTER INSERT ON blocks
+                WHEN NEW.msgType = 3
+                BEGIN
+
+                    -- ADD / UPDATE: 10/20/30
+                    INSERT INTO connections_state (
+                        login, relType, to_login, toBchName, toBlockGlobalNumber, toBlockHashe
+                    )
+                    SELECT
+                        NEW.login,
+                        NEW.msgSubType,
+                        NEW.to_login,
+                        NEW.toBchName,
+                        NEW.toBlockGlobalNumber,
+                        NEW.toBlockHashe
+                    WHERE NEW.msgSubType IN (10, 20, 30)
+                      AND NEW.to_login IS NOT NULL
+                      AND NEW.toBchName IS NOT NULL
+                    ON CONFLICT(login, relType, to_login)
+                    DO UPDATE SET
+                        toBchName = excluded.toBchName,
+                        toBlockGlobalNumber = excluded.toBlockGlobalNumber,
+                        toBlockHashe = excluded.toBlockHashe;
+
+                    -- DELETE: 11/21/31 => удалить соответствующую "положительную" связь (10/20/30)
+                    DELETE FROM connections_state
+                    WHERE login = NEW.login
+                      AND to_login = NEW.to_login
+                      AND relType = CASE NEW.msgSubType
+                          WHEN 11 THEN 10
+                          WHEN 21 THEN 20
+                          WHEN 31 THEN 30
+                          ELSE relType
+                      END
+                      AND NEW.msgSubType IN (11, 21, 31);
+
+                END;
                 """);
         }
     }
