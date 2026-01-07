@@ -21,11 +21,12 @@ import java.util.Objects;
  *       1 = новое сообщение (начало ветки)
  *       2 = ответ на сообщение (reply)
  *       3 = репост (repost)
+ *       4 = редактирование (edit)
  *
  *   [2] textLenBytes (uint16) — длина текста в байтах UTF-8
  *   [N] text UTF-8
  *
- *   Далее ТОЛЬКО если subType == 2 или subType == 3:
+ *   Далее ТОЛЬКО если subType == 2 или subType == 3 или subType == 4:
  *     [1] toBlockchainNameLen (uint8)
  *     [N] toBlockchainName UTF-8
  *     [4] toBlockGlobalNumber (int32)
@@ -45,14 +46,15 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
     public static final short SUB_NEW    = 1;
     public static final short SUB_REPLY  = 2;
     public static final short SUB_REPOST = 3;
+    public static final short SUB_EDIT   = 4;
 
-    /** Подтип текстового сообщения (1/2/3). */
+    /** Подтип текстового сообщения (1/2/3/4). */
     public final short subType;
 
     /** Текст сообщения (строго валидный UTF-8, не пустой/не blank). */
     public final String message;
 
-    // Заполняются только если subType == SUB_REPLY или SUB_REPOST
+    // Заполняются только если subType == SUB_REPLY || SUB_REPOST || SUB_EDIT
     public final String toBlockchainName;
     public final int toBlockGlobalNumber;
     public final byte[] toBlockHash32;
@@ -79,7 +81,10 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
         }
 
         this.subType = bb.getShort();
-        if (this.subType != SUB_NEW && this.subType != SUB_REPLY && this.subType != SUB_REPOST) {
+        if (this.subType != SUB_NEW
+                && this.subType != SUB_REPLY
+                && this.subType != SUB_REPOST
+                && this.subType != SUB_EDIT) {
             throw new IllegalArgumentException("Bad subType: " + (this.subType & 0xFFFF));
         }
 
@@ -109,8 +114,8 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
             throw new IllegalArgumentException("Text message is blank");
         }
 
-        // Поля ссылки — только для reply/repost
-        if (this.subType == SUB_REPLY || this.subType == SUB_REPOST) {
+        // Поля ссылки — только для reply/repost/edit
+        if (this.subType == SUB_REPLY || this.subType == SUB_REPOST || this.subType == SUB_EDIT) {
 
             if (bb.remaining() < 1) {
                 throw new IllegalArgumentException("Missing toBlockchainNameLen");
@@ -119,7 +124,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
             int nameLen = Byte.toUnsignedInt(bb.get());
             if (nameLen <= 0) throw new IllegalArgumentException("toBlockchainNameLen is 0");
             if (bb.remaining() < nameLen + 4 + 32) {
-                throw new IllegalArgumentException("Reply/Repost payload too short");
+                throw new IllegalArgumentException("Reply/Repost/Edit payload too short");
             }
 
             byte[] nameBytes = new byte[nameLen];
@@ -176,7 +181,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
         this.toBlockHash32 = null;
     }
 
-    /** Сообщение subType=REPLY (2) или subType=REPOST (3) со ссылкой на блок. */
+    /** Сообщение subType=REPLY (2) или subType=REPOST (3) или subType=EDIT (4) со ссылкой на блок. */
     public TextBody(short subType,
                     String message,
                     String toBlockchainName,
@@ -187,8 +192,8 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
         Objects.requireNonNull(toBlockchainName, "toBlockchainName == null");
         Objects.requireNonNull(toBlockHash32, "toBlockHash32 == null");
 
-        if (subType != SUB_REPLY && subType != SUB_REPOST) {
-            throw new IllegalArgumentException("subType must be SUB_REPLY or SUB_REPOST for this constructor");
+        if (subType != SUB_REPLY && subType != SUB_REPOST && subType != SUB_EDIT) {
+            throw new IllegalArgumentException("subType must be SUB_REPLY or SUB_REPOST or SUB_EDIT for this constructor");
         }
         if (message.isBlank()) throw new IllegalArgumentException("message is blank");
         if (toBlockchainName.isBlank()) throw new IllegalArgumentException("toBlockchainName is blank");
@@ -217,7 +222,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
 
     @Override
     public TextBody check() {
-        if (subType != SUB_NEW && subType != SUB_REPLY && subType != SUB_REPOST) {
+        if (subType != SUB_NEW && subType != SUB_REPLY && subType != SUB_REPOST && subType != SUB_EDIT) {
             throw new IllegalArgumentException("Bad subType: " + (subType & 0xFFFF));
         }
 
@@ -225,7 +230,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
             throw new IllegalArgumentException("Text message is blank");
         }
 
-        if (subType == SUB_REPLY || subType == SUB_REPOST) {
+        if (subType == SUB_REPLY || subType == SUB_REPOST || subType == SUB_EDIT) {
             if (toBlockchainName == null || toBlockchainName.isBlank())
                 throw new IllegalArgumentException("toBlockchainName is blank");
             if (toBlockGlobalNumber < 0)
@@ -255,7 +260,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
 
         byte[] nameBytes = null;
 
-        if (subType == SUB_REPLY || subType == SUB_REPOST) {
+        if (subType == SUB_REPLY || subType == SUB_REPOST || subType == SUB_EDIT) {
             nameBytes = toBlockchainName.getBytes(StandardCharsets.UTF_8);
             if (nameBytes.length == 0 || nameBytes.length > 255) {
                 throw new IllegalArgumentException("toBlockchainName utf8 len must be 1..255");
@@ -268,7 +273,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
 
         } else {
             if (toBlockchainName != null || toBlockHash32 != null) {
-                throw new IllegalArgumentException("SUB_NEW must not contain reply/repost fields");
+                throw new IllegalArgumentException("SUB_NEW must not contain reply/repost/edit fields");
             }
         }
 
@@ -282,7 +287,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
         bb.putShort((short) msgUtf8.length);
         bb.put(msgUtf8);
 
-        if (subType == SUB_REPLY || subType == SUB_REPOST) {
+        if (subType == SUB_REPLY || subType == SUB_REPOST || subType == SUB_EDIT) {
             bb.put((byte) nameBytes.length);
             bb.put(nameBytes);
             bb.putInt(toBlockGlobalNumber);
@@ -298,10 +303,11 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
             case SUB_NEW -> "NEW (1)";
             case SUB_REPLY -> "REPLY (2)";
             case SUB_REPOST -> "REPOST (3)";
+            case SUB_EDIT -> "EDIT (4)";
             default -> "UNKNOWN";
         };
 
-        if (subType == SUB_REPLY || subType == SUB_REPOST) {
+        if (subType == SUB_REPLY || subType == SUB_REPOST || subType == SUB_EDIT) {
             return """
                     TextBody {
                       тип записи        : TEXT (type=1, ver=1)
@@ -358,16 +364,16 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
 
     @Override
     public String toBchName() {
-        return (subType == SUB_REPLY || subType == SUB_REPOST) ? toBlockchainName : null;
+        return (subType == SUB_REPLY || subType == SUB_REPOST || subType == SUB_EDIT) ? toBlockchainName : null;
     }
 
     @Override
     public Integer toBlockGlobalNumber() {
-        return (subType == SUB_REPLY || subType == SUB_REPOST) ? toBlockGlobalNumber : null;
+        return (subType == SUB_REPLY || subType == SUB_REPOST || subType == SUB_EDIT) ? toBlockGlobalNumber : null;
     }
 
     @Override
     public byte[] toBlockHasheBytes() {
-        return (subType == SUB_REPLY || subType == SUB_REPOST) ? toBlockHash32 : null;
+        return (subType == SUB_REPLY || subType == SUB_REPOST || subType == SUB_EDIT) ? toBlockHash32 : null;
     }
 }

@@ -26,9 +26,13 @@ import static org.junit.jupiter.api.Assertions.*;
  *  1) AddUser(USER1) 200 или 409 USER_ALREADY_EXISTS
  *  2) AddUser(USER2) 200 или 409 USER_ALREADY_EXISTS
  *
- *  3) USER1: HEADER + 3 NEW + 2 REPLY + 2 REACT (как было)
+ *  3) USER1: HEADER + 3 NEW + 2 REPLY + 2 REACT + 3 EDIT (добавили)
+ *      - редактируем два ранее написанных сообщения
+ *      - одно сообщение редактируем два раза
+ *
  *  4) USER2: HEADER + UserParams(name+address) + Connection(FRIEND -> USER1)
  *  5) USER1: UserParams(name+surname) + Connection(FRIEND -> USER2) + Connection(FOLLOW -> USER2)
+ *  6) USER2: Connection(UNFRIEND -> USER1)
  *
  * Важно:
  *  - у каждого пользователя СВОЙ ChainState
@@ -97,7 +101,7 @@ public class IT_03_AddBlock_NoAuth {
         );
 
         // =========================================================
-        // 3) USER1 блоки (под message_stats)
+        // 3) USER1 блоки (под message_stats + edits)
         // =========================================================
         if (TestConfig.DEBUG()) {
             TestLog.titleBlock("""
@@ -125,10 +129,10 @@ public class IT_03_AddBlock_NoAuth {
         if (TestConfig.DEBUG()) TestLog.stepTitle("USER1: TEXT#1 (NEW)  <- будет LIKE + REPLY");
         sender1.send(new TextBody(TextBody.SUB_NEW, "Hello #1 (NEW) from IT_03 test"), t);
 
-        if (TestConfig.DEBUG()) TestLog.stepTitle("USER1: TEXT#2 (NEW)  <- будет ONLY LIKE");
+        if (TestConfig.DEBUG()) TestLog.stepTitle("USER1: TEXT#2 (NEW)  <- будет ONLY LIKE + 2 EDIT");
         sender1.send(new TextBody(TextBody.SUB_NEW, "Hello #2 (NEW) from IT_03 test"), t);
 
-        if (TestConfig.DEBUG()) TestLog.stepTitle("USER1: TEXT#3 (NEW)  <- будет ONLY REPLY");
+        if (TestConfig.DEBUG()) TestLog.stepTitle("USER1: TEXT#3 (NEW)  <- будет ONLY REPLY + 1 EDIT");
         sender1.send(new TextBody(TextBody.SUB_NEW, "Hello #3 (NEW) from IT_03 test"), t);
 
         byte[] text1Hash = st1.getGlobalHash32(1);
@@ -174,8 +178,36 @@ public class IT_03_AddBlock_NoAuth {
                 text2Hash
         ), t);
 
-        assertEquals(7, st1.globalLastNumber(), "USER1: должно быть 8 блоков: globalLastNumber=7");
-        assertEquals(5, st1.lineLastNumber((short) 1), "USER1: line=1 должно быть 5 TEXT блоков (3 new + 2 reply)");
+        // 3 EDIT (два сообщения исправляем, одно — два раза)
+        if (TestConfig.DEBUG()) TestLog.stepTitle("USER1: TEXT#6 (EDIT -> TEXT#2)  (исправление #1)");
+        sender1.send(new TextBody(
+                TextBody.SUB_EDIT,
+                "Hello #2 (EDIT#1) from IT_03 test",
+                TestConfig.BCH_NAME(),
+                2,
+                text2Hash
+        ), t);
+
+        if (TestConfig.DEBUG()) TestLog.stepTitle("USER1: TEXT#7 (EDIT -> TEXT#2)  (исправление #2)");
+        sender1.send(new TextBody(
+                TextBody.SUB_EDIT,
+                "Hello #2 (EDIT#2) from IT_03 test",
+                TestConfig.BCH_NAME(),
+                2,
+                text2Hash
+        ), t);
+
+        if (TestConfig.DEBUG()) TestLog.stepTitle("USER1: TEXT#8 (EDIT -> TEXT#3)  (исправление #1)");
+        sender1.send(new TextBody(
+                TextBody.SUB_EDIT,
+                "Hello #3 (EDIT#1) from IT_03 test",
+                TestConfig.BCH_NAME(),
+                3,
+                text3Hash
+        ), t);
+
+        assertEquals(10, st1.globalLastNumber(), "USER1: после EDIT должно быть 11 блоков: globalLastNumber=10");
+        assertEquals(8, st1.lineLastNumber((short) 1), "USER1: line=1 должно быть 8 TEXT блоков (3 new + 2 reply + 3 edit)");
         assertEquals(2, st1.lineLastNumber((short) 2), "USER1: line=2 должно быть 2 REACTION блока");
 
         // =========================================================
