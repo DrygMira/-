@@ -15,9 +15,8 @@ import java.util.Objects;
  *   [2] type=2
  *   [2] ver=1
  *
- *   [2] subType (uint16) — подтип реакции (раньше это был reactionCode int32)
+ *   [2] subType (uint16) — подтип реакции
  *       1 = LIKE (лайк)
- *       (в будущем: 2=DISLIKE, 3=LAUGH, 4=WOW ... если захочешь)
  *
  *   [1] toBlockchainNameLen (uint8)
  *   [N] toBlockchainName UTF-8
@@ -26,10 +25,6 @@ import java.util.Objects;
  *
  * ЛИНИЯ:
  *  - строго lineIndex=2
- *
- * ВАЖНО (MVP):
- *  - Здесь мы НЕ проверяем, существует ли цель реакции.
- *  - Мы проверяем только корректность формата и целостность полей.
  */
 public final class ReactionBody implements BodyRecord, BodyHasTarget {
 
@@ -191,7 +186,7 @@ public final class ReactionBody implements BodyRecord, BodyHasTarget {
     }
 
     /* ===================================================================== */
-    /* ====================== BodyToFields контракт ========================= */
+    /* ====================== BodyHasTarget контракт ========================= */
     /* ===================================================================== */
 
     /** В самом формате ReactionBody login цели не хранится => null. */
@@ -201,5 +196,5 @@ public final class ReactionBody implements BodyRecord, BodyHasTarget {
 
     @Override public Integer toBlockGlobalNumber() { return toBlockGlobalNumber; }
 
-    @Override public String toBlockHashe() { return toBlockHashHex(); }
+    @Override public byte[] toBlockHasheBytes() { return toBlockHash32; }
 }

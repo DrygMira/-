@@ -27,6 +27,6 @@ public interface BodyHasTarget {
     /** globalNumber цели (nullable). */
     Integer toBlockGlobalNumber();
 
-    /** hash цели в HEX(64) (nullable). */
-    String toBlockHashe();
+    /** hash целевого блока (обычно 32 байта). Может быть null, если ссылки нет. */
+    byte[] toBlockHasheBytes();
 }

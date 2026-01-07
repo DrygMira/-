@@ -9,11 +9,11 @@ public class BlockEntry {
     private String bchName;
 
     private int  blockGlobalNumber;
-    private String blockGlobalPreHashe;
+    private byte[] blockGlobalPreHashe;
 
     private int  blockLineIndex;
     private int  blockLineNumber;
-    private String blockLinePreHashe;
+    private byte[] blockLinePreHashe;
 
     private int  msgType;
     private int  msgSubType;
@@ -23,24 +23,32 @@ public class BlockEntry {
     private String toLogin;
     private String toBchName;
     private Integer toBlockGlobalNumber;
-    private String toBlockHashe;
+    private byte[] toBlockHashe;
+
+    // новое
+    private byte[] blockHash;
+    private byte[] blockSignature;
+    private Integer editedByBlockGlobalNumber;
 
     public BlockEntry() {}
 
     public BlockEntry(String login,
                       String bchName,
                       int blockGlobalNumber,
-                      String blockGlobalPreHashe,
+                      byte[] blockGlobalPreHashe,
                       int blockLineIndex,
                       int blockLineNumber,
-                      String blockLinePreHashe,
+                      byte[] blockLinePreHashe,
                       int msgType,
                       int msgSubType,
                       byte[] blockByte,
                       String toLogin,
                       String toBchName,
                       Integer toBlockGlobalNumber,
-                      String toBlockHashe) {
+                      byte[] toBlockHashe,
+                      byte[] blockHash,
+                      byte[] blockSignature,
+                      Integer editedByBlockGlobalNumber) {
         this.login = login;
         this.bchName = bchName;
         this.blockGlobalNumber = blockGlobalNumber;
@@ -55,6 +63,9 @@ public class BlockEntry {
         this.toBchName = toBchName;
         this.toBlockGlobalNumber = toBlockGlobalNumber;
         this.toBlockHashe = toBlockHashe;
+        this.blockHash = blockHash;
+        this.blockSignature = blockSignature;
+        this.editedByBlockGlobalNumber = editedByBlockGlobalNumber;
     }
 
     public String getLogin() { return login; }
@@ -66,8 +77,8 @@ public class BlockEntry {
     public int getBlockGlobalNumber() { return blockGlobalNumber; }
     public void setBlockGlobalNumber(int blockGlobalNumber) { this.blockGlobalNumber = blockGlobalNumber; }
 
-    public String getBlockGlobalPreHashe() { return blockGlobalPreHashe; }
-    public void setBlockGlobalPreHashe(String blockGlobalPreHashe) { this.blockGlobalPreHashe = blockGlobalPreHashe; }
+    public byte[] getBlockGlobalPreHashe() { return blockGlobalPreHashe; }
+    public void setBlockGlobalPreHashe(byte[] blockGlobalPreHashe) { this.blockGlobalPreHashe = blockGlobalPreHashe; }
 
     public int getBlockLineIndex() { return blockLineIndex; }
     public void setBlockLineIndex(int blockLineIndex) { this.blockLineIndex = blockLineIndex; }
@@ -75,8 +86,8 @@ public class BlockEntry {
     public int getBlockLineNumber() { return blockLineNumber; }
     public void setBlockLineNumber(int blockLineNumber) { this.blockLineNumber = blockLineNumber; }
 
-    public String getBlockLinePreHashe() { return blockLinePreHashe; }
-    public void setBlockLinePreHashe(String blockLinePreHashe) { this.blockLinePreHashe = blockLinePreHashe; }
+    public byte[] getBlockLinePreHashe() { return blockLinePreHashe; }
+    public void setBlockLinePreHashe(byte[] blockLinePreHashe) { this.blockLinePreHashe = blockLinePreHashe; }
 
     public int getMsgType() { return msgType; }
     public void setMsgType(int msgType) { this.msgType = msgType; }
@@ -96,6 +107,15 @@ public class BlockEntry {
     public Integer getToBlockGlobalNumber() { return toBlockGlobalNumber; }
     public void setToBlockGlobalNumber(Integer toBlockGlobalNumber) { this.toBlockGlobalNumber = toBlockGlobalNumber; }
 
-    public String getToBlockHashe() { return toBlockHashe; }
-    public void setToBlockHashe(String toBlockHashe) { this.toBlockHashe = toBlockHashe; }
+    public byte[] getToBlockHashe() { return toBlockHashe; }
+    public void setToBlockHashe(byte[] toBlockHashe) { this.toBlockHashe = toBlockHashe; }
+
+    public byte[] getBlockHash() { return blockHash; }
+    public void setBlockHash(byte[] blockHash) { this.blockHash = blockHash; }
+
+    public byte[] getBlockSignature() { return blockSignature; }
+    public void setBlockSignature(byte[] blockSignature) { this.blockSignature = blockSignature; }
+
+    public Integer getEditedByBlockGlobalNumber() { return editedByBlockGlobalNumber; }
+    public void setEditedByBlockGlobalNumber(Integer editedByBlockGlobalNumber) { this.editedByBlockGlobalNumber = editedByBlockGlobalNumber; }
 }

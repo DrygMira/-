@@ -151,41 +151,40 @@ public class DatabaseInitializer {
                 ON ip_geo_cache (updated_at_ms);
                 """);
 
-            // 5. blockchain_state
+            // 5. blockchain_state (хэши -> BLOB NULLABLE)
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS blockchain_state (
                     blockchain_name       TEXT    NOT NULL PRIMARY KEY,
                     login                 TEXT    NOT NULL,
                     blockchain_key        TEXT    NOT NULL,
-                
+
                     size_limit            INTEGER NOT NULL,
                     file_size_bytes       INTEGER NOT NULL,
-                
+
                     last_global_number    INTEGER NOT NULL,
-                    last_global_hash      TEXT    NOT NULL,
+                    last_global_hash      BLOB,
                     updated_at_ms         INTEGER NOT NULL,
-                
+
                     line0_last_number     INTEGER NOT NULL,
-                    line0_last_hash       TEXT    NOT NULL,
+                    line0_last_hash       BLOB,
                     line1_last_number     INTEGER NOT NULL,
-                    line1_last_hash       TEXT    NOT NULL,
+                    line1_last_hash       BLOB,
                     line2_last_number     INTEGER NOT NULL,
-                    line2_last_hash       TEXT    NOT NULL,
+                    line2_last_hash       BLOB,
                     line3_last_number     INTEGER NOT NULL,
-                    line3_last_hash       TEXT    NOT NULL,
+                    line3_last_hash       BLOB,
                     line4_last_number     INTEGER NOT NULL,
-                    line4_last_hash       TEXT    NOT NULL,
+                    line4_last_hash       BLOB,
                     line5_last_number     INTEGER NOT NULL,
-                    line5_last_hash       TEXT    NOT NULL,
+                    line5_last_hash       BLOB,
                     line6_last_number     INTEGER NOT NULL,
-                    line6_last_hash       TEXT    NOT NULL,
+                    line6_last_hash       BLOB,
                     line7_last_number     INTEGER NOT NULL,
-                    line7_last_hash       TEXT    NOT NULL,
-                    
+                    line7_last_hash       BLOB,
+
                     FOREIGN KEY (login) REFERENCES solana_users(login)
                 );
                 """);
-
             st.executeUpdate("""
                 CREATE INDEX IF NOT EXISTS idx_blockchain_state_login
                 ON blockchain_state (login);
@@ -196,27 +195,35 @@ public class DatabaseInitializer {
                 ON blockchain_state (updated_at_ms);
                 """);
 
-            // 6. blocks
+            // 6. blocks (хэши/подпись -> BLOB, + edited_by_block_global_number)
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS blocks (
                     login                     TEXT    NOT NULL,
                     bch_name                  TEXT    NOT NULL,
                     block_global_number       INTEGER NOT NULL,
-                    block_global_pre_hashe    TEXT    NOT NULL,
+                    block_global_pre_hashe    BLOB    NOT NULL,
 
                     block_line_index          INTEGER NOT NULL,
                     block_line_number         INTEGER NOT NULL,
-                    block_line_pre_hashe      TEXT    NOT NULL,
+                    block_line_pre_hashe      BLOB    NOT NULL,
 
                     msg_type                  INTEGER NOT NULL,
                     msg_sub_type              INTEGER NOT NULL,
 
                     block_byte                BLOB,
 
+                    -- Ссылка на целевой блок (для reply/like/edit и т.д.)
                     to_login                  TEXT,
                     to_bch_name               TEXT,
                     to_block_global_number    INTEGER,
-                    to_block_hashe            TEXT,
+                    to_block_hashe            BLOB,
+
+                    -- Собственные данные блока (по просьбе)
+                    block_hash                BLOB    NOT NULL,
+                    block_signature           BLOB    NOT NULL,
+
+                    -- Последний edit, который изменил этот блок (NULL если не редактировали)
+                    edited_by_block_global_number INTEGER,
 
                     FOREIGN KEY (login) REFERENCES solana_users(login),
                     FOREIGN KEY (bch_name) REFERENCES blockchain_state(blockchain_name)
@@ -233,7 +240,7 @@ public class DatabaseInitializer {
                 ON blocks (to_login, to_bch_name, to_block_global_number);
                 """);
 
-            // 7) connections_state
+            // 7) connections_state (to_block_hashe -> BLOB)
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS connections_state (
                     login                  TEXT    NOT NULL,
@@ -241,7 +248,7 @@ public class DatabaseInitializer {
                     to_login               TEXT    NOT NULL,
                     to_bch_name            TEXT    NOT NULL,
                     to_block_global_number INTEGER,
-                    to_block_hashe         TEXT,
+                    to_block_hashe         BLOB,
 
                     FOREIGN KEY (login) REFERENCES solana_users(login),
 
@@ -264,7 +271,7 @@ public class DatabaseInitializer {
                 ON connections_state (login, to_login);
                 """);
 
-            // 8) Trigger: connection state
+            // 8) Trigger: connection state (логика та же)
             st.executeUpdate("""
                 CREATE TRIGGER IF NOT EXISTS trg_blocks_connection_state_ai
                 AFTER INSERT ON blocks
@@ -304,13 +311,13 @@ public class DatabaseInitializer {
                 END;
                 """);
 
-            // 9) message_stats
+            // 9) message_stats (to_block_hash -> BLOB)
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS message_stats (
                     to_login               TEXT    NOT NULL,
                     to_bch_name            TEXT    NOT NULL,
                     to_block_global_number INTEGER NOT NULL,
-                    to_block_hash          TEXT    NOT NULL,
+                    to_block_hash          BLOB    NOT NULL,
 
                     likes_count            INTEGER NOT NULL DEFAULT 0,
                     replies_count          INTEGER NOT NULL DEFAULT 0,
@@ -334,7 +341,7 @@ public class DatabaseInitializer {
                 ON message_stats (to_login);
                 """);
 
-            // 10) Trigger: LIKE
+            // 10) Trigger: LIKE (to_block_hashe -> to_block_hash BLOB)
             st.executeUpdate("""
                 CREATE TRIGGER IF NOT EXISTS trg_blocks_message_stats_like_ai
                 AFTER INSERT ON blocks
@@ -365,7 +372,7 @@ public class DatabaseInitializer {
                 END;
                 """);
 
-            // 11) Trigger: REPLY
+            // 11) Trigger: REPLY (to_block_hashe -> to_block_hash BLOB)
             st.executeUpdate("""
                 CREATE TRIGGER IF NOT EXISTS trg_blocks_message_stats_reply_ai
                 AFTER INSERT ON blocks
@@ -393,6 +400,20 @@ public class DatabaseInitializer {
                     ON CONFLICT(to_login, to_bch_name, to_block_global_number, to_block_hash)
                     DO UPDATE SET
                         replies_count = message_stats.replies_count + 1;
+                END;
+                """);
+
+            // 12) Trigger: EDIT — пометить исходный блок
+            st.executeUpdate("""
+                CREATE TRIGGER IF NOT EXISTS trg_blocks_edit_apply_ai
+                AFTER INSERT ON blocks
+                WHEN NEW.msg_type = 1 AND NEW.msg_sub_type = 10
+                BEGIN
+                    UPDATE blocks
+                    SET edited_by_block_global_number = NEW.block_global_number
+                    WHERE login = NEW.login
+                      AND bch_name = NEW.bch_name
+                      AND block_global_number = NEW.to_block_global_number;
                 END;
                 """);
         }

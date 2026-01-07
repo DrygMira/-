@@ -49,9 +49,6 @@ import java.util.Objects;
  *
  *   ВАЖНО: поля toBlockchainName/toBlockGlobalNumber/toBlockHash32 — это
  *   "последний известный блок" того человека (снимок/якорь состояния).
- *   По сути можно было бы обойтись без них, но они полезны:
- *    - фиксируют, какой блок и какой хэш ты считаешь последним известным у друга/контакта;
- *    - помогают синхронизации/проверкам (например, если потом сравнивать, насколько данные устарели).
  *
  * ЛИНИЯ:
  *  - строго lineIndex=3 (выделяем отдельную линию под связи).
@@ -182,7 +179,7 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget {
 
     private static boolean isValidSubType(short st) {
         return st == SUB_FRIEND || st == SUB_CONTACT || st == SUB_FOLLOW
-            || st == SUB_UNFRIEND || st == SUB_UNCONTACT || st == SUB_UNFOLLOW;
+                || st == SUB_UNFRIEND || st == SUB_UNCONTACT || st == SUB_UNFOLLOW;
     }
 
     /** true если это событие установки связи (10/20/30). */
@@ -348,5 +345,5 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget {
 
     @Override public Integer toBlockGlobalNumber() { return toBlockGlobalNumber; }
 
-    @Override public String toBlockHashe() { return toBlockHashHex(); }
+    @Override public byte[] toBlockHasheBytes() { return toBlockHash32; }
 }

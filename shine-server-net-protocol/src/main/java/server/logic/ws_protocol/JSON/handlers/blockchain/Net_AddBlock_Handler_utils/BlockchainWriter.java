@@ -1,3 +1,6 @@
+// =======================
+// BlockchainWriter.java  (НОВАЯ ВЕРСИЯ)
+// =======================
 package server.logic.ws_protocol.JSON.handlers.blockchain.Net_AddBlock_Handler_utils;
 
 import blockchain.BchBlockEntry;
@@ -15,6 +18,8 @@ import shine.log.BlockchainAdminNotifier;
 
 import java.sql.Connection;
 import java.sql.SQLException;
+import java.sql.Types;
+import java.util.Base64;
 
 /**
  * BlockchainWriter — единая точка записи:
@@ -25,23 +30,10 @@ import java.sql.SQLException;
  *   3) атомарно заменяем файл:
  *        - удаляем/замещаем старый <name>.bch
  *        - переименовываем <name>.tmp_bch -> <name>.bch
- *
- * Важно:
- *  - Шаг (2) — строго атомарный (SQL tx).
- *  - Шаг (3) — атомарный на уровне ФС, если поддерживается ATOMIC_MOVE.
- *
- * ДОПОЛНЕНИЕ (КРИТИЧНО):
- *  - Перед тем как дописывать блок, проверяем:
- *      реальный размер <name>.bch == st.fileSizeBytes.
- *    Если не совпадает — считаем это критической внешней порчей файлов,
- *    шлём уведомление админу и НЕ продолжаем запись.
  */
 public final class BlockchainWriter {
 
     private static final Logger log = LoggerFactory.getLogger(BlockchainWriter.class);
-
-    private static final String ZERO_HASH_64 =
-            "0000000000000000000000000000000000000000000000000000000000000000";
 
     private final SqliteDbController db;
     private final BlocksDAO blocksDAO;
@@ -55,44 +47,28 @@ public final class BlockchainWriter {
         this.fs = FileStoreUtil.getInstance();
     }
 
-    /**
-     * Главный метод:
-     *  - (0) проверяет соответствие размера файла и state (если это не genesis)
-     *  - создаёт tmp-файл (старое+новое),
-     *  - атомарно коммитит БД (block+state),
-     *  - атомарно заменяет основной файл.
-     */
     public void appendBlockAndState(
             String login,
             String blockchainName,
-            String prevGlobalHashHex,
-            String prevLineHashHex,
+            byte[] prevGlobalHash32,
+            byte[] prevLineHash32,
             BchBlockEntry block,
-            BlockchainStateEntry stOrNull,
-            String newHashHex
+            BlockchainStateEntry stOrNull
     ) throws SQLException {
 
-        // ✅ ВАЖНО: state теперь ОБЯЗАТЕЛЕН, genesis НЕ создаёт запись, а обновляет существующую
         if (stOrNull == null) {
             throw new SQLException("blockchain_state not found for blockchainName=" + blockchainName + " (state обязателен)");
         }
 
         verifyMainFileSizeMatchesStateOrAlert(login, blockchainName, block, stOrNull);
 
-        // =====================================================================
-        // ШАГ 1. Готовим bytes нового блока (включая signature+hash)
-        // =====================================================================
+        // bytes FULL блока (raw+sig+hash)
         final byte[] newBlockFullBytes = block.toBytes();
 
-        // =====================================================================
-        // ШАГ 2. Считаем новый fileSizeBytes
-        // =====================================================================
         final long oldFileSize = stOrNull.getFileSizeBytes();
         final long newFileSize = safeAdd(oldFileSize, newBlockFullBytes.length);
 
-        // =====================================================================
-        // ШАГ 3. Создаём новый tmp-файл: tmp = (old file bytes) + (new block bytes)
-        // =====================================================================
+        // tmp = old + new
         final byte[] tmpBytes;
         if (oldFileSize == 0) {
             tmpBytes = newBlockFullBytes;
@@ -129,9 +105,7 @@ public final class BlockchainWriter {
             throw new SQLException("Cannot write tmp blockchain file for: " + blockchainName, e);
         }
 
-        // =====================================================================
-        // ШАГ 4. АТОМАРНО фиксируем БД
-        // =====================================================================
+        // атомарно БД
         try (Connection c = db.getConnection()) {
 
             boolean oldAutoCommit = c.getAutoCommit();
@@ -140,9 +114,8 @@ public final class BlockchainWriter {
             boolean committed = false;
 
             try {
-                insertBlockRow(c, login, blockchainName, prevGlobalHashHex, prevLineHashHex, block);
-
-                appendState(c, blockchainName, block, stOrNull, newHashHex, newFileSize);
+                insertBlockRow(c, login, blockchainName, prevGlobalHash32, prevLineHash32, block);
+                appendState(c, blockchainName, block, stOrNull, newFileSize);
 
                 c.commit();
                 committed = true;
@@ -150,8 +123,8 @@ public final class BlockchainWriter {
             } catch (Exception e) {
                 try { c.rollback(); } catch (SQLException ignore) {}
 
-                log.error("Ошибка транзакции БД при добавлении блока (rollback выполнен) (login={}, blockchainName={}, blockNumber={}, prevGlobalHash={}, prevLineHash={}, newHash={}, oldFileSize={}, newFileSize={})",
-                        login, blockchainName, block.recordNumber, prevGlobalHashHex, prevLineHashHex, newHashHex, oldFileSize, newFileSize, e);
+                log.error("Ошибка транзакции БД при добавлении блока (rollback выполнен) (login={}, blockchainName={}, blockNumber={}, oldFileSize={}, newFileSize={})",
+                        login, blockchainName, block.recordNumber, oldFileSize, newFileSize, e);
 
                 if (e instanceof SQLException se) throw se;
                 throw new SQLException("appendBlockAndState failed (db tx)", e);
@@ -160,15 +133,13 @@ public final class BlockchainWriter {
                 try { c.setAutoCommit(oldAutoCommit); } catch (SQLException ignore) {}
             }
 
-            // =================================================================
-            // ШАГ 5. После успешного коммита БД — атомарно заменяем файл
-            // =================================================================
+            // после коммита БД — атомарно заменяем файл
             if (committed) {
                 try {
                     fs.atomicReplaceBlockchainFile(blockchainName);
                 } catch (Exception moveError) {
-                    log.error("БД закоммичена, но атомарная замена файла блокчейна не удалась. tmp оставлен для recovery. (login={}, blockchainName={}, blockNumber={}, newHash={}, tmpBytesLen={})",
-                            login, blockchainName, block.recordNumber, newHashHex, tmpBytes.length, moveError);
+                    log.error("БД закоммичена, но атомарная замена файла блокчейна не удалась. tmp оставлен для recovery. (login={}, blockchainName={}, blockNumber={})",
+                            login, blockchainName, block.recordNumber, moveError);
 
                     throw new SQLException(
                             "DB committed but file replace failed; tmp kept for recovery. blockchainName=" + blockchainName,
@@ -200,7 +171,6 @@ public final class BlockchainWriter {
                     ", blockchainName=" + blockchainName +
                     ", expectedSizeFromState=" + expected +
                     ", blockNumber=" + (block != null ? block.recordNumber : -1) + ".";
-
             BlockchainAdminNotifier.critical(msg, null);
             throw new SQLException(msg);
         }
@@ -228,43 +198,32 @@ public final class BlockchainWriter {
                     ", realMainFileSize=" + real +
                     ", blockNumber=" + (block != null ? block.recordNumber : -1) + ". " +
                     "Похоже на внешнее вмешательство/порчу файла. Запись нового блока остановлена.";
-
             BlockchainAdminNotifier.critical(msg, null);
             throw new SQLException(msg);
         }
     }
 
-    /**
-     * Обновление состояния blockchain_state (создаём если отсутствует).
-     *
-     * ПРАВИЛО ЛИНИЙ (как ты описал):
-     *  - globalNumber=0 — genesis в lineIndex=0, lineNumber=0, и его hash — базовый для ВСЕХ линий.
-     *  - для lineIndex>0 первая запись имеет lineNumber=1, её prevLineHash = hash(genesis)
-     *  - lastLineNumber/lastLineHash ведём независимо по каждой линии.
-     */
     private void appendState(
             Connection c,
             String blockchainName,
             BchBlockEntry block,
             BlockchainStateEntry stOrNull,
-            String newHashHex,
             long newFileSizeBytes
     ) throws SQLException {
 
-        // ✅ state обязателен
         BlockchainStateEntry st = stOrNull;
         if (st == null) {
             throw new SQLException("blockchain_state not found for blockchainName=" + blockchainName);
         }
 
-        // глобальная цепочка всегда растёт по recordNumber
+        // глобальная цепочка
         st.setLastGlobalNumber(block.recordNumber);
-        st.setLastGlobalHash(newHashHex);
+        st.setLastGlobalHash(block.getHash32());
 
-        // обновляем конкретную линию блока
+        // линия
         int li = block.lineIndex;
         st.setLastLineNumber(li, block.lineNumber);
-        st.setLastLineHash(li, newHashHex);
+        st.setLastLineHash(li, block.getHash32());
 
         // file size
         st.setFileSizeBytes(newFileSizeBytes);
@@ -276,24 +235,14 @@ public final class BlockchainWriter {
     }
 
     /**
-     * Вставка/апдейт строки блока в blocks.
-     *
-     * Важно:
-     *  - blockLinePreHashe = prevLineHashHex (а НЕ prevGlobalHashHex)
-     *  - msgType = body.type()
-     *  - msgSubType = body.subType()
-     *  - to* поля берём через BodyToFields (если body его поддерживает)
-     *
-     * Про toLogin:
-     *  - если body сам даёт toLogin — пишем его
-     *  - иначе, если есть toBchName — пробуем вычислить login из имени блокчейна (про запас)
+     * Вставка/апдейт строки блока в blocks (BLOB-вариант).
      */
     private void insertBlockRow(
             Connection c,
             String login,
             String blockchainName,
-            String prevGlobalHashHex,
-            String prevLineHashHex,
+            byte[] prevGlobalHash32,
+            byte[] prevLineHash32,
             BchBlockEntry block
     ) throws SQLException {
 
@@ -303,38 +252,31 @@ public final class BlockchainWriter {
         e.setBchName(blockchainName);
 
         e.setBlockGlobalNumber(block.recordNumber);
-        e.setBlockGlobalPreHashe(prevGlobalHashHex);
+        e.setBlockGlobalPreHashe(prevGlobalHash32);
 
         e.setBlockLineIndex(block.lineIndex);
         e.setBlockLineNumber(block.lineNumber);
-
-        // ✅ минимальная правка: для genesis сохраняем именно "64 нуля", а не пустую строку/NULL
-        String linePre = prevLineHashHex;
-        if (block.recordNumber == 0 && (linePre == null || linePre.isBlank())) {
-            linePre = ZERO_HASH_64;
-        }
-        e.setBlockLinePreHashe(linePre);
+        e.setBlockLinePreHashe(prevLineHash32);
 
         e.setMsgType(block.body.type());
         e.setMsgSubType(block.body.subType());
 
+        // ВАЖНО: здесь ты кладёшь FULL bytes (raw+sig+hash). Это ок, ты так задумал.
         e.setBlockByte(block.toBytes());
 
-        // defaults
+        // to-поля
         e.setToLogin(null);
         e.setToBchName(null);
         e.setToBlockGlobalNumber(null);
         e.setToBlockHashe(null);
 
-        // ✅ Универсально: если body поддерживает to-поля — пишем их
         if (block.body instanceof BodyHasTarget tf) {
-
             e.setToLogin(tf.toLogin());
             e.setToBchName(tf.toBchName());
             e.setToBlockGlobalNumber(tf.toBlockGlobalNumber());
-            e.setToBlockHashe(tf.toBlockHashe());
+            e.setToBlockHashe(tf.toBlockHasheBytes());
 
-            // optional: try compute to_login from target chain name (для индекса idx_blocks_to_target)
+            // если to_login не пришёл, но есть to_bch_name — восстановим логин из имени цепочки
             if (e.getToLogin() == null && e.getToBchName() != null) {
                 String toLogin = BlockchainNameUtil.loginFromBlockchainName(e.getToBchName());
                 if (toLogin != null && !toLogin.isBlank()) {
@@ -343,12 +285,17 @@ public final class BlockchainWriter {
             }
         }
 
+        // новое: хэш и подпись самого блока
+        e.setBlockHash(block.getHash32());
+        e.setBlockSignature(block.getSignature64());
+
+        // новое: не трогаем (NULL); триггер пометит исходный блок
+        e.setEditedByBlockGlobalNumber(null);
+
         blocksDAO.upsert(c, e);
     }
 
-    /* ===================================================================== */
-    /* =============================== Utils ================================ */
-    /* ===================================================================== */
+    // -------------------- utils --------------------
 
     private static byte[] concat(byte[] a, byte[] b) {
         byte[] out = new byte[a.length + b.length];
@@ -363,5 +310,33 @@ public final class BlockchainWriter {
             throw new IllegalArgumentException("fileSizeBytes overflow: " + x + " + " + y);
         }
         return r;
+    }
+
+    // Если у тебя где-то ещё остался String-хэш (legacy), используй это в месте парсинга JSON,
+    // но НЕ в writer. Оставляю тут только на всякий случай для миграции:
+    @SuppressWarnings("unused")
+    private static byte[] decodeHashStringLenient(String s) {
+        if (s == null) return null;
+        String t = s.trim();
+        if (t.isEmpty()) return null;
+
+        // hex 64
+        if (t.length() == 64 && t.matches("^[0-9a-fA-F]+$")) {
+            byte[] out = new byte[32];
+            for (int i = 0; i < 32; i++) {
+                int hi = Character.digit(t.charAt(i * 2), 16);
+                int lo = Character.digit(t.charAt(i * 2 + 1), 16);
+                out[i] = (byte) ((hi << 4) | lo);
+            }
+            return out;
+        }
+
+        // base64 (часто у тебя так)
+        try {
+            byte[] b = Base64.getDecoder().decode(t);
+            return (b != null && b.length == 32) ? b : b;
+        } catch (IllegalArgumentException ignore) {
+            return null;
+        }
     }
 }

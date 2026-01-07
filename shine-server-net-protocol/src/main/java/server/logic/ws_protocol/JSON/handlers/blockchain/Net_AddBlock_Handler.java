@@ -74,9 +74,7 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
             }
 
             resp.setServerLastGlobalNumber(r.serverLastGlobalNumber);
-            if (r.serverLastGlobalHash != null) {
-                resp.setServerLastGlobalHash(r.serverLastGlobalHash);
-            }
+            resp.setServerLastGlobalHash(r.serverLastGlobalHashHex);
 
             return resp;
 
@@ -116,32 +114,31 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
         }
 
         if (st == null) {
-            // теперь даже для genesis это ошибка: state должен быть создан заранее (с lastGlobalNumber=-1)
             log.warn("AddBlock: blockchain_state_not_found (login={}, blockchainName={}, globalNumber={})",
                     login, blockchainName, globalNumber);
             return new AddBlockResult(WireCodes.Status.NOT_FOUND, "blockchain_state_not_found", -1, "");
         }
 
         final int serverLastNum = st.getLastGlobalNumber();
-        final String serverLastHash = nn(st.getLastGlobalHash());
+        final String serverLastHashHex = toHex(nnBytes(st.getLastGlobalHash()));
 
         // ✅ для genesis ожидаем, что state уже в начальном состоянии (-1)
         if (globalNumber == 0 && serverLastNum != -1) {
             log.warn("AddBlock: genesis_but_state_not_initial (login={}, blockchainName={}, stateLastGlobalNumber={})",
                     login, blockchainName, serverLastNum);
-            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "genesis_but_state_not_initial", serverLastNum, serverLastHash);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "genesis_but_state_not_initial", serverLastNum, serverLastHashHex);
         }
 
         // следующий global строго
         int expectedGlobal = serverLastNum + 1;
         if (globalNumber != expectedGlobal) {
             log.warn("AddBlock: bad_global_number (login={}, blockchainName={}, пришёл={}, ожидали={}, serverLastNum={}, serverLastHash={})",
-                    login, blockchainName, globalNumber, expectedGlobal, serverLastNum, serverLastHash);
-            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_global_number", serverLastNum, serverLastHash);
+                    login, blockchainName, globalNumber, expectedGlobal, serverLastNum, serverLastHashHex);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_global_number", serverLastNum, serverLastHashHex);
         }
 
         // -------------------------------------------------------------------
-        // ✅ 2) Декодируем блок (раньше парсинга body)
+        // ✅ 2) Декодируем блок
         // -------------------------------------------------------------------
         final byte[] blockBytes;
         try {
@@ -149,26 +146,26 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
         } catch (Exception e) {
             log.warn("AddBlock: некорректный base64 блока (login={}, blockchainName={}, globalNumber={})",
                     login, blockchainName, globalNumber, e);
-            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_base64", serverLastNum, serverLastHash);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_base64", serverLastNum, serverLastHashHex);
         }
 
         // -------------------------------------------------------------------
-        // ✅ 3) Ранняя проверка лимита ДО любых записей (как ты попросил)
+        // ✅ 3) Ранняя проверка лимита
         // -------------------------------------------------------------------
         try {
             long oldSize = st.getFileSizeBytes();
-            long limit = st.getSizeLimit(); // предполагается, что поле уже есть (size_limit)
+            long limit = st.getSizeLimit();
             long newSize = safeAdd(oldSize, blockBytes.length);
 
             if (limit > 0 && newSize > limit) {
                 log.warn("AddBlock: limit_exceeded (login={}, blockchainName={}, globalNumber={}, oldSize={}, addLen={}, newSize={}, limit={})",
                         login, blockchainName, globalNumber, oldSize, blockBytes.length, newSize, limit);
-                return new AddBlockResult(413, "limit_exceeded", serverLastNum, serverLastHash);
+                return new AddBlockResult(413, "limit_exceeded", serverLastNum, serverLastHashHex);
             }
         } catch (Exception e) {
             log.error("AddBlock: limit_check_failed (login={}, blockchainName={}, globalNumber={})",
                     login, blockchainName, globalNumber, e);
-            return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "limit_check_failed", serverLastNum, serverLastHash);
+            return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "limit_check_failed", serverLastNum, serverLastHashHex);
         }
 
         // -------------------------------------------------------------------
@@ -178,26 +175,23 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
         try {
             block = new BchBlockEntry(blockBytes);
         } catch (Exception e) {
-            // важно: BchBlockEntry теперь сам валит блок, если body в неправильной линии
             log.warn("AddBlock: не удалось распарсить BchBlockEntry (login={}, blockchainName={}, globalNumber={}, bytesLen={})",
                     login, blockchainName, globalNumber, blockBytes.length, e);
-            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_format", serverLastNum, serverLastHash);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_format", serverLastNum, serverLastHashHex);
         }
 
-        // body.check()
         try {
             block.body.check();
         } catch (Exception e) {
             log.warn("AddBlock: body.check() не прошёл (login={}, blockchainName={}, globalNumber={}, bodyType={}, bodyVersion={})",
                     login, blockchainName, globalNumber, safeBodyType(block), safeBodyVersion(block), e);
-            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_body", serverLastNum, serverLastHash);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_body", serverLastNum, serverLastHashHex);
         }
 
-        // recordNumber == globalNumber
         if (block.recordNumber != globalNumber) {
             log.warn("AddBlock: global_number_mismatch (login={}, blockchainName={}, заявлен={}, внутриБлока={})",
                     login, blockchainName, globalNumber, block.recordNumber);
-            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "global_number_mismatch", serverLastNum, serverLastHash);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "global_number_mismatch", serverLastNum, serverLastHashHex);
         }
 
         // -------------------------------------------------------------------
@@ -205,90 +199,79 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
         // -------------------------------------------------------------------
         final byte[] loginKey32;
         try {
-            // предполагается, что st.getBlockchainKey() возвращает base64-строку, а getBlockchainKeyByte() -> 32 bytes
             loginKey32 = st.getBlockchainKeyBytes();
         } catch (Exception e) {
             log.warn("AddBlock: bad_blockchain_key_in_state (login={}, blockchainName={}, globalNumber={})",
                     login, blockchainName, globalNumber, e);
-            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_blockchain_key_in_state", serverLastNum, serverLastHash);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_blockchain_key_in_state", serverLastNum, serverLastHashHex);
         }
 
         if (loginKey32 == null || loginKey32.length != 32) {
             log.warn("AddBlock: bad_blockchain_key_len (login={}, blockchainName={}, globalNumber={}, keyLen={})",
                     login, blockchainName, globalNumber, (loginKey32 == null ? -1 : loginKey32.length));
-            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_blockchain_key_len", serverLastNum, serverLastHash);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_blockchain_key_len", serverLastNum, serverLastHashHex);
         }
 
         // -------------------------------------------------------------------
-        // ✅ 6) prevGlobalHash сравниваем со state.lastGlobalHash
+        // ✅ 6) prevGlobalHash сравниваем со state.lastGlobalHash (оба byte[32])
         // -------------------------------------------------------------------
         final byte[] prevGlobalHash32;
-        final byte[] serverPrevGlobal32;
         try {
-            prevGlobalHash32 = hexTo32(nn(prevGlobalHashHex));
-            serverPrevGlobal32 = hexTo32(nn(st.getLastGlobalHash())); // если пусто -> 32 нуля
+            prevGlobalHash32 = hexTo32(nn(prevGlobalHashHex)); // "" -> 32 нуля
         } catch (Exception e) {
             log.warn("AddBlock: bad_prev_global_hash_format (login={}, blockchainName={}, globalNumber={}, prevGlobalHashHex='{}')",
                     login, blockchainName, globalNumber, nn(prevGlobalHashHex), e);
-            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_prev_global_hash_format", serverLastNum, serverLastHash);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_prev_global_hash_format", serverLastNum, serverLastHashHex);
         }
 
+        final byte[] serverPrevGlobal32 = serverLastNum < 0 ? new byte[32] : nnBytes(st.getLastGlobalHash());
         if (!bytesEq(prevGlobalHash32, serverPrevGlobal32)) {
             log.warn("AddBlock: bad_prev_global_hash (login={}, blockchainName={}, globalNumber={}, clientPrev='{}', serverPrev='{}')",
-                    login, blockchainName, globalNumber, nn(prevGlobalHashHex), nn(st.getLastGlobalHash()));
-            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_prev_global_hash", serverLastNum, serverLastHash);
+                    login, blockchainName, globalNumber, nn(prevGlobalHashHex), toHex(serverPrevGlobal32));
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_prev_global_hash", serverLastNum, serverLastHashHex);
         }
 
         // ===========================
         // ЛИНИИ (строго)
         // ===========================
-
         int li = block.lineIndex;
         int ln = block.lineNumber;
 
         if (globalNumber == 0) {
-            // genesis
             if (li != 0 || ln != 0) {
                 log.warn("AddBlock: bad_genesis_line_fields (login={}, blockchainName={}, lineIndex={}, lineNumber={})",
                         login, blockchainName, li, ln);
-                return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_genesis_line_fields", serverLastNum, serverLastHash);
+                return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_genesis_line_fields", serverLastNum, serverLastHashHex);
             }
         } else {
-            // MVP: запрещаем lineIndex=0 для не-genesis (чтобы техблоки не пролезли случайно)
             if (li == 0) {
                 log.warn("AddBlock: line0_only_genesis (login={}, blockchainName={}, globalNumber={}, lineIndex={})",
                         login, blockchainName, globalNumber, li);
-                return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "line0_only_genesis", serverLastNum, serverLastHash);
+                return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "line0_only_genesis", serverLastNum, serverLastHashHex);
             }
             if (li < 1 || li > 7) {
                 log.warn("AddBlock: bad_line_index (login={}, blockchainName={}, globalNumber={}, lineIndex={})",
                         login, blockchainName, globalNumber, li);
-                return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_line_index", serverLastNum, serverLastHash);
+                return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_line_index", serverLastNum, serverLastHashHex);
             }
 
             int expectedLineNumber = st.getLastLineNumber(li) + 1;
             if (ln != expectedLineNumber) {
                 log.warn("AddBlock: bad_line_number (login={}, blockchainName={}, globalNumber={}, lineIndex={}, пришёлLineNumber={}, ожидалиLineNumber={}, lastLineNumber={})",
                         login, blockchainName, globalNumber, li, ln, expectedLineNumber, st.getLastLineNumber(li));
-                return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_line_number", serverLastNum, serverLastHash);
+                return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_line_number", serverLastNum, serverLastHashHex);
             }
         }
 
-        // prevLineHash берём из state по lineIndex:
-        //  - genesis: 32 нулей
-        //  - иначе: st.getLastLineHash(li) (для первой записи в линии это будет hash genesis)
         final byte[] prevLineHash32;
-        final String prevLineHashHex;
         try {
-            prevLineHashHex = computePrevLineHashHex(st, li);
-            prevLineHash32 = hexTo32(prevLineHashHex);
+            prevLineHash32 = computePrevLineHash32(st, li);
         } catch (Exception e) {
             log.warn("AddBlock: bad_prev_line_hash_in_state (login={}, blockchainName={}, globalNumber={}, lineIndex={})",
                     login, blockchainName, globalNumber, li, e);
-            return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "bad_prev_line_hash_in_state", serverLastNum, serverLastHash);
+            return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "bad_prev_line_hash_in_state", serverLastNum, serverLastHashHex);
         }
 
-        // crypto verify
         boolean ok = BchCryptoVerifier.verifyAll(
                 login,
                 prevGlobalHash32,
@@ -302,27 +285,26 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
         if (!ok) {
             log.warn("AddBlock: bad_signature_or_hash (login={}, blockchainName={}, globalNumber={}, lineIndex={}, lineNumber={})",
                     login, blockchainName, globalNumber, li, ln);
-            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_signature_or_hash", serverLastNum, serverLastHash);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_signature_or_hash", serverLastNum, serverLastHashHex);
         }
-
-        String newHashHex = toHex(block.getHash32());
 
         // write
         try {
             dbWriter.appendBlockAndState(
                     login,
                     blockchainName,
-                    nn(prevGlobalHashHex),
-                    prevLineHashHex,
+                    prevGlobalHash32,
+                    prevLineHash32,
                     block,
-                    st,
-                    newHashHex
+                    st
             );
         } catch (Exception e) {
-            log.error("AddBlock: внутренняя ошибка при записи блока (login={}, blockchainName={}, globalNumber={}, newHash={})",
-                    login, blockchainName, globalNumber, newHashHex, e);
-            return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "internal_error", serverLastNum, serverLastHash);
+            log.error("AddBlock: внутренняя ошибка при записи блока (login={}, blockchainName={}, globalNumber={})",
+                    login, blockchainName, globalNumber, e);
+            return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "internal_error", serverLastNum, serverLastHashHex);
         }
+
+        String newHashHex = toHex(block.getHash32());
 
         log.info("✅ AddBlock ok: login={}, blockchainName={}, globalNumber={}, lineIndex={}, lineNumber={}, newHash={}",
                 login, blockchainName, globalNumber, li, ln, newHashHex);
@@ -332,43 +314,42 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
 
     /**
      * ✅ Правило:
-     *  - lineIndex=0 (genesis линия): prevLineHash = 32 нулей (пустая строка => hexTo32 даст 32 нуля)
+     *  - lineIndex=0: prevLineHash = 32 нулей
      *  - lineIndex>0:
      *      - если в этой линии ещё нет блоков (lastLineNumber==0) => prevLineHash = hash(genesis) (line0 hash)
      *      - иначе => prevLineHash = lastLineHash(lineIndex)
      */
-    private static String computePrevLineHashHex(BlockchainStateEntry st, int lineIndex) {
+    private static byte[] computePrevLineHash32(BlockchainStateEntry st, int lineIndex) {
         if (lineIndex == 0) {
-            return ""; // -> 32 нуля
+            return new byte[32];
         }
 
         int lastLn = st.getLastLineNumber(lineIndex);
         if (lastLn == 0) {
-            // первая запись линии -> от genesis
-            String genesis = nn(st.getLastLineHash(0));
-            if (!genesis.isBlank()) return genesis;
+            byte[] genesis = nnBytes(st.getLastLineHash(0));
+            if (genesis.length == 32) return genesis;
 
-            // fallback: если line0 почему-то не заполнена, но genesis глобально есть
-            String g = nn(st.getLastGlobalHash());
-            if (!g.isBlank()) return g;
+            byte[] g = nnBytes(st.getLastGlobalHash());
+            if (g.length == 32) return g;
 
-            return "";
+            return new byte[32];
         }
 
-        return nn(st.getLastLineHash(lineIndex));
+        byte[] last = nnBytes(st.getLastLineHash(lineIndex));
+        return last.length == 32 ? last : new byte[32];
     }
 
     private static final class AddBlockResult {
         final int httpStatus;
         final String reasonCode;
         final int serverLastGlobalNumber;
-        final String serverLastGlobalHash;
+        final String serverLastGlobalHashHex;
 
-        AddBlockResult(int httpStatus, String reasonCode, int serverLastGlobalNumber, String serverLastGlobalHash) {
+        AddBlockResult(int httpStatus, String reasonCode, int serverLastGlobalNumber, String serverLastGlobalHashHex) {
             this.httpStatus = httpStatus;
             this.reasonCode = reasonCode;
             this.serverLastGlobalNumber = serverLastGlobalNumber;
-            this.serverLastGlobalHash = serverLastGlobalHash;
+            this.serverLastGlobalHashHex = serverLastGlobalHashHex;
         }
 
         boolean isOk() {
@@ -377,6 +358,8 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
     }
 
     private static String nn(String s) { return s == null ? "" : s; }
+
+    private static byte[] nnBytes(byte[] b) { return b == null ? new byte[0] : b; }
 
     private static byte[] decodeBase64(String s) {
         if (s == null || s.isBlank()) throw new IllegalArgumentException("empty base64");
@@ -408,6 +391,7 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
     }
 
     private static String toHex(byte[] bytes) {
+        if (bytes == null || bytes.length == 0) return "";
         char[] HEX = "0123456789abcdef".toCharArray();
         char[] out = new char[bytes.length * 2];
         for (int i = 0; i < bytes.length; i++) {

@@ -33,13 +33,6 @@ import java.util.Objects;
  *
  * ЛИНИЯ:
  *  - строго lineIndex=1
- *
- * Правила строгого парсинга (чтобы формат не “плыл”):
- *  - subType обязан быть 1/2/3
- *  - textLen обязан быть >0 и <=65535
- *  - text обязан быть валидным UTF-8 и не blank
- *  - для subType=NEW запрещены поля ссылки и запрещены любые “лишние байты” в хвосте
- *  - для subType=REPLY/REPOST хвост обязан быть ровно по формату и без мусора в конце
  */
 public final class TextBody implements BodyRecord, BodyHasTarget {
 
@@ -160,10 +153,6 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
     /* ====================== Конструкторы “для тестов” ====================== */
     /* ===================================================================== */
 
-    /**
-     * Удобный конструктор для тестов/сборки простого сообщения:
-     *   new TextBody(text) == new TextBody(SUB_NEW, text)
-     */
     public TextBody(String message) {
         this(SUB_NEW, message);
     }
@@ -244,7 +233,6 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
             if (toBlockHash32 == null || toBlockHash32.length != 32)
                 throw new IllegalArgumentException("toBlockHash32 invalid");
         } else {
-            // SUB_NEW
             if (toBlockchainName != null) throw new IllegalArgumentException("toBlockchainName must be null for SUB_NEW");
             if (toBlockHash32 != null) throw new IllegalArgumentException("toBlockHash32 must be null for SUB_NEW");
         }
@@ -279,7 +267,6 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
             cap += 1 + nameBytes.length + 4 + 32;
 
         } else {
-            // SUB_NEW — ссылка запрещена
             if (toBlockchainName != null || toBlockHash32 != null) {
                 throw new IllegalArgumentException("SUB_NEW must not contain reply/repost fields");
             }
@@ -363,7 +350,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
     }
 
     /* ===================================================================== */
-    /* ====================== BodyToFields контракт ========================= */
+    /* ====================== BodyHasTarget контракт ========================= */
     /* ===================================================================== */
 
     /** В формате TextBody login цели не хранится => null. */
@@ -380,7 +367,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
     }
 
     @Override
-    public String toBlockHashe() {
-        return (subType == SUB_REPLY || subType == SUB_REPOST) ? toBlockHashHex() : null;
+    public byte[] toBlockHasheBytes() {
+        return (subType == SUB_REPLY || subType == SUB_REPOST) ? toBlockHash32 : null;
     }
 }

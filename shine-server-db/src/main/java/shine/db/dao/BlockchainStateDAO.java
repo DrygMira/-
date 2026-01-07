@@ -1,3 +1,6 @@
+// =======================
+// BlockchainStateDAO.java   (НОВАЯ ВЕРСИЯ)
+// =======================
 package shine.db.dao;
 
 import shine.db.SqliteDbController;
@@ -71,11 +74,8 @@ public final class BlockchainStateDAO {
     /** UPSERT с внешним соединением. Соединение НЕ закрывает. */
     public void upsert(Connection c, BlockchainStateEntry e) throws SQLException {
 
-        // ВАЖНО:
-        // Колонок должно быть ровно 24:
-        //  8 основных + (8 линий * 2 поля) = 8 + 16 = 24
-        //
-        // size_bytes УДАЛЁН ИЗ ПРОЕКТА, здесь его быть не должно.
+        // Колонок ровно 24:
+        //  8 основных + (8 линий * 2 поля) = 24
 
         String sql = """
             INSERT INTO blockchain_state (
@@ -144,12 +144,12 @@ public final class BlockchainStateDAO {
             ps.setLong(i++, e.getFileSizeBytes());
 
             ps.setInt(i++, e.getLastGlobalNumber());
-            ps.setString(i++, nn(e.getLastGlobalHash()));
+            setBytesNullable(ps, i++, e.getLastGlobalHash());
             ps.setLong(i++, e.getUpdatedAtMs());
 
             for (int line = 0; line < 8; line++) {
                 ps.setInt(i++, e.getLastLineNumber(line));
-                ps.setString(i++, nn(e.getLastLineHash(line)));
+                setBytesNullable(ps, i++, e.getLastLineHash(line));
             }
 
             ps.executeUpdate();
@@ -204,16 +204,21 @@ public final class BlockchainStateDAO {
         e.setFileSizeBytes(rs.getLong("file_size_bytes"));
 
         e.setLastGlobalNumber(rs.getInt("last_global_number"));
-        e.setLastGlobalHash(rs.getString("last_global_hash"));
+        e.setLastGlobalHash(rs.getBytes("last_global_hash")); // может быть null
 
         e.setUpdatedAtMs(rs.getLong("updated_at_ms"));
 
         for (int line = 0; line < 8; line++) {
             e.setLastLineNumber(line, rs.getInt("line" + line + "_last_number"));
-            e.setLastLineHash(line, rs.getString("line" + line + "_last_hash"));
+            e.setLastLineHash(line, rs.getBytes("line" + line + "_last_hash")); // может быть null
         }
 
         return e;
+    }
+
+    private static void setBytesNullable(PreparedStatement ps, int index, byte[] b) throws SQLException {
+        if (b != null) ps.setBytes(index, b);
+        else ps.setNull(index, Types.BLOB);
     }
 
     private static String nn(String s) { return s == null ? "" : s; }

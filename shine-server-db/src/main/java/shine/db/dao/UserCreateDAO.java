@@ -12,7 +12,7 @@ import java.sql.*;
  *  - blockchain_state (blockchain_name, login, blockchain_key, size_limit, ... last_global_number=-1 ...)
  *
  * ВАЖНО:
- *  - только INSERT
+ *  - только INSERT/UPSERT
  *  - если login или blockchainName заняты — возвращаем false (пользователь уже есть/занято)
  */
 public final class UserCreateDAO {
@@ -69,11 +69,11 @@ public final class UserCreateDAO {
 
                 // старт: глобальных блоков ещё нет
                 st.setLastGlobalNumber(-1);
-                st.setLastGlobalHash("");
+                st.setLastGlobalHash(null);
 
                 for (int line = 0; line < 8; line++) {
                     st.setLastLineNumber(line, 0);
-                    st.setLastLineHash(line, "");
+                    st.setLastLineHash(line, null);
                 }
 
                 st.setUpdatedAtMs(nowMs);

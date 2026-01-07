@@ -50,8 +50,11 @@ public final class BlocksDAO {
                 to_login,
                 to_bch_name,
                 to_block_global_number,
-                to_block_hashe
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                to_block_hashe,
+                block_hash,
+                block_signature,
+                edited_by_block_global_number
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """;
 
         try (PreparedStatement ps = c.prepareStatement(sql)) {
@@ -104,7 +107,10 @@ public final class BlocksDAO {
                 to_login,
                 to_bch_name,
                 to_block_global_number,
-                to_block_hashe
+                to_block_hashe,
+                block_hash,
+                block_signature,
+                edited_by_block_global_number
             FROM blocks
             WHERE
                 login = ?
@@ -145,15 +151,18 @@ public final class BlocksDAO {
         String sql = """
             UPDATE blocks
             SET
-                block_global_pre_hashe  = ?,
-                block_line_pre_hashe    = ?,
-                msg_type                = ?,
-                msg_sub_type            = ?,
-                block_byte              = ?,
-                to_login                = ?,
-                to_bch_name             = ?,
-                to_block_global_number  = ?,
-                to_block_hashe          = ?
+                block_global_pre_hashe        = ?,
+                block_line_pre_hashe          = ?,
+                msg_type                      = ?,
+                msg_sub_type                  = ?,
+                block_byte                    = ?,
+                to_login                      = ?,
+                to_bch_name                   = ?,
+                to_block_global_number        = ?,
+                to_block_hashe                = ?,
+                block_hash                    = ?,
+                block_signature               = ?,
+                edited_by_block_global_number = ?
             WHERE
                 login = ?
                 AND bch_name = ?
@@ -165,8 +174,8 @@ public final class BlocksDAO {
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             int i = 1;
 
-            ps.setString(i++, nn(e.getBlockGlobalPreHashe()));
-            ps.setString(i++, nn(e.getBlockLinePreHashe()));
+            ps.setBytes(i++, bb(e.getBlockGlobalPreHashe()));
+            ps.setBytes(i++, bb(e.getBlockLinePreHashe()));
             ps.setInt(i++, e.getMsgType());
             ps.setInt(i++, e.getMsgSubType());
 
@@ -183,8 +192,14 @@ public final class BlocksDAO {
             if (e.getToBlockGlobalNumber() != null) ps.setInt(i++, e.getToBlockGlobalNumber());
             else ps.setNull(i++, Types.INTEGER);
 
-            if (e.getToBlockHashe() != null) ps.setString(i++, e.getToBlockHashe());
-            else ps.setNull(i++, Types.VARCHAR);
+            if (e.getToBlockHashe() != null) ps.setBytes(i++, e.getToBlockHashe());
+            else ps.setNull(i++, Types.BLOB);
+
+            ps.setBytes(i++, bb(e.getBlockHash()));
+            ps.setBytes(i++, bb(e.getBlockSignature()));
+
+            if (e.getEditedByBlockGlobalNumber() != null) ps.setInt(i++, e.getEditedByBlockGlobalNumber());
+            else ps.setNull(i++, Types.INTEGER);
 
             ps.setString(i++, e.getLogin());
             ps.setString(i++, e.getBchName());
@@ -249,11 +264,11 @@ public final class BlocksDAO {
         ps.setString(i++, e.getLogin());
         ps.setString(i++, e.getBchName());
         ps.setInt(i++, e.getBlockGlobalNumber());
-        ps.setString(i++, nn(e.getBlockGlobalPreHashe()));
+        ps.setBytes(i++, bb(e.getBlockGlobalPreHashe()));
 
         ps.setInt(i++, e.getBlockLineIndex());
         ps.setInt(i++, e.getBlockLineNumber());
-        ps.setString(i++, nn(e.getBlockLinePreHashe()));
+        ps.setBytes(i++, bb(e.getBlockLinePreHashe()));
 
         ps.setInt(i++, e.getMsgType());
         ps.setInt(i++, e.getMsgSubType());
@@ -271,8 +286,14 @@ public final class BlocksDAO {
         if (e.getToBlockGlobalNumber() != null) ps.setInt(i++, e.getToBlockGlobalNumber());
         else ps.setNull(i++, Types.INTEGER);
 
-        if (e.getToBlockHashe() != null) ps.setString(i++, e.getToBlockHashe());
-        else ps.setNull(i++, Types.VARCHAR);
+        if (e.getToBlockHashe() != null) ps.setBytes(i++, e.getToBlockHashe());
+        else ps.setNull(i++, Types.BLOB);
+
+        ps.setBytes(i++, bb(e.getBlockHash()));
+        ps.setBytes(i++, bb(e.getBlockSignature()));
+
+        if (e.getEditedByBlockGlobalNumber() != null) ps.setInt(i++, e.getEditedByBlockGlobalNumber());
+        else ps.setNull(i++, Types.INTEGER);
     }
 
     private BlockEntry mapRow(ResultSet rs) throws SQLException {
@@ -281,11 +302,11 @@ public final class BlocksDAO {
         e.setLogin(rs.getString("login"));
         e.setBchName(rs.getString("bch_name"));
         e.setBlockGlobalNumber(rs.getInt("block_global_number"));
-        e.setBlockGlobalPreHashe(rs.getString("block_global_pre_hashe"));
+        e.setBlockGlobalPreHashe(rs.getBytes("block_global_pre_hashe"));
 
         e.setBlockLineIndex(rs.getInt("block_line_index"));
         e.setBlockLineNumber(rs.getInt("block_line_number"));
-        e.setBlockLinePreHashe(rs.getString("block_line_pre_hashe"));
+        e.setBlockLinePreHashe(rs.getBytes("block_line_pre_hashe"));
 
         e.setMsgType(rs.getInt("msg_type"));
         e.setMsgSubType(rs.getInt("msg_sub_type"));
@@ -301,12 +322,18 @@ public final class BlocksDAO {
         Integer toBlockGlobalNumber = (Integer) rs.getObject("to_block_global_number");
         e.setToBlockGlobalNumber(toBlockGlobalNumber);
 
-        String toBlockHashe = rs.getString("to_block_hashe");
+        byte[] toBlockHashe = rs.getBytes("to_block_hashe");
         if (rs.wasNull()) toBlockHashe = null;
         e.setToBlockHashe(toBlockHashe);
+
+        e.setBlockHash(rs.getBytes("block_hash"));
+        e.setBlockSignature(rs.getBytes("block_signature"));
+
+        Integer editedBy = (Integer) rs.getObject("edited_by_block_global_number");
+        e.setEditedByBlockGlobalNumber(editedBy);
 
         return e;
     }
 
-    private static String nn(String s) { return s == null ? "" : s; }
+    private static byte[] bb(byte[] b) { return b == null ? new byte[0] : b; }
 }

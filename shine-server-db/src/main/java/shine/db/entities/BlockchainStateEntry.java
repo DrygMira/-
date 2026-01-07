@@ -1,3 +1,6 @@
+// =======================
+// BlockchainStateEntry.java   (НОВАЯ ВЕРСИЯ)
+// =======================
 package shine.db.entities;
 
 import java.util.Arrays;
@@ -6,6 +9,11 @@ import java.util.Base64;
 /**
  * Агрегатная сущность текущего состояния блокчейна.
  * 1 строка = 1 blockchain_name, плюс состояние линий 0..7.
+ *
+ * ВАЖНО:
+ * - hash-поля теперь храним как byte[] и допускаем NULL:
+ *   * NULL = "ещё не было ни одного блока" (genesis и т.п.)
+ *   * не подменяем на new byte[0], чтобы не терять смысл
  */
 public final class BlockchainStateEntry {
 
@@ -18,16 +26,15 @@ public final class BlockchainStateEntry {
     private long fileSizeBytes;
 
     private int lastGlobalNumber;
-    private String lastGlobalHash;
+    private byte[] lastGlobalHash;           // nullable
 
     private final int[] lastLineNumbers = new int[8];
-    private final String[] lastLineHashes = new String[8];
+    private final byte[][] lastLineHashes = new byte[8][]; // nullable elements
 
     private long updatedAtMs;
 
     public BlockchainStateEntry() {
-        for (int i = 0; i < 8; i++) lastLineHashes[i] = "";
-        this.lastGlobalHash = "";
+        // hashes остаются null по умолчанию (genesis)
     }
 
     public BlockchainStateEntry(String blockchainName,
@@ -36,9 +43,9 @@ public final class BlockchainStateEntry {
                                 long sizeLimit,
                                 long fileSizeBytes,
                                 int lastGlobalNumber,
-                                String lastGlobalHash,
+                                byte[] lastGlobalHash,
                                 int[] lastLineNumbers,
-                                String[] lastLineHashes,
+                                byte[][] lastLineHashes,
                                 long updatedAtMs) {
         this.blockchainName = blockchainName;
         this.login = login;
@@ -46,17 +53,16 @@ public final class BlockchainStateEntry {
         this.sizeLimit = sizeLimit;
         this.fileSizeBytes = fileSizeBytes;
         this.lastGlobalNumber = lastGlobalNumber;
-        this.lastGlobalHash = lastGlobalHash == null ? "" : lastGlobalHash;
+        this.lastGlobalHash = lastGlobalHash;
 
         if (lastLineNumbers != null) {
             if (lastLineNumbers.length != 8) throw new IllegalArgumentException("lastLineNumbers must be len=8");
             System.arraycopy(lastLineNumbers, 0, this.lastLineNumbers, 0, 8);
         }
+
         if (lastLineHashes != null) {
             if (lastLineHashes.length != 8) throw new IllegalArgumentException("lastLineHashes must be len=8");
-            for (int i = 0; i < 8; i++) this.lastLineHashes[i] = lastLineHashes[i] == null ? "" : lastLineHashes[i];
-        } else {
-            for (int i = 0; i < 8; i++) this.lastLineHashes[i] = "";
+            System.arraycopy(lastLineHashes, 0, this.lastLineHashes, 0, 8);
         }
 
         this.updatedAtMs = updatedAtMs;
@@ -92,8 +98,8 @@ public final class BlockchainStateEntry {
     public int getLastGlobalNumber() { return lastGlobalNumber; }
     public void setLastGlobalNumber(int lastGlobalNumber) { this.lastGlobalNumber = lastGlobalNumber; }
 
-    public String getLastGlobalHash() { return lastGlobalHash; }
-    public void setLastGlobalHash(String lastGlobalHash) { this.lastGlobalHash = lastGlobalHash == null ? "" : lastGlobalHash; }
+    public byte[] getLastGlobalHash() { return lastGlobalHash; }
+    public void setLastGlobalHash(byte[] lastGlobalHash) { this.lastGlobalHash = lastGlobalHash; }
 
     public int getLastLineNumber(int line) {
         checkLine(line);
@@ -104,17 +110,22 @@ public final class BlockchainStateEntry {
         lastLineNumbers[line] = value;
     }
 
-    public String getLastLineHash(int line) {
+    public byte[] getLastLineHash(int line) {
         checkLine(line);
         return lastLineHashes[line];
     }
-    public void setLastLineHash(int line, String value) {
+    public void setLastLineHash(int line, byte[] value) {
         checkLine(line);
-        lastLineHashes[line] = value == null ? "" : value;
+        lastLineHashes[line] = value;
     }
 
-    public int[] getLastLineNumbersCopy() { return Arrays.copyOf(lastLineNumbers, 8); }
-    public String[] getLastLineHashesCopy() { return Arrays.copyOf(lastLineHashes, 8); }
+    public int[] getLastLineNumbersCopy() {
+        return Arrays.copyOf(lastLineNumbers, 8);
+    }
+
+    public byte[][] getLastLineHashesCopy() {
+        return Arrays.copyOf(lastLineHashes, 8);
+    }
 
     public long getUpdatedAtMs() { return updatedAtMs; }
     public void setUpdatedAtMs(long updatedAtMs) { this.updatedAtMs = updatedAtMs; }
