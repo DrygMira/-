@@ -12,7 +12,6 @@ import test.it.utils.*;
 import utils.crypto.Ed25519Util;
 
 import java.time.Duration;
-import java.util.Base64;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -23,8 +22,8 @@ import static org.junit.jupiter.api.Assertions.*;
  * чтобы "четвёртый" сценарий гарантированно запускался сразу после "третьего".
  *
  * Сценарий:
- *  1) AddUser(USER1) 200 или 409 USER_ALREADY_EXISTS
- *  2) AddUser(USER2) 200 или 409 USER_ALREADY_EXISTS
+ *  1) (УБРАНО) AddUser(USER1) — создаётся раньше в первом тесте
+ *  2) (УБРАНО) AddUser(USER2) — создаётся раньше в первом тесте
  *
  *  3) USER1: HEADER + 3 NEW + 2 REPLY + 2 REACT + 3 EDIT (добавили)
  *      - редактируем два ранее написанных сообщения
@@ -49,7 +48,6 @@ public class IT_03_AddBlock_NoAuth {
 
     public static void main(String[] args) {
         int failed = run();
-//        System.exit(failed);
     }
 
     public static int run() {
@@ -69,36 +67,9 @@ public class IT_03_AddBlock_NoAuth {
         Duration t = Duration.ofSeconds(1);
 
         // =========================================================
-        // 1) AddUser(USER1)
+        // USER2 keys (детерминированно из login, как твой ItRunContext)
         // =========================================================
-        addUserOr409AlreadyExists(
-                "USER1",
-                TestConfig.LOGIN(),
-                TestConfig.BCH_NAME(),
-                TestConfig.LOGIN_PUBKEY_B64(),
-                TestConfig.DEVICE_PUBKEY_B64()
-        );
-
-        // =========================================================
-        // 2) AddUser(USER2)
-        // =========================================================
-        // Генерим ключи детерминированно из login (как твой ItRunContext)
         byte[] user2LoginPriv = Ed25519Util.generatePrivateKeyFromString(USER2_LOGIN);
-        byte[] user2LoginPub  = Ed25519Util.derivePublicKey(user2LoginPriv);
-
-        byte[] user2DevPriv = Ed25519Util.generatePrivateKeyFromString(USER2_LOGIN + "#device");
-        byte[] user2DevPub  = Ed25519Util.derivePublicKey(user2DevPriv);
-
-        String user2LoginPubB64 = Base64.getEncoder().encodeToString(user2LoginPub);
-        String user2DevPubB64   = Base64.getEncoder().encodeToString(user2DevPub);
-
-        addUserOr409AlreadyExists(
-                "USER2",
-                USER2_LOGIN,
-                USER2_BCH,
-                user2LoginPubB64,
-                user2DevPubB64
-        );
 
         // =========================================================
         // 3) USER1 блоки (под message_stats + edits)
@@ -179,6 +150,7 @@ public class IT_03_AddBlock_NoAuth {
         ), t);
 
         // 3 EDIT (два сообщения исправляем, одно — два раза)
+        // ВАЖНО: subType EDIT берём из TextBody.SUB_EDIT (единая константа = 10)
         if (TestConfig.DEBUG()) TestLog.stepTitle("USER1: TEXT#6 (EDIT -> TEXT#2)  (исправление #1)");
         sender1.send(new TextBody(
                 TextBody.SUB_EDIT,
@@ -280,60 +252,5 @@ public class IT_03_AddBlock_NoAuth {
         ), t);
 
         TestLog.pass("IT_03_AddBlock_NoAuth (combined): OK");
-    }
-
-    // ======================================================================
-    // helpers
-    // ======================================================================
-
-    private static void addUserOr409AlreadyExists(String label,
-                                                  String login,
-                                                  String blockchainName,
-                                                  String loginPubKeyB64,
-                                                  String devicePubKeyB64) {
-
-        TestLog.title(label + ": AddUser (200 OK) или 409 USER_ALREADY_EXISTS");
-        TestLog.info("  login          = " + login);
-        TestLog.info("  blockchainName = " + blockchainName);
-
-        String reqId = "it-adduser-" + label.toLowerCase();
-
-        String reqJson = """
-                {
-                  "op": "AddUser",
-                  "requestId": "%s",
-                  "payload": {
-                    "login": "%s",
-                    "blockchainName": "%s",
-                    "loginKey": "%s",
-                    "deviceKey": "%s",
-                    "bchLimit": %d
-                  }
-                }
-                """.formatted(
-                reqId,
-                login,
-                blockchainName,
-                loginPubKeyB64,
-                devicePubKeyB64,
-                TestConfig.TEST_BCH_LIMIT
-        );
-
-        try (WsTestClient client = new WsTestClient(TestConfig.WS_URI)) {
-            TestLog.send("AddUser(" + label + ")", reqJson);
-            String resp = client.request(reqId, reqJson, Duration.ofSeconds(5));
-            TestLog.recv("AddUser(" + label + ")", resp);
-
-            int st = JsonParsers.status(resp);
-            if (st == 200) {
-                TestLog.ok(label + ": создан/добавлен (status=200)");
-            } else if (st == 409) {
-                String code = JsonParsers.errorCode(resp);
-                assertEquals("USER_ALREADY_EXISTS", code, label + ": expected USER_ALREADY_EXISTS, resp=" + resp);
-                TestLog.ok(label + ": уже есть (status=409, USER_ALREADY_EXISTS)");
-            } else {
-                fail(label + ": неожиданный status=" + st + ", resp=" + resp);
-            }
-        }
     }
 }

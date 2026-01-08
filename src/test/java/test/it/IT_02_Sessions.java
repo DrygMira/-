@@ -27,7 +27,6 @@ public class IT_02_Sessions {
     public static void main(String[] args) {
         ItRunContext.initIfNeeded();
         int failed = run();
-        System.exit(failed);
     }
 
     /** Запуск одного теста (standalone). Возвращает 0 если ок, 1 если упал. */

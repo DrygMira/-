@@ -1,6 +1,7 @@
 package shine.db;
 
 import utils.config.AppConfig;
+import utils.config.MsgSubType;
 
 import java.io.BufferedReader;
 import java.io.IOException;
@@ -185,6 +186,7 @@ public class DatabaseInitializer {
                     FOREIGN KEY (login) REFERENCES solana_users(login)
                 );
                 """);
+
             st.executeUpdate("""
                 CREATE INDEX IF NOT EXISTS idx_blockchain_state_login
                 ON blockchain_state (login);
@@ -271,7 +273,7 @@ public class DatabaseInitializer {
                 ON connections_state (login, to_login);
                 """);
 
-            // 8) Trigger: connection state (логика та же)
+            // 8) Trigger: connection state
             st.executeUpdate("""
                 CREATE TRIGGER IF NOT EXISTS trg_blocks_connection_state_ai
                 AFTER INSERT ON blocks
@@ -288,7 +290,7 @@ public class DatabaseInitializer {
                         NEW.to_bch_name,
                         NEW.to_block_global_number,
                         NEW.to_block_hashe
-                    WHERE NEW.msg_sub_type IN (10, 20, 30)
+                    WHERE NEW.msg_sub_type IN (%d, %d, %d)
                       AND NEW.to_login IS NOT NULL
                       AND NEW.to_bch_name IS NOT NULL
                     ON CONFLICT(login, rel_type, to_login)
@@ -301,15 +303,27 @@ public class DatabaseInitializer {
                     WHERE login = NEW.login
                       AND to_login = NEW.to_login
                       AND rel_type = CASE NEW.msg_sub_type
-                          WHEN 11 THEN 10
-                          WHEN 21 THEN 20
-                          WHEN 31 THEN 30
+                          WHEN %d THEN %d
+                          WHEN %d THEN %d
+                          WHEN %d THEN %d
                           ELSE rel_type
                       END
-                      AND NEW.msg_sub_type IN (11, 21, 31);
+                      AND NEW.msg_sub_type IN (%d, %d, %d);
 
                 END;
-                """);
+                """.formatted(
+                    (int) MsgSubType.CONNECTION_FRIEND,
+                    (int) MsgSubType.CONNECTION_FOLLOW,
+                    (int) MsgSubType.CONNECTION_BLOCK,
+
+                    (int) MsgSubType.CONNECTION_UNFRIEND, (int) MsgSubType.CONNECTION_FRIEND,
+                    (int) MsgSubType.CONNECTION_UNFOLLOW, (int) MsgSubType.CONNECTION_FOLLOW,
+                    (int) MsgSubType.CONNECTION_UNBLOCK,  (int) MsgSubType.CONNECTION_BLOCK,
+
+                    (int) MsgSubType.CONNECTION_UNFRIEND,
+                    (int) MsgSubType.CONNECTION_UNFOLLOW,
+                    (int) MsgSubType.CONNECTION_UNBLOCK
+                ));
 
             // 9) message_stats (to_block_hash -> BLOB)
             st.executeUpdate("""
@@ -341,11 +355,11 @@ public class DatabaseInitializer {
                 ON message_stats (to_login);
                 """);
 
-            // 10) Trigger: LIKE (to_block_hashe -> to_block_hash BLOB)
+            // 10) Trigger: LIKE
             st.executeUpdate("""
                 CREATE TRIGGER IF NOT EXISTS trg_blocks_message_stats_like_ai
                 AFTER INSERT ON blocks
-                WHEN NEW.msg_type = 2 AND NEW.msg_sub_type = 1
+                WHEN NEW.msg_type = 2 AND NEW.msg_sub_type = %d
                 BEGIN
                     INSERT INTO message_stats (
                         to_login,
@@ -370,13 +384,13 @@ public class DatabaseInitializer {
                     DO UPDATE SET
                         likes_count = message_stats.likes_count + 1;
                 END;
-                """);
+                """.formatted((int) MsgSubType.REACTION_LIKE));
 
-            // 11) Trigger: REPLY (to_block_hashe -> to_block_hash BLOB)
+            // 11) Trigger: REPLY
             st.executeUpdate("""
                 CREATE TRIGGER IF NOT EXISTS trg_blocks_message_stats_reply_ai
                 AFTER INSERT ON blocks
-                WHEN NEW.msg_type = 1 AND NEW.msg_sub_type = 2
+                WHEN NEW.msg_type = 1 AND NEW.msg_sub_type = %d
                 BEGIN
                     INSERT INTO message_stats (
                         to_login,
@@ -401,13 +415,13 @@ public class DatabaseInitializer {
                     DO UPDATE SET
                         replies_count = message_stats.replies_count + 1;
                 END;
-                """);
+                """.formatted((int) MsgSubType.TEXT_REPLY));
 
             // 12) Trigger: EDIT — пометить исходный блок
             st.executeUpdate("""
                 CREATE TRIGGER IF NOT EXISTS trg_blocks_edit_apply_ai
                 AFTER INSERT ON blocks
-                WHEN NEW.msg_type = 1 AND NEW.msg_sub_type = 10
+                WHEN NEW.msg_type = 1 AND NEW.msg_sub_type = %d
                 BEGIN
                     UPDATE blocks
                     SET edited_by_block_global_number = NEW.block_global_number
@@ -415,7 +429,7 @@ public class DatabaseInitializer {
                       AND bch_name = NEW.bch_name
                       AND block_global_number = NEW.to_block_global_number;
                 END;
-                """);
+                """.formatted((int) MsgSubType.TEXT_EDIT));
         }
     }
 }

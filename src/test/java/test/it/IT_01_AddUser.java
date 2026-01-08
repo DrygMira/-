@@ -25,7 +25,6 @@ public class IT_01_AddUser {
     public static void main(String[] args) {
         // чтобы тест можно было запускать вообще без JUnit
         int failed = run();
-//        System.exit(failed);
     }
 
     /** Запуск одного теста (standalone). Возвращает 0 если ок, 1 если упал. */

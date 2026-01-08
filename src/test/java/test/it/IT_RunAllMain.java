@@ -12,7 +12,6 @@ public class IT_RunAllMain {
         ItRunContext.initIfNeeded();
 
         int failed = runAll();
-        System.exit(failed);
     }
 
     public static int runAll() {

@@ -18,15 +18,15 @@ import java.util.Objects;
  *   [2] ver=1
  *
  *   [2] subType (uint16): подтип текстового сообщения
- *       1 = новое сообщение (начало ветки)
- *       2 = ответ на сообщение (reply)
- *       3 = репост (repost)
- *       4 = редактирование (edit)
+ *       1  = новое сообщение (начало ветки)
+ *       2  = ответ на сообщение (reply)
+ *       3  = репост (repost)
+ *       10 = редактирование (edit)   <-- ВАЖНО: как на сервере/в БД-триггере
  *
  *   [2] textLenBytes (uint16) — длина текста в байтах UTF-8
  *   [N] text UTF-8
  *
- *   Далее ТОЛЬКО если subType == 2 или subType == 3 или subType == 4:
+ *   Далее ТОЛЬКО если subType == 2 или subType == 3 или subType == 10:
  *     [1] toBlockchainNameLen (uint8)
  *     [N] toBlockchainName UTF-8
  *     [4] toBlockGlobalNumber (int32)
@@ -46,9 +46,11 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
     public static final short SUB_NEW    = 1;
     public static final short SUB_REPLY  = 2;
     public static final short SUB_REPOST = 3;
-    public static final short SUB_EDIT   = 4;
 
-    /** Подтип текстового сообщения (1/2/3/4). */
+    /** ВАЖНО: EDIT как на сервере (и как ожидает trg_blocks_edit_apply_ai). */
+    public static final short SUB_EDIT   = 10;
+
+    /** Подтип текстового сообщения (1/2/3/10). */
     public final short subType;
 
     /** Текст сообщения (строго валидный UTF-8, не пустой/не blank). */
@@ -181,7 +183,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
         this.toBlockHash32 = null;
     }
 
-    /** Сообщение subType=REPLY (2) или subType=REPOST (3) или subType=EDIT (4) со ссылкой на блок. */
+    /** Сообщение subType=REPLY (2) или subType=REPOST (3) или subType=EDIT (10) со ссылкой на блок. */
     public TextBody(short subType,
                     String message,
                     String toBlockchainName,
@@ -303,7 +305,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget {
             case SUB_NEW -> "NEW (1)";
             case SUB_REPLY -> "REPLY (2)";
             case SUB_REPOST -> "REPOST (3)";
-            case SUB_EDIT -> "EDIT (4)";
+            case SUB_EDIT -> "EDIT (10)";
             default -> "UNKNOWN";
         };
 
