@@ -23,52 +23,56 @@ import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_GetUserPar
 import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_ListUserParams_Request;
 import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_UpsertUserParam_Request;
 
+// !!! подставь реальные пакеты/имена, как у тебя в проекте:
+import server.logic.ws_protocol.JSON.handlers.subscriptions.Net_GetSubscribedChannels_Handler;
+import server.logic.ws_protocol.JSON.handlers.subscriptions.entyties.Net_GetSubscribedChannels_Request;
+
 import java.util.Map;
 
 /**
  * JsonHandlerRegistry — единое место, где руками регистрируются
  * JSON-операции: op → handler и op → requestClass.
- *
- * Если нужно добавить новый запрос:
- *   1) создаёшь класс NetXXXRequest / NetXXXResponse,
- *   2) создаёшь JsonMessageHandler (NetXXXHandler),
- *   3) добавляешь op в HANDLERS и REQUEST_TYPES.
  */
 public final class JsonHandlerRegistry {
 
-    private static final Map<String, JsonMessageHandler> HANDLERS = Map.of(
-            "RefreshSession",     new Net_RefreshSession_Handler(),
-            "AddUser",            new Net_AddUser_Handler(),
-            "AuthChallenge",      new Net_AuthChallenge_Handler(),
-            "CreateAuthSession",  new Net_CreateAuthSession__Handler(),
-            "CloseActiveSession", new Net_CloseActiveSession_Handler(),
-            "ListSessions",       new Net_ListSessions_Handler(),
-            "AddBlock",           new Net_AddBlock_Handler(),
+    // Map.of(...) поддерживает максимум 10 пар => используем Map.ofEntries(...)
+    private static final Map<String, JsonMessageHandler> HANDLERS = Map.ofEntries(
+            Map.entry("RefreshSession",     new Net_RefreshSession_Handler()),
+            Map.entry("AddUser",            new Net_AddUser_Handler()),
+            Map.entry("AuthChallenge",      new Net_AuthChallenge_Handler()),
+            Map.entry("CreateAuthSession",  new Net_CreateAuthSession__Handler()),
+            Map.entry("CloseActiveSession", new Net_CloseActiveSession_Handler()),
+            Map.entry("ListSessions",       new Net_ListSessions_Handler()),
+            Map.entry("AddBlock",           new Net_AddBlock_Handler()),
 
             // --- userParams ---
-            "UpsertUserParam",    new Net_UpsertUserParam_Handler(),
-            "GetUserParam",       new Net_GetUserParam_Handler(),
-            "ListUserParams",     new Net_ListUserParams_Handler()
+            Map.entry("UpsertUserParam",    new Net_UpsertUserParam_Handler()),
+            Map.entry("GetUserParam",       new Net_GetUserParam_Handler()),
+            Map.entry("ListUserParams",     new Net_ListUserParams_Handler()),
+
+            // --- subscriptions ---
+            Map.entry("ListSubscribedChannels", new Net_GetSubscribedChannels_Handler())
     );
 
-    private static final Map<String, Class<? extends Net_Request>> REQUEST_TYPES = Map.of(
-            "RefreshSession",     Net_RefreshSession_Request.class,
-            "AddUser",            Net_AddUser_Request.class,
-            "AuthChallenge",      Net_AuthChallenge_Request.class,
-            "CreateAuthSession",  Net_CreateAuthSession_Request.class,
-            "CloseActiveSession", Net_CloseActiveSession_Request.class,
-            "ListSessions",       Net_ListSessions_Request.class,
-            "AddBlock",           Net_AddBlock_Request.class,
+    private static final Map<String, Class<? extends Net_Request>> REQUEST_TYPES = Map.ofEntries(
+            Map.entry("RefreshSession",     Net_RefreshSession_Request.class),
+            Map.entry("AddUser",            Net_AddUser_Request.class),
+            Map.entry("AuthChallenge",      Net_AuthChallenge_Request.class),
+            Map.entry("CreateAuthSession",  Net_CreateAuthSession_Request.class),
+            Map.entry("CloseActiveSession", Net_CloseActiveSession_Request.class),
+            Map.entry("ListSessions",       Net_ListSessions_Request.class),
+            Map.entry("AddBlock",           Net_AddBlock_Request.class),
 
             // --- userParams ---
-            "UpsertUserParam",    Net_UpsertUserParam_Request.class,
-            "GetUserParam",       Net_GetUserParam_Request.class,
-            "ListUserParams",     Net_ListUserParams_Request.class
+            Map.entry("UpsertUserParam",    Net_UpsertUserParam_Request.class),
+            Map.entry("GetUserParam",       Net_GetUserParam_Request.class),
+            Map.entry("ListUserParams",     Net_ListUserParams_Request.class),
+
+            // --- subscriptions ---
+            Map.entry("ListSubscribedChannels", Net_GetSubscribedChannels_Request.class)
     );
 
-    private JsonHandlerRegistry() {
-        // utility
-    }
+    private JsonHandlerRegistry() { }
 
     public static Map<String, JsonMessageHandler> getHandlers() {
         return HANDLERS;

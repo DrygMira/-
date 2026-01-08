@@ -42,14 +42,14 @@ public final class MsgSubType {
     public static final short CONNECTION_UNFRIEND = 11;
 
     /** Подписаться (follow). */
-    public static final short CONNECTION_FOLLOW = 20;
+    public static final short CONNECTION_FOLLOW = 30;
 
     /** Отписаться (unfollow). */
-    public static final short CONNECTION_UNFOLLOW = 21;
-
-    /** Заблокировать. */
-    public static final short CONNECTION_BLOCK = 30;
-
-    /** Разблокировать. */
-    public static final short CONNECTION_UNBLOCK = 31;
+    public static final short CONNECTION_UNFOLLOW = 31;
+//
+//    /** Заблокировать. */
+//    public static final short CONNECTION_BLOCK = 30;
+//
+//    /** Разблокировать. */
+//    public static final short CONNECTION_UNBLOCK = 31;
 }

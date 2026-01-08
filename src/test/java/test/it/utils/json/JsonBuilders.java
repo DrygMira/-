@@ -132,6 +132,20 @@ public final class JsonBuilders {
             """.formatted(requestId, sessionId, timeMs, signatureB64);
     }
 
+    // ---------------- ListSubscribedChannels ----------------
+
+    public static String listSubscribedChannels(String login) {
+        String requestId = TestIds.next("subs");
+        return """
+        {
+          "op": "ListSubscribedChannels",
+          "requestId": "%s",
+          "payload": { "login": "%s" }
+        }
+        """.formatted(requestId, login);
+    }
+
+
     /**
      * Подпись для режима AUTH_IN_PROGRESS:
      * preimage = "AUTHORIFICATED:" + timeMs + authNonce

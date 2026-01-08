@@ -37,15 +37,24 @@ public class IT_03_AddBlock_NoAuth {
 
         String u1 = TestConfig.LOGIN();
         String u2 = TestConfig.LOGIN2();
+        String u3 = TestConfig.LOGIN3();
 
         String bch1 = TestConfig.getBlockchainName(u1);
         String bch2 = TestConfig.getBlockchainName(u2);
+        String bch3 = TestConfig.getBlockchainName(u3);
 
         Duration t = Duration.ofSeconds(1);
 
         try (WsSession ws = WsSession.open()) {
 
-            if (TestConfig.DEBUG()) TestLog.titleBlock("IT_03: USER1=" + u1 + " bch=" + bch1 + " | USER2=" + u2 + " bch=" + bch2);
+            if (TestConfig.DEBUG()) {
+                TestLog.titleBlock(
+                        "IT_03:\n" +
+                        " USER1=" + u1 + " bch=" + bch1 + "\n" +
+                        " USER2=" + u2 + " bch=" + bch2 + "\n" +
+                        " USER3=" + u3 + " bch=" + bch3
+                );
+            }
 
             // USER1
             ChainState st1 = new ChainState();
@@ -88,11 +97,33 @@ public class IT_03_AddBlock_NoAuth {
 
             sender2.send(new UserParamBody("Anya", "Amsterdam, Example street 10"), t);
 
+            // USER3 (нужен, чтобы u1 мог подписаться на существующий блокчейн)
+            ChainState st3 = new ChainState();
+            AddBlockSender sender3 = new AddBlockSender(ws, st3, u3, bch3, TestConfig.getBlockchainPrivatKey(u3));
+
+            sender3.send(new HeaderBody(u3), t);
+            assertTrue(st3.hasHeader());
+
+            // -----------------------------------------------------------------
+            // Подписки (как ты просил):
+            //  - u1 follows u2 и u3
+            //  - u2 follows только u1
+            // -----------------------------------------------------------------
+
+            // u1 -> follow u2
+            sender1.send(new ConnectionBody(ConnectionBody.SUB_FOLLOW, u2, bch2, 0, new byte[32]), t);
+
+            // u1 -> follow u3
+            sender1.send(new ConnectionBody(ConnectionBody.SUB_FOLLOW, u3, bch3, 0, new byte[32]), t);
+
+            // u2 -> follow u1
+            sender2.send(new ConnectionBody(ConnectionBody.SUB_FOLLOW, u1, bch1, 0, new byte[32]), t);
+
+            // (оставил твои friend/unfriend как было — но они уже не обязательны для подписок)
             sender2.send(new ConnectionBody(ConnectionBody.SUB_FRIEND, u1, bch1, 0, new byte[32]), t);
 
             sender1.send(new UserParamBody("Anna", "Gareeva"), t);
             sender1.send(new ConnectionBody(ConnectionBody.SUB_FRIEND, u2, bch2, 0, new byte[32]), t);
-            sender1.send(new ConnectionBody(ConnectionBody.SUB_FOLLOW, u2, bch2, 0, new byte[32]), t);
 
             sender2.send(new ConnectionBody(ConnectionBody.SUB_UNFRIEND, u1, bch1, 0, new byte[32]), t);
 
