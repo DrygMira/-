@@ -1,94 +1,59 @@
 package test.it;
 
-import org.junit.jupiter.api.Test;
 import test.it.utils.*;
 
 import java.time.Duration;
 
-import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assertions.fail;
 
 /**
  * IT_01_AddUser
- *
- * Можно запускать:
- *  1) как JUnit тест (через Suite или выборочно)
- *  2) вручную как standalone:
- *     - main()
- *     - или через IT_RunAllMain / IT_RunAllCleanMain
- *
- * Главная цель:
- *  - иметь метод run() -> возвращает число не пройденных тестов (0 или 1)
- *  - и иметь main() для запуска одного теста
+ * Создаёт 3 пользователей: TestUser1/2/3 (200 OK или 409 USER_ALREADY_EXISTS).
  */
 public class IT_01_AddUser {
 
     public static void main(String[] args) {
-        // чтобы тест можно было запускать вообще без JUnit
-        int failed = run();
+        String summary = run();
+        System.out.println(summary);
     }
 
-    /** Запуск одного теста (standalone). Возвращает 0 если ок, 1 если упал. */
-    public static int run() {
-        return TestLog.runOne("IT_01_AddUser", IT_01_AddUser::testBody);
-    }
+    public static String run() {
+        TestResult r = new TestResult("IT_01_AddUser");
 
-//    @Test
-    void addUser_shouldReturn200_orAlreadyExists() {
-        // JUnit-режим: пусть падает через assert/fail как обычно
-        testBody();
-    }
+        Duration t = Duration.ofSeconds(5);
 
-    private static void testBody() {
-        ItRunContext.initIfNeeded();
+        try (WsSession ws = WsSession.open()) {
+            r.ok("AddUser USER1: " + TestConfig.LOGIN());
+            checkAddUser200or409(r, ws.call("AddUser#USER1", JsonBuilders.addUser(TestConfig.LOGIN()), t));
 
-        TestLog.title("AddUserIT: проверка добавления пользователя (200 OK) или 'уже существует' (409 USER_ALREADY_EXISTS)");
-        TestLog.info("Используем:");
-        TestLog.info("  login          = " + TestConfig.LOGIN());
-        TestLog.info("  blockchainName = " + TestConfig.BCH_NAME());
-        TestLog.info("Ожидание:");
-        TestLog.info("  - 200 (создан)");
-        TestLog.info("  - или 409 + payload.code=USER_ALREADY_EXISTS\n");
+            r.ok("AddUser USER2: " + TestConfig.LOGIN2());
+            checkAddUser200or409(r, ws.call("AddUser#USER2", JsonBuilders.addUser(TestConfig.LOGIN2()), t));
 
-        try (WsTestClient client = new WsTestClient(TestConfig.WS_URI)) {
-
-            String reqId = "it-adduser-1";
-            String reqJson = JsonBuilders.addUser(reqId);
-
-            TestLog.info("📤 Отправляем AddUser запрос:");
-            TestLog.info(reqJson);
-            TestLog.line();
-
-            String resp = client.request(reqId, reqJson, Duration.ofSeconds(5));
-
-            TestLog.info("📥 Ответ сервера:");
-            TestLog.info(resp);
-            TestLog.line();
-
-            int st = JsonParsers.status(resp);
-            TestLog.info("ℹ️ status=" + st);
-
-            boolean created = (st == 200);
-            boolean already = (st == 409);
-
-            if (already) {
-                String code = JsonParsers.errorCode(resp);
-                TestLog.info("ℹ️ server_code=" + code);
-
-                assertEquals("USER_ALREADY_EXISTS", code,
-                        "Expected code=USER_ALREADY_EXISTS, but got: " + code + ", resp=" + resp);
-
-                TestLog.ok("409 получен корректно: USER_ALREADY_EXISTS");
-            }
-
-            if (created) {
-                TestLog.ok("ТЕСТ ПРОЙДЕН: AddUser создан/добавлен (status=200)");
-            } else if (already) {
-                TestLog.ok("ТЕСТ ПРОЙДЕН: AddUser уже есть в системе (status=409, USER_ALREADY_EXISTS)");
-            } else {
-                TestLog.boom("Неожиданный status=" + st + ", resp=" + resp);
-                fail("❌ AddUser: неожиданный status=" + st + ", resp=" + resp);
-            }
-
+            r.ok("AddUser USER3: " + TestConfig.LOGIN3());
+            checkAddUser200or409(r, ws.call("AddUser#USER3", JsonBuilders.addUser(TestConfig.LOGIN3()), t));
+        } catch (Throwable e) {
+            r.fail("IT_01_AddUser упал: " + e.getMessage());
         }
+
+        return r.summaryLine();
+    }
+
+    private static void checkAddUser200or409(TestResult r, String resp) {
+        int st = JsonParsers.status(resp);
+        if (st == 200) {
+            r.ok("AddUser: status=200 (создан)");
+            return;
+        }
+        if (st == 409) {
+            String code = JsonParsers.errorCode(resp);
+            if ("USER_ALREADY_EXISTS".equals(code)) {
+                r.ok("AddUser: status=409 USER_ALREADY_EXISTS (уже был)");
+                return;
+            }
+            r.fail("AddUser: status=409 но code=" + code + ", resp=" + resp);
+            fail("AddUser unexpected 409 code=" + code);
+        }
+        r.fail("AddUser: неожиданный status=" + st + ", resp=" + resp);
+        fail("AddUser unexpected status=" + st);
     }
 }

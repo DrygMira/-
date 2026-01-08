@@ -5,40 +5,17 @@ import utils.crypto.Ed25519Util;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 
+/** Builder'ы JSON запросов. Внутри автоматически генерим requestId. */
 public final class JsonBuilders {
-    private JsonBuilders(){}
+    private JsonBuilders() {}
 
-    // =========================
-    // AddUser USER1 (как было)
-    // =========================
-    public static String addUser(String requestId) {
-        return addUserAny(
-                requestId,
-                TestConfig.LOGIN(),
-                TestConfig.BCH_NAME(),
-                TestConfig.LOGIN_PUBKEY_B64(),
-                TestConfig.DEVICE_PUBKEY_B64()
-        );
-    }
+    // ---------------- AddUser ----------------
 
-    // =========================
-    // AddUser USER2 (новое)
-    // =========================
-    public static String addUser2(String requestId) {
-        return addUserAny(
-                requestId,
-                TestConfig.LOGIN2(),
-                TestConfig.BCH_NAME2(),
-                TestConfig.LOGIN2_PUBKEY_B64(),
-                TestConfig.DEVICE2_PUBKEY_B64()
-        );
-    }
-
-    private static String addUserAny(String requestId,
-                                     String login,
-                                     String blockchainName,
-                                     String loginKeyB64,
-                                     String deviceKeyB64) {
+    public static String addUser(String login) {
+        String requestId = TestIds.next("adduser");
+        String blockchainName = TestConfig.getBlockchainName(login);
+        String loginKeyB64 = TestConfig.blockchainPublicKeyB64(login); // loginKey = blockchain pub
+        String deviceKeyB64 = TestConfig.devicePublicKeyB64(login);
         return """
                 {
                   "op": "AddUser",
@@ -51,30 +28,30 @@ public final class JsonBuilders {
                     "bchLimit": %d
                   }
                 }
-                """.formatted(
-                requestId,
-                login,
-                blockchainName,
-                loginKeyB64,
-                deviceKeyB64,
-                TestConfig.TEST_BCH_LIMIT
-        );
+                """.formatted(requestId, login, blockchainName, loginKeyB64, deviceKeyB64, TestConfig.TEST_BCH_LIMIT);
     }
 
-    public static String authChallenge(String requestId) {
+    // ---------------- AuthChallenge ----------------
+
+    public static String authChallenge(String login) {
+        String requestId = TestIds.next("auth");
         return """
                 {
                   "op": "AuthChallenge",
                   "requestId": "%s",
                   "payload": { "login": "%s" }
                 }
-                """.formatted(requestId, TestConfig.LOGIN());
+                """.formatted(requestId, login);
     }
 
-    public static String createAuthSession(String requestId, String authNonce, String storagePwd) {
-        long timeMs = System.currentTimeMillis();
-        String sigB64 = signAuthorificated(authNonce, timeMs, TestConfig.DEVICE_PRIV_KEY());
+    // ---------------- CreateAuthSession ----------------
 
+    public static String createAuthSession(String login, String authNonce, String storagePwd) {
+        long timeMs = System.currentTimeMillis();
+        byte[] devicePriv = TestConfig.getDevicePrivatKey(login);
+        String sigB64 = signAuthorificated(authNonce, timeMs, devicePriv);
+
+        String requestId = TestIds.next("create");
         return """
                 {
                   "op": "CreateAuthSession",
@@ -89,7 +66,10 @@ public final class JsonBuilders {
                 """.formatted(requestId, storagePwd, timeMs, sigB64, TestConfig.TEST_CLIENT_INFO);
     }
 
-    public static String listSessions(String requestId, long timeMs, String signatureB64) {
+    // ---------------- ListSessions ----------------
+
+    public static String listSessions(long timeMs, String signatureB64) {
+        String requestId = TestIds.next("list");
         if (signatureB64 == null) signatureB64 = "";
         return """
             {
@@ -103,7 +83,10 @@ public final class JsonBuilders {
             """.formatted(requestId, timeMs, signatureB64);
     }
 
-    public static String refreshSession(String requestId, String sessionId, String sessionPwd) {
+    // ---------------- RefreshSession ----------------
+
+    public static String refreshSession(String sessionId, String sessionPwd) {
+        String requestId = TestIds.next("refresh");
         return """
             {
               "op": "RefreshSession",
@@ -117,7 +100,10 @@ public final class JsonBuilders {
             """.formatted(requestId, sessionId, sessionPwd, TestConfig.TEST_CLIENT_INFO);
     }
 
-    public static String closeActiveSession(String requestId, String sessionId, long timeMs, String signatureB64) {
+    // ---------------- CloseActiveSession ----------------
+
+    public static String closeActiveSession(String sessionId, long timeMs, String signatureB64) {
+        String requestId = TestIds.next("close");
         if (signatureB64 == null) signatureB64 = "";
         return """
             {
@@ -142,10 +128,5 @@ public final class JsonBuilders {
         byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
         byte[] sig = Ed25519Util.sign(preimage, devicePrivKey);
         return Base64.getEncoder().encodeToString(sig);
-    }
-
-    // старый метод оставим для совместимости
-    public static String signAuthorificated(String authNonce, long timeMs) {
-        return signAuthorificated(authNonce, timeMs, TestConfig.DEVICE_PRIV_KEY());
     }
 }

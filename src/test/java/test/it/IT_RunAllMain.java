@@ -1,56 +1,38 @@
 package test.it;
 
-import test.it.utils.ItRunContext;
 import test.it.utils.TestLog;
 
+import java.util.ArrayList;
+import java.util.List;
+
 /**
- * Ручной запуск всех IT тестов БЕЗ JUnit / Suite.
+ * Ручной запуск всех IT тестов БЕЗ JUnit.
+ * Печатает итоги по каждому тесту отдельной строкой.
  */
 public class IT_RunAllMain {
 
     public static void main(String[] args) {
-        ItRunContext.initIfNeeded();
-
         int failed = runAll();
+        System.exit(failed);
     }
 
     public static int runAll() {
 
-        final int total = 4; // было 3
+        List<String> summaries = new ArrayList<>();
         int failed = 0;
-        int passed = 0;
 
-        TestLog.title("IT RUN: запуск всех тестов подряд (без очистки data/)");
+        TestLog.title("IT RUN: запуск всех тестов подряд");
 
-        TestLog.stepTitle("RUN: IT_01_AddUser");
-        int f1 = IT_01_AddUser.run();
-        failed += f1; passed += (f1 == 0 ? 1 : 0);
+        String s1 = IT_01_AddUser.run(); summaries.add(s1); if (s1.contains("FAIL:")) failed++;
+        String s2 = IT_02_Sessions.run(); summaries.add(s2); if (s2.contains("FAIL:")) failed++;
+        String s3 = IT_03_AddBlock_NoAuth.run(); summaries.add(s3); if (s3.contains("FAIL:")) failed++;
+        String s4 = IT_04_UserParams_NoAuth.run(); summaries.add(s4); if (s4.contains("FAIL:")) failed++;
 
-        TestLog.stepTitle("RUN: IT_02_Sessions");
-        int f2 = IT_02_Sessions.run();
-        failed += f2; passed += (f2 == 0 ? 1 : 0);
+        TestLog.title("IT RUN RESULT (per test)");
+        for (String s : summaries) System.out.println(s);
 
-        TestLog.stepTitle("RUN: IT_03_AddBlock_NoAuth (combined 3+4)");
-        int f3 = IT_03_AddBlock_NoAuth.run();
-        failed += f3; passed += (f3 == 0 ? 1 : 0);
-
-        TestLog.stepTitle("RUN: IT_04_UserParams_NoAuth");
-        int f4 = IT_04_UserParams_NoAuth.run();
-        failed += f4; passed += (f4 == 0 ? 1 : 0);
-
-        TestLog.titleBlock("""
-                IT RUN RESULT
-                ----------------------------
-                total  = %d
-                passed = %d
-                failed = %d
-                """.formatted(total, passed, failed));
-
-        if (failed == 0) {
-            TestLog.ok("✅ ВСЕ IT ТЕСТЫ УСПЕШНО ЗАВЕРШЕНЫ");
-        } else {
-            TestLog.boom("❌ IT ПРОГОН УПАЛ: failed=" + failed + " из " + total);
-        }
+        if (failed == 0) TestLog.ok("✅ ВСЕ IT ТЕСТЫ УСПЕШНО ЗАВЕРШЕНЫ");
+        else TestLog.boom("❌ IT ПРОГОН УПАЛ: failed=" + failed + " из " + summaries.size());
 
         return failed;
     }

@@ -2,7 +2,6 @@ package test.it;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import org.junit.jupiter.api.BeforeAll;
 import test.it.utils.*;
 import utils.config.ShineSignatureConstants;
 import utils.crypto.Ed25519Util;
@@ -16,142 +15,98 @@ import static org.junit.jupiter.api.Assertions.*;
 /**
  * IT_04_UserParams_NoAuth
  *
- * Сценарий:
- *  1) UpsertUserParam: сохранить param1
- *  2) GetUserParam: получить param1 и проверить поля
- *  3) UpsertUserParam: сохранить param2
- *  4) UpsertUserParam: обновить param1 (time_ms больше)
- *  5) ListUserParams: получить список и проверить:
- *      - есть param1 (обновлённое значение/time)
- *      - есть param2
- *
- * Примечание по безопасности (на будущее):
- *  - сейчас (MVP) чтение/запись параметров без ограничений по сессии.
- *  - позже можно добавить: доступ только владельцу или доверенным, через active_session/ACL.
+ * ВАЖНО:
+ *  - пользователей НЕ создаём (их создаёт IT_01)
  */
 public class IT_04_UserParams_NoAuth {
 
     private static final ObjectMapper M = new ObjectMapper();
 
     public static void main(String[] args) {
-        int failed = run();
-        // System.exit(failed);
+        TestLog.info("Standalone: этот тест требует заранее созданных пользователей -> сначала запускаю IT_01_AddUser");
+        System.out.println(IT_01_AddUser.run());
+        String summary = run();
+        System.out.println(summary);
     }
 
-    public static int run() {
-        return TestLog.runOne("IT_04_UserParams_NoAuth", IT_04_UserParams_NoAuth::testBody);
-    }
-
-    @BeforeAll
-    static void init() {
-        ItRunContext.initIfNeeded();
-    }
-
-    private static void testBody() {
-        ItRunContext.initIfNeeded();
+    public static String run() {
+        TestResult r = new TestResult("IT_04_UserParams_NoAuth");
 
         Duration timeout = Duration.ofSeconds(5);
 
-        // ---------------------------------------------------------
-        // ensure user exists (как в твоих тестах: 200 или 409)
-        // ---------------------------------------------------------
-        addUserOr409AlreadyExists(
-                "USER1",
-                TestConfig.LOGIN(),
-                TestConfig.BCH_NAME(),
-                TestConfig.LOGIN_PUBKEY_B64(),
-                TestConfig.DEVICE_PUBKEY_B64()
-        );
-
         final String login = TestConfig.LOGIN();
-        final String deviceKeyB64 = TestConfig.DEVICE_PUBKEY_B64();
-        final byte[] devicePrivKey = TestConfig.DEVICE_PRIV_KEY(); // важно: подпись именно device-ключом
+        final String deviceKeyB64 = TestConfig.devicePublicKeyB64(login);
+        final byte[] devicePrivKey = TestConfig.getDevicePrivatKey(login);
 
-        // ---------------------------------------------------------
-        // 1) сохранить param1
-        // ---------------------------------------------------------
-        final String p1 = "profile:name";
-        final String v1 = "Anna";
-        final long t1 = System.currentTimeMillis();
+        try {
+            // 1) сохранить param1
+            final String p1 = "profile:name";
+            final String v1 = "Anna";
+            final long t1 = System.currentTimeMillis();
+            upsertUserParam_OK(r, login, p1, t1, v1, deviceKeyB64, devicePrivKey, timeout);
 
-        upsertUserParam_OK(login, p1, t1, v1, deviceKeyB64, devicePrivKey, timeout);
+            // 2) получить param1 и проверить
+            NetParam got1 = getUserParam_200(r, login, p1, timeout);
+            assertEquals(login, got1.login);
+            assertEquals(p1, got1.param);
+            assertEquals(t1, got1.timeMs);
+            assertEquals(v1, got1.value);
+            assertEquals(deviceKeyB64, got1.deviceKeyB64);
+            assertNotNull(got1.signatureB64);
+            assertFalse(got1.signatureB64.isBlank());
+            r.ok("GetUserParam(param1) OK");
 
-        // ---------------------------------------------------------
-        // 2) получить param1 и проверить
-        // ---------------------------------------------------------
-        NetParam got1 = getUserParam_200(login, p1, timeout);
+            // 3) сохранить param2
+            final String p2 = "profile:city";
+            final String v2 = "Amsterdam";
+            final long t2 = t1 + 10;
+            upsertUserParam_OK(r, login, p2, t2, v2, deviceKeyB64, devicePrivKey, timeout);
 
-        assertEquals(login, got1.login);
-        assertEquals(p1, got1.param);
-        assertEquals(t1, got1.timeMs);
-        assertEquals(v1, got1.value);
-        assertEquals(deviceKeyB64, got1.deviceKeyB64);
-        assertNotNull(got1.signatureB64);
-        assertFalse(got1.signatureB64.isBlank());
+            // 4) обновить param1
+            final String v1b = "Anna Updated";
+            final long t1b = t2 + 10;
+            upsertUserParam_OK(r, login, p1, t1b, v1b, deviceKeyB64, devicePrivKey, timeout);
 
-        // ---------------------------------------------------------
-        // 3) сохранить param2
-        // ---------------------------------------------------------
-        final String p2 = "profile:city";
-        final String v2 = "Amsterdam";
-        final long t2 = t1 + 10;
+            NetParam got1b = getUserParam_200(r, login, p1, timeout);
+            assertEquals(t1b, got1b.timeMs);
+            assertEquals(v1b, got1b.value);
+            r.ok("GetUserParam(updated param1) OK");
 
-        upsertUserParam_OK(login, p2, t2, v2, deviceKeyB64, devicePrivKey, timeout);
+            // 5) list всех параметров
+            NetParamList list = listUserParams_200(r, login, timeout);
 
-        // ---------------------------------------------------------
-        // 4) обновить param1 более новым временем
-        // ---------------------------------------------------------
-        final String v1b = "Anna Updated";
-        final long t1b = t2 + 10;
+            NetParam lp1 = list.find(p1);
+            NetParam lp2 = list.find(p2);
 
-        upsertUserParam_OK(login, p1, t1b, v1b, deviceKeyB64, devicePrivKey, timeout);
+            assertNotNull(lp1, "ListUserParams должен содержать param1=" + p1);
+            assertNotNull(lp2, "ListUserParams должен содержать param2=" + p2);
 
-        // доп.проверка: GetUserParam теперь должен вернуть обновлённое
-        NetParam got1b = getUserParam_200(login, p1, timeout);
-        assertEquals(t1b, got1b.timeMs);
-        assertEquals(v1b, got1b.value);
+            assertEquals(t1b, lp1.timeMs);
+            assertEquals(v1b, lp1.value);
 
-        // ---------------------------------------------------------
-        // 5) list всех параметров и проверка состава
-        // ---------------------------------------------------------
-        NetParamList list = listUserParams_200(login, timeout);
+            assertEquals(t2, lp2.timeMs);
+            assertEquals(v2, lp2.value);
 
-        NetParam lp1 = list.find(p1);
-        NetParam lp2 = list.find(p2);
+            assertEquals(deviceKeyB64, lp1.deviceKeyB64);
+            assertEquals(deviceKeyB64, lp2.deviceKeyB64);
+            assertNotNull(lp1.signatureB64);
+            assertNotNull(lp2.signatureB64);
 
-        assertNotNull(lp1, "ListUserParams должен содержать param1=" + p1);
-        assertNotNull(lp2, "ListUserParams должен содержать param2=" + p2);
+            r.ok("ListUserParams OK");
 
-        assertEquals(t1b, lp1.timeMs, "param1 должен быть обновлённым");
-        assertEquals(v1b, lp1.value, "param1 должен иметь обновлённое значение");
+        } catch (Throwable e) {
+            r.fail("IT_04 упал: " + e.getMessage());
+        }
 
-        assertEquals(t2, lp2.timeMs);
-        assertEquals(v2, lp2.value);
-
-        // и у обоих должны возвращаться все поля из БД (как ты просил)
-        assertEquals(deviceKeyB64, lp1.deviceKeyB64);
-        assertEquals(deviceKeyB64, lp2.deviceKeyB64);
-        assertNotNull(lp1.signatureB64);
-        assertNotNull(lp2.signatureB64);
-
-        TestLog.pass("IT_04_UserParams_NoAuth: OK");
+        return r.summaryLine();
     }
 
     // =================================================================================
     // WS helpers: Upsert/Get/List
     // =================================================================================
 
-    private static void upsertUserParam_OK(String login,
-                                          String param,
-                                          long timeMs,
-                                          String value,
-                                          String deviceKeyB64,
-                                          byte[] devicePrivKey,
-                                          Duration timeout) {
-
+    private static void upsertUserParam_OK(TestResult r, String login, String param, long timeMs, String value, String deviceKeyB64, byte[] devicePrivKey, Duration timeout) {
         String signatureB64 = signUserParam(devicePrivKey, login, param, timeMs, value);
-
-        String reqId = "it-upsert-" + param.replace(':', '_');
 
         String reqJson = """
                 {
@@ -166,29 +121,16 @@ public class IT_04_UserParams_NoAuth {
                     "signature": "%s"
                   }
                 }
-                """.formatted(
-                reqId,
-                login,
-                param,
-                timeMs,
-                jsonEscape(value),
-                deviceKeyB64,
-                signatureB64
-        );
+                """.formatted(TestIds.next("upsert"), login, param, timeMs, jsonEscape(value), deviceKeyB64, signatureB64);
 
-        try (WsTestClient client = new WsTestClient(TestConfig.WS_URI)) {
-            TestLog.send("UpsertUserParam", reqJson);
-            String resp = client.request(reqId, reqJson, timeout);
-            TestLog.recv("UpsertUserParam", resp);
-
-            int st = JsonParsers.status(resp);
-            assertEquals(200, st, "UpsertUserParam expected 200, resp=" + resp);
+        try (WsSession ws = WsSession.open()) {
+            String resp = ws.call("UpsertUserParam(" + param + ")", reqJson, timeout);
+            assertEquals(200, JsonParsers.status(resp), "UpsertUserParam expected 200, resp=" + resp);
+            r.ok("UpsertUserParam(" + param + "): OK");
         }
     }
 
-    private static NetParam getUserParam_200(String login, String param, Duration timeout) {
-        String reqId = "it-get-" + param.replace(':', '_');
-
+    private static NetParam getUserParam_200(TestResult r, String login, String param, Duration timeout) {
         String reqJson = """
                 {
                   "op": "GetUserParam",
@@ -198,41 +140,29 @@ public class IT_04_UserParams_NoAuth {
                     "param": "%s"
                   }
                 }
-                """.formatted(reqId, login, param);
+                """.formatted(TestIds.next("getparam"), login, param);
 
-        try (WsTestClient client = new WsTestClient(TestConfig.WS_URI)) {
-            TestLog.send("GetUserParam", reqJson);
-            String resp = client.request(reqId, reqJson, timeout);
-            TestLog.recv("GetUserParam", resp);
-
-            int st = JsonParsers.status(resp);
-            assertEquals(200, st, "GetUserParam expected 200, resp=" + resp);
-
+        try (WsSession ws = WsSession.open()) {
+            String resp = ws.call("GetUserParam(" + param + ")", reqJson, timeout);
+            assertEquals(200, JsonParsers.status(resp), "GetUserParam expected 200, resp=" + resp);
+            r.ok("GetUserParam(" + param + "): OK");
             return parseParamFromResponsePayload(resp);
         }
     }
 
-    private static NetParamList listUserParams_200(String login, Duration timeout) {
-        String reqId = "it-list-params";
-
+    private static NetParamList listUserParams_200(TestResult r, String login, Duration timeout) {
         String reqJson = """
                 {
                   "op": "ListUserParams",
                   "requestId": "%s",
-                  "payload": {
-                    "login": "%s"
-                  }
+                  "payload": { "login": "%s" }
                 }
-                """.formatted(reqId, login);
+                """.formatted(TestIds.next("listparams"), login);
 
-        try (WsTestClient client = new WsTestClient(TestConfig.WS_URI)) {
-            TestLog.send("ListUserParams", reqJson);
-            String resp = client.request(reqId, reqJson, timeout);
-            TestLog.recv("ListUserParams", resp);
-
-            int st = JsonParsers.status(resp);
-            assertEquals(200, st, "ListUserParams expected 200, resp=" + resp);
-
+        try (WsSession ws = WsSession.open()) {
+            String resp = ws.call("ListUserParams", reqJson, timeout);
+            assertEquals(200, JsonParsers.status(resp), "ListUserParams expected 200, resp=" + resp);
+            r.ok("ListUserParams: OK");
             return parseParamListFromResponsePayload(resp);
         }
     }
@@ -301,23 +231,12 @@ public class IT_04_UserParams_NoAuth {
     }
 
     // =================================================================================
-    // Signature + JSON string helpers
+    // Signature + JSON helpers
     // =================================================================================
 
-    private static String signUserParam(byte[] devicePrivKey,
-                                        String login,
-                                        String param,
-                                        long timeMs,
-                                        String value) {
-
-        String signText =
-                ShineSignatureConstants.USER_PARAMETER_PREFIX +
-                        login + param + timeMs + value;
-
+    private static String signUserParam(byte[] devicePrivKey, String login, String param, long timeMs, String value) {
+        String signText = ShineSignatureConstants.USER_PARAMETER_PREFIX + login + param + timeMs + value;
         byte[] signBytes = signText.getBytes(StandardCharsets.UTF_8);
-
-        // Важно: Ed25519Util.sign(...) ожидает (dataHash OR data?) — у тебя в проекте это уже устаканено.
-        // В хэндлере verify(...) делается на signBytes напрямую, значит подписывать нужно signBytes.
         byte[] sig64 = Ed25519Util.sign(signBytes, devicePrivKey);
         return Base64.getEncoder().encodeToString(sig64);
     }
@@ -328,60 +247,7 @@ public class IT_04_UserParams_NoAuth {
     }
 
     // =================================================================================
-    // AddUser helper (как у тебя)
-    // =================================================================================
-
-    private static void addUserOr409AlreadyExists(String label,
-                                                  String login,
-                                                  String blockchainName,
-                                                  String loginPubKeyB64,
-                                                  String devicePubKeyB64) {
-
-        TestLog.title(label + ": AddUser (200 OK) или 409 USER_ALREADY_EXISTS");
-
-        String reqId = "it-adduser-" + label.toLowerCase();
-
-        String reqJson = """
-                {
-                  "op": "AddUser",
-                  "requestId": "%s",
-                  "payload": {
-                    "login": "%s",
-                    "blockchainName": "%s",
-                    "loginKey": "%s",
-                    "deviceKey": "%s",
-                    "bchLimit": %d
-                  }
-                }
-                """.formatted(
-                reqId,
-                login,
-                blockchainName,
-                loginPubKeyB64,
-                devicePubKeyB64,
-                TestConfig.TEST_BCH_LIMIT
-        );
-
-        try (WsTestClient client = new WsTestClient(TestConfig.WS_URI)) {
-            TestLog.send("AddUser(" + label + ")", reqJson);
-            String resp = client.request(reqId, reqJson, Duration.ofSeconds(5));
-            TestLog.recv("AddUser(" + label + ")", resp);
-
-            int st = JsonParsers.status(resp);
-            if (st == 200) {
-                TestLog.ok(label + ": создан/добавлен (status=200)");
-            } else if (st == 409) {
-                String code = JsonParsers.errorCode(resp);
-                assertEquals("USER_ALREADY_EXISTS", code, label + ": expected USER_ALREADY_EXISTS, resp=" + resp);
-                TestLog.ok(label + ": уже есть (status=409, USER_ALREADY_EXISTS)");
-            } else {
-                fail(label + ": неожиданный status=" + st + ", resp=" + resp);
-            }
-        }
-    }
-
-    // =================================================================================
-    // Small DTOs
+    // DTOs
     // =================================================================================
 
     private static final class NetParam {

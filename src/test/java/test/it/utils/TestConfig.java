@@ -1,94 +1,121 @@
 package test.it.utils;
 
+import utils.crypto.Ed25519Util;
+
 import java.util.Base64;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 
 /**
- * Конфиг для IT тестов.
- *
- * ДОБАВЛЕНО:
- *  - Второй пользователь (LOGIN2) + его blockchainName и ключи.
+ * TestConfig — конфиг IT тестов:
+ *  - 3 пользователя (TestUser1/2/3)
+ *  - ключи по login через map (device/solana/blockchain)
+ *  - blockchainName = login + "001"
  *
  * Важно:
- *  - Имена/ключи вычисляются детерминированно из логина (см. ItRunContext).
+ *  - privateKey = Ed25519Util.generatePrivateKeyFromString(login) (sha256, 32 bytes)
+ *  - publicKey  = Ed25519Util.derivePublicKey(privateKey)
+ *  - пока device/solana/blockchain ключи одинаковые (один seed на login)
  */
 public final class TestConfig {
 
     private TestConfig() {}
 
-    // Твой WS URI
     public static final String WS_URI = "ws://localhost:7070/ws";
-
-    // ======= Пользователь #1 (по умолчанию) =======
-    public static final String DEFAULT_LOGIN = "Anya";
-
-    // ======= Пользователь #2 (новый) =======
-    public static final String DEFAULT_LOGIN2 = "Anya2";
-
-    // Суффикс блокчейна по твоему правилу: login + 3 цифры
-    public static final String DEFAULT_BCH_SUFFIX_3 = "001";
-
-    // Лимит блокчейна для AddUser
     public static final long TEST_BCH_LIMIT = 50_000_000L;
-
-    // Любая строка клиента (для логов)
     public static final String TEST_CLIENT_INFO = "it-tests";
 
-    /** DEBUG-режим: подробные логи (по умолчанию true, как у тебя). */
     public static boolean DEBUG() {
         return Boolean.parseBoolean(System.getProperty("it.debug", "true"));
     }
 
-    // =========================
-    // USER #1
-    // =========================
+    // 3 users
+    public static final String DEFAULT_LOGIN1 = "TestUser1";
+    public static final String DEFAULT_LOGIN2 = "TestUser2";
+    public static final String DEFAULT_LOGIN3 = "TestUser3";
+    public static final String DEFAULT_BCH_SUFFIX_3 = "001";
 
-    /** login для прогона (user1). */
-    public static String LOGIN() {
-        return System.getProperty("it.login", DEFAULT_LOGIN);
-    }
+    public static String LOGIN()  { return System.getProperty("it.login1", DEFAULT_LOGIN1); }
+    public static String LOGIN2() { return System.getProperty("it.login2", DEFAULT_LOGIN2); }
+    public static String LOGIN3() { return System.getProperty("it.login3", DEFAULT_LOGIN3); }
 
-    /** Суффикс для имени блокчейна (user1). */
     public static String BCH_SUFFIX_3() {
         return System.getProperty("it.bchSuffix", DEFAULT_BCH_SUFFIX_3);
     }
 
-    /** blockchainName по правилу: login + суффикс (user1). */
-    public static String BCH_NAME() {
-        return LOGIN() + BCH_SUFFIX_3();
+    public static String getBlockchainName(String login) {
+        if (login == null) throw new IllegalArgumentException("login is null");
+        return login + BCH_SUFFIX_3();
     }
 
-    public static byte[] LOGIN_PRIV_KEY() { return ItRunContext.login1PrivKey(); }
-    public static byte[] LOGIN_PUB_KEY()  { return ItRunContext.login1PubKey(); }
-    public static byte[] DEVICE_PRIV_KEY(){ return ItRunContext.device1PrivKey(); }
-    public static byte[] DEVICE_PUB_KEY() { return ItRunContext.device1PubKey(); }
+    // ============ key maps ============
+    private static final Map<String, byte[]> devicePriv = new ConcurrentHashMap<>();
+    private static final Map<String, byte[]> devicePub  = new ConcurrentHashMap<>();
 
-    public static String LOGIN_PUBKEY_B64()  { return Base64.getEncoder().encodeToString(LOGIN_PUB_KEY()); }
-    public static String DEVICE_PUBKEY_B64() { return Base64.getEncoder().encodeToString(DEVICE_PUB_KEY()); }
+    private static final Map<String, byte[]> solanaPriv = new ConcurrentHashMap<>();
+    private static final Map<String, byte[]> solanaPub  = new ConcurrentHashMap<>();
 
-    // =========================
-    // USER #2
-    // =========================
+    private static final Map<String, byte[]> bchPriv = new ConcurrentHashMap<>();
+    private static final Map<String, byte[]> bchPub  = new ConcurrentHashMap<>();
 
-    /** login второго пользователя. Можно переопределить -Dit.login2=... */
-    public static String LOGIN2() {
-        return System.getProperty("it.login2", DEFAULT_LOGIN2);
+    static {
+        initUserKeys(LOGIN());
+        initUserKeys(LOGIN2());
+        initUserKeys(LOGIN3());
     }
 
-    /** blockchainName второго: login2 + тот же суффикс. */
-    public static String BCH_NAME2() {
-        return LOGIN2() + BCH_SUFFIX_3();
+    private static void initUserKeys(String login) {
+        byte[] priv = Ed25519Util.generatePrivateKeyFromString(login); // sha256(login) => 32 bytes
+        byte[] pub  = Ed25519Util.derivePublicKey(priv);
+
+        // пока одинаковые
+        devicePriv.put(login, priv);
+        devicePub.put(login, pub);
+
+        solanaPriv.put(login, priv);
+        solanaPub.put(login, pub);
+
+        bchPriv.put(login, priv);
+        bchPub.put(login, pub);
     }
 
-    public static byte[] LOGIN2_PRIV_KEY()  { return ItRunContext.login2PrivKey(); }
-    public static byte[] LOGIN2_PUB_KEY()   { return ItRunContext.login2PubKey(); }
-    public static byte[] DEVICE2_PRIV_KEY() { return ItRunContext.device2PrivKey(); }
-    public static byte[] DEVICE2_PUB_KEY()  { return ItRunContext.device2PubKey(); }
+    // ============ requested getters (with your names) ============
 
-    public static String LOGIN2_PUBKEY_B64()  { return Base64.getEncoder().encodeToString(LOGIN2_PUB_KEY()); }
-    public static String DEVICE2_PUBKEY_B64() { return Base64.getEncoder().encodeToString(DEVICE2_PUB_KEY()); }
+    public static byte[] getDevicePrivatKey(String login) { return cloneOrThrow(devicePriv.get(login), "devicePriv", login); }
+    public static byte[] getDevicePublicKey(String login) { return cloneOrThrow(devicePub.get(login), "devicePub", login); }
 
-    /** Псевдо-пароль хранилища — достаточно для тестов. */
+    public static byte[] getSolanaPrivatKey(String login) { return cloneOrThrow(solanaPriv.get(login), "solanaPriv", login); }
+    public static byte[] getSolanaPublicKey(String login) { return cloneOrThrow(solanaPub.get(login), "solanaPub", login); }
+
+    public static byte[] getBlockchainPrivatKey(String login) { return cloneOrThrow(bchPriv.get(login), "bchPriv", login); }
+    public static byte[] getBlockchainPublicKey(String login) { return cloneOrThrow(bchPub.get(login), "bchPub", login); }
+
+    // ============ base64 helpers ============
+    public static String devicePublicKeyB64(String login) { return Base64.getEncoder().encodeToString(getDevicePublicKey(login)); }
+    public static String blockchainPublicKeyB64(String login) { return Base64.getEncoder().encodeToString(getBlockchainPublicKey(login)); }
+
+    // ============ backward-compatible helpers for "user1" ============
+    public static String BCH_NAME() { return getBlockchainName(LOGIN()); }
+    public static String BCH_NAME2() { return getBlockchainName(LOGIN2()); }
+    public static String BCH_NAME3() { return getBlockchainName(LOGIN3()); }
+
+    /** loginKey для AddUser: по твоему решению = blockchain pubkey. */
+    public static String LOGIN_PUBKEY_B64() { return blockchainPublicKeyB64(LOGIN()); }
+    public static String LOGIN2_PUBKEY_B64() { return blockchainPublicKeyB64(LOGIN2()); }
+    public static String LOGIN3_PUBKEY_B64() { return blockchainPublicKeyB64(LOGIN3()); }
+
+    public static String DEVICE_PUBKEY_B64() { return devicePublicKeyB64(LOGIN()); }
+    public static String DEVICE2_PUBKEY_B64() { return devicePublicKeyB64(LOGIN2()); }
+    public static String DEVICE3_PUBKEY_B64() { return devicePublicKeyB64(LOGIN3()); }
+
+    // ============ misc ============
     public static String fakeStoragePwd() {
         return "pwd-" + System.nanoTime();
+    }
+
+    private static byte[] cloneOrThrow(byte[] v, String mapName, String login) {
+        if (login == null) throw new IllegalArgumentException("login is null");
+        if (v == null) throw new IllegalStateException("No key in " + mapName + " for login=" + login);
+        return v.clone();
     }
 }
