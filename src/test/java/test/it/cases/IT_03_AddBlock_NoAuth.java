@@ -1,6 +1,5 @@
 package test.it.cases;
 
-import blockchain.LineIndex;
 import blockchain.body.*;
 import blockchain.MsgSubType;
 import test.it.blockchain.AddBlockSender;
@@ -16,6 +15,10 @@ import static org.junit.jupiter.api.Assertions.*;
 
 /**
  * IT_03_AddBlock_NoAuth — обновлён под новый формат блоков (ТЗ).
+ *
+ * ВАЖНО:
+ *  - НЕТ обращения к blockchain.LineIndex (можно удалить LineIndex.java).
+ *  - Линии берём через ChainState.nextLineByType(TYPE_...).
  */
 public class IT_03_AddBlock_NoAuth {
 
@@ -59,7 +62,7 @@ public class IT_03_AddBlock_NoAuth {
 
             // TEXT_NEW x3 (с line)
             {
-                var ln = st1.nextLine(LineIndex.TEXT);
+                var ln = st1.nextLineByType(ChainState.TYPE_TEXT);
                 sender1.send(new TextBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.TEXT_NEW,
                         "Hello #1 (NEW) from IT_03 test",
@@ -67,7 +70,7 @@ public class IT_03_AddBlock_NoAuth {
                 ), t);
             }
             {
-                var ln = st1.nextLine(LineIndex.TEXT);
+                var ln = st1.nextLineByType(ChainState.TYPE_TEXT);
                 sender1.send(new TextBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.TEXT_NEW,
                         "Hello #2 (NEW) from IT_03 test",
@@ -75,7 +78,7 @@ public class IT_03_AddBlock_NoAuth {
                 ), t);
             }
             {
-                var ln = st1.nextLine(LineIndex.TEXT);
+                var ln = st1.nextLineByType(ChainState.TYPE_TEXT);
                 sender1.send(new TextBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.TEXT_NEW,
                         "Hello #3 (NEW) from IT_03 test",
@@ -92,7 +95,7 @@ public class IT_03_AddBlock_NoAuth {
 
             // TEXT_REPLY x2 (с line + target)
             {
-                var ln = st1.nextLine(LineIndex.TEXT);
+                var ln = st1.nextLineByType(ChainState.TYPE_TEXT);
                 sender1.send(new TextBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.TEXT_REPLY,
                         "Reply to TEXT#1",
@@ -100,7 +103,7 @@ public class IT_03_AddBlock_NoAuth {
                 ), t);
             }
             {
-                var ln = st1.nextLine(LineIndex.TEXT);
+                var ln = st1.nextLineByType(ChainState.TYPE_TEXT);
                 sender1.send(new TextBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.TEXT_REPLY,
                         "Reply to TEXT#3",
@@ -114,7 +117,7 @@ public class IT_03_AddBlock_NoAuth {
 
             // TEXT_EDIT x3 (с line + target)
             {
-                var ln = st1.nextLine(LineIndex.TEXT);
+                var ln = st1.nextLineByType(ChainState.TYPE_TEXT);
                 sender1.send(new TextBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.TEXT_EDIT,
                         "Hello #2 (EDIT#1) from IT_03 test",
@@ -122,7 +125,7 @@ public class IT_03_AddBlock_NoAuth {
                 ), t);
             }
             {
-                var ln = st1.nextLine(LineIndex.TEXT);
+                var ln = st1.nextLineByType(ChainState.TYPE_TEXT);
                 sender1.send(new TextBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.TEXT_EDIT,
                         "Hello #2 (EDIT#2) from IT_03 test",
@@ -130,7 +133,7 @@ public class IT_03_AddBlock_NoAuth {
                 ), t);
             }
             {
-                var ln = st1.nextLine(LineIndex.TEXT);
+                var ln = st1.nextLineByType(ChainState.TYPE_TEXT);
                 sender1.send(new TextBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.TEXT_EDIT,
                         "Hello #3 (EDIT#1) from IT_03 test",
@@ -149,7 +152,7 @@ public class IT_03_AddBlock_NoAuth {
 
             // USER_PARAM (с line)
             {
-                var ln = st2.nextLine(LineIndex.USER_PARAM);
+                var ln = st2.nextLineByType(ChainState.TYPE_USER_PARAM);
                 sender2.send(new UserParamBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         "Anya", "Amsterdam, Example street 10"
                 ), t);
@@ -171,7 +174,7 @@ public class IT_03_AddBlock_NoAuth {
 
             // u1 -> follow u2
             {
-                var ln = st1.nextLine(LineIndex.CONNECTION);
+                var ln = st1.nextLineByType(ChainState.TYPE_CONNECTION);
                 sender1.send(new ConnectionBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.CONNECTION_FOLLOW,
                         u2, bch2, 0, new byte[32]
@@ -180,7 +183,7 @@ public class IT_03_AddBlock_NoAuth {
 
             // u1 -> follow u3
             {
-                var ln = st1.nextLine(LineIndex.CONNECTION);
+                var ln = st1.nextLineByType(ChainState.TYPE_CONNECTION);
                 sender1.send(new ConnectionBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.CONNECTION_FOLLOW,
                         u3, bch3, 0, new byte[32]
@@ -189,7 +192,7 @@ public class IT_03_AddBlock_NoAuth {
 
             // u2 -> follow u1
             {
-                var ln = st2.nextLine(LineIndex.CONNECTION);
+                var ln = st2.nextLineByType(ChainState.TYPE_CONNECTION);
                 sender2.send(new ConnectionBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.CONNECTION_FOLLOW,
                         u1, bch1, 0, new byte[32]
@@ -198,7 +201,7 @@ public class IT_03_AddBlock_NoAuth {
 
             // friend/unfriend как было, но тоже по CONNECTION линии
             {
-                var ln = st2.nextLine(LineIndex.CONNECTION);
+                var ln = st2.nextLineByType(ChainState.TYPE_CONNECTION);
                 sender2.send(new ConnectionBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.CONNECTION_FRIEND,
                         u1, bch1, 0, new byte[32]
@@ -207,13 +210,13 @@ public class IT_03_AddBlock_NoAuth {
 
             // user1 param + friend to u2
             {
-                var ln = st1.nextLine(LineIndex.USER_PARAM);
+                var ln = st1.nextLineByType(ChainState.TYPE_USER_PARAM);
                 sender1.send(new UserParamBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         "Anna", "Gareeva"
                 ), t);
             }
             {
-                var ln = st1.nextLine(LineIndex.CONNECTION);
+                var ln = st1.nextLineByType(ChainState.TYPE_CONNECTION);
                 sender1.send(new ConnectionBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.CONNECTION_FRIEND,
                         u2, bch2, 0, new byte[32]
@@ -221,7 +224,7 @@ public class IT_03_AddBlock_NoAuth {
             }
 
             {
-                var ln = st2.nextLine(LineIndex.CONNECTION);
+                var ln = st2.nextLineByType(ChainState.TYPE_CONNECTION);
                 sender2.send(new ConnectionBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.CONNECTION_UNFRIEND,
                         u1, bch1, 0, new byte[32]

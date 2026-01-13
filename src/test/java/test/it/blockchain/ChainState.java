@@ -1,29 +1,36 @@
 package test.it.blockchain;
 
-import blockchain.LineIndex;
-
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.Map;
 
 /**
- * ChainState — состояние цепочки + состояние линий (только тех, где они нужны):
+ * ChainState — состояние глобальной цепочки + состояние линий (только тех, где они нужны).
  *
  * Глобальная цепочка:
  *  - lastBlockNumber / lastBlockHashHex
  *  - map blockNumber -> hash32 (для ссылок reply/edit/reaction)
  *
- * Линии (по ТЗ нужны):
- *  - TEXT (1)
- *  - CONNECTION (3)
- *  - USER_PARAM (4)
+ * Линии по ТЗ нужны только для:
+ *  - TEXT (type=1)
+ *  - CONNECTION (type=3)
+ *  - USER_PARAM (type=4)
  *
  * prevLineNumber по ТЗ — это GLOBAL blockNumber предыдущего блока линии.
  * thisLineNumber — внутренний номер линии (мы ведём локально: 1,2,3...)
+ *
+ * ВАЖНО:
+ *  - Здесь НЕТ обращения к blockchain.LineIndex.
+ *  - Линии адресуются по msg_type (type).
  */
 public final class ChainState {
 
-    public static final int LINES_MAX = 8;
+    // какие msg_type имеют линейную цепочку по ТЗ
+    public static final short TYPE_HEADER     = 0;
+    public static final short TYPE_TEXT       = 1;
+    public static final short TYPE_REACTION   = 2;
+    public static final short TYPE_CONNECTION = 3;
+    public static final short TYPE_USER_PARAM = 4;
 
     private static final byte[] ZERO32 = new byte[32];
     private static final String ZERO64 = "0".repeat(64);
@@ -35,17 +42,34 @@ public final class ChainState {
     // header (block#0)
     private byte[] headerHash32 = null;
 
-    // per-line state (только для LineIndex.TEXT/CONNECTION/USER_PARAM)
-    private final int[] lineLastGlobalNumber = new int[LINES_MAX];     // последний GLOBAL номер блока в линии
-    private final String[] lineLastHashHex = new String[LINES_MAX];    // hash последнего блока линии
-    private final int[] lineLastThisLineNumber = new int[LINES_MAX];   // последний thisLineNumber (внутренний)
+    /**
+     * line state per TYPE (только для TEXT/CONNECTION/USER_PARAM):
+     *  - lastGlobalNumber: последний GLOBAL blockNumber в линии
+     *  - lastHashHex: hash последнего блока линии
+     *  - lastThisLineNumber: последний thisLineNumber (внутренний)
+     */
+    private static final class LineState {
+        int lastGlobalNumber = -1;
+        String lastHashHex = "";
+        int lastThisLineNumber = 0;
+
+        void reset() {
+            lastGlobalNumber = -1;
+            lastHashHex = "";
+            lastThisLineNumber = 0;
+        }
+    }
+
+    private final LineState textLine = new LineState();
+    private final LineState connectionLine = new LineState();
+    private final LineState userParamLine = new LineState();
 
     private final Map<Integer, byte[]> hash32ByNumber = new HashMap<>();
 
     public ChainState() {
-        Arrays.fill(lineLastGlobalNumber, -1);
-        Arrays.fill(lineLastHashHex, "");
-        Arrays.fill(lineLastThisLineNumber, 0);
+        textLine.reset();
+        connectionLine.reset();
+        userParamLine.reset();
     }
 
     // -------------------- global getters --------------------
@@ -89,30 +113,33 @@ public final class ChainState {
         }
     }
 
-    /** Следующие line-поля для указанной линии (только TEXT/CONNECTION/USER_PARAM). */
-    public NextLine nextLine(short lineIndex) {
-        checkLine(lineIndex);
-        if (!isLineUsed(lineIndex)) {
-            throw new IllegalArgumentException("Line " + lineIndex + " не используется для BodyHasLine по ТЗ");
+    /** Является ли type "линейным" по ТЗ (т.е. нужно вести prevLine/thisLine). */
+    public static boolean isLineType(short type) {
+        int t = type & 0xFFFF;
+        return t == TYPE_TEXT || t == TYPE_CONNECTION || t == TYPE_USER_PARAM;
+    }
+
+    /** Следующие line-поля для указанного TYPE (только TEXT/CONNECTION/USER_PARAM). */
+    public NextLine nextLineByType(short type) {
+        if (!isLineType(type)) {
+            throw new IllegalArgumentException("Type " + (type & 0xFFFF) + " не использует line-поля по ТЗ");
         }
         if (!hasHeader()) {
             throw new IllegalStateException("Нельзя формировать line-поля до HEADER (нет headerHash32)");
         }
 
-        int lastGlobal = lineLastGlobalNumber[lineIndex];
-        int lastThis = lineLastThisLineNumber[lineIndex];
+        LineState ls = lineStateByType(type);
 
-        if (lastGlobal == -1) {
+        if (ls.lastGlobalNumber == -1) {
             // первый блок линии ссылается на HEADER (block#0)
             return new NextLine(0, headerHash32.clone(), 1);
         }
 
-        String lastHex = lineLastHashHex[lineIndex];
-        if (lastHex == null || lastHex.isBlank()) {
-            throw new IllegalStateException("lineLastHashHex[" + lineIndex + "] пуст, но lastGlobal!=-1");
+        if (ls.lastHashHex == null || ls.lastHashHex.isBlank()) {
+            throw new IllegalStateException("LineState.lastHashHex пуст, но lastGlobalNumber!=-1 (type=" + (type & 0xFFFF) + ")");
         }
 
-        return new NextLine(lastGlobal, hexToBytes32(lastHex), lastThis + 1);
+        return new NextLine(ls.lastGlobalNumber, hexToBytes32(ls.lastHashHex), ls.lastThisLineNumber + 1);
     }
 
     // -------------------- apply --------------------
@@ -140,50 +167,30 @@ public final class ChainState {
 
         hash32ByNumber.put(blockNumber, hash32.clone());
 
-        // обновляем line-state только для линий, которые "надо" по ТЗ
-        short lineIndex = lineIndexByType(type);
-        if (lineIndex != -1 && isLineUsed(lineIndex)) {
-            lineLastGlobalNumber[lineIndex] = blockNumber;
-            lineLastHashHex[lineIndex] = hex64;
-
-            // thisLineNumber мы берём из тела, но здесь его нет.
-            // Поэтому thisLineNumber должен обновляться там, где формируются тела (в тестах),
-            // либо AddBlockSender может прокинуть его отдельно.
-            // Чтобы не дублировать контракт — здесь оставляем как есть.
+        // обновляем line-state только если этот type по ТЗ линейный
+        if (isLineType(type)) {
+            LineState ls = lineStateByType(type);
+            ls.lastGlobalNumber = blockNumber;
+            ls.lastHashHex = hex64;
+            // thisLineNumber обновляется отдельным вызовом (см. applyThisLineNumberByType)
         }
     }
 
     /** В тестах удобно явно обновлять thisLineNumber после успешной отправки line-body. */
-    public void applyThisLineNumber(short lineIndex, int thisLineNumber) {
-        checkLine(lineIndex);
-        if (!isLineUsed(lineIndex)) return;
-        lineLastThisLineNumber[lineIndex] = thisLineNumber;
+    public void applyThisLineNumberByType(short type, int thisLineNumber) {
+        if (!isLineType(type)) return;
+        LineState ls = lineStateByType(type);
+        ls.lastThisLineNumber = thisLineNumber;
     }
 
-    // -------------------- mapping --------------------
-
-    /** По type блока определяем lineIndex. Reaction line по твоему ТЗ "не надо". */
-    private static short lineIndexByType(short type) {
+    private LineState lineStateByType(short type) {
         int t = type & 0xFFFF;
         return switch (t) {
-            case 0 -> LineIndex.HEADER;
-            case 1 -> LineIndex.TEXT;
-            case 3 -> LineIndex.CONNECTION;
-            case 4 -> LineIndex.USER_PARAM;
-            default -> (short) -1; // reaction/unknown => line state not used
+            case TYPE_TEXT -> textLine;
+            case TYPE_CONNECTION -> connectionLine;
+            case TYPE_USER_PARAM -> userParamLine;
+            default -> throw new IllegalArgumentException("Type " + t + " не имеет LineState по ТЗ");
         };
-    }
-
-    private static boolean isLineUsed(short lineIndex) {
-        return lineIndex == LineIndex.TEXT
-                || lineIndex == LineIndex.CONNECTION
-                || lineIndex == LineIndex.USER_PARAM;
-    }
-
-    private static void checkLine(short lineIndex) {
-        if (lineIndex < 0 || lineIndex >= LINES_MAX) {
-            throw new IllegalArgumentException("lineIndex must be 0.." + (LINES_MAX - 1));
-        }
     }
 
     // -------------------- utils --------------------

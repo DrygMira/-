@@ -19,6 +19,10 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
  *  - block хранит только preimage + signature
  *  - hash32 вычисляется как sha256(preimage)
  *  - signature = Ed25519.sign(hash32)
+ *
+ * ВАЖНО:
+ *  - Линии (prevLine/thisLine) по ТЗ нужны только для TEXT/CONNECTION/USER_PARAM.
+ *  - Здесь НЕТ обращения к blockchain.LineIndex.
  */
 public final class AddBlockSender {
 
@@ -38,6 +42,7 @@ public final class AddBlockSender {
         this.blockchainName = blockchainName;
         this.loginPrivKey = (loginPrivKey == null ? null : loginPrivKey.clone());
         if (this.ws == null) throw new IllegalArgumentException("ws == null");
+        if (this.state == null) throw new IllegalArgumentException("state == null");
         if (this.loginPrivKey == null) throw new IllegalArgumentException("loginPrivKey == null");
     }
 
@@ -97,7 +102,7 @@ public final class AddBlockSender {
 
         String serverLastHash = JsonMini.extractPayloadString(resp, "serverLastBlockHash");
         if (serverLastHash == null) {
-            // на случай старого имени, но по твоей просьбе мы на это больше не опираемся
+            // на всякий случай, но ты говорил старое не поддерживаем — оставил мягко
             serverLastHash = JsonMini.extractPayloadString(resp, "serverLastGlobalHash");
         }
 
@@ -113,13 +118,13 @@ public final class AddBlockSender {
 
         assertEquals(localHashHex, serverLastHash, op + ": serverLastBlockHash must match local hash");
 
+        // фиксируем в state глобальную цепочку + (если нужно) line-state по TYPE
         state.applyAppendedBlock(blockNumber, entry.getHash32(), isHeader, type);
 
-        // если это line-body — обновим thisLineNumber в state (для nextLine())
+        // если это line-body — обновим thisLineNumber в state (для nextLineByType())
         if (body instanceof BodyHasLine hl) {
-            short lineIndex = lineIndexByType(type);
-            if (lineIndex != -1) {
-                state.applyThisLineNumber(lineIndex, hl.thisLineNumber());
+            if (ChainState.isLineType(type)) {
+                state.applyThisLineNumberByType(type, hl.thisLineNumber());
             }
         }
 
@@ -218,16 +223,5 @@ public final class AddBlockSender {
         if (bodyBytes != null) bb.put(bodyBytes);
 
         return bb.array();
-    }
-
-    private static short lineIndexByType(short type) {
-        int t = type & 0xFFFF;
-        return switch (t) {
-            case 0 -> blockchain.LineIndex.HEADER;
-            case 1 -> blockchain.LineIndex.TEXT;
-            case 3 -> blockchain.LineIndex.CONNECTION;
-            case 4 -> blockchain.LineIndex.USER_PARAM;
-            default -> (short) -1;
-        };
     }
 }
