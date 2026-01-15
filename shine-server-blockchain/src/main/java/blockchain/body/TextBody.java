@@ -133,13 +133,13 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
     }
 
     public TextBody(int prevLineNumber,
-                   byte[] prevLineHash32,
-                   int thisLineNumber,
-                   short subType,
-                   String message,
-                   String toBlockchainName,
-                   Integer toBlockGlobalNumber,
-                   byte[] toBlockHash32) {
+                    byte[] prevLineHash32,
+                    int thisLineNumber,
+                    short subType,
+                    String message,
+                    String toBlockchainName,
+                    Integer toBlockGlobalNumber,
+                    byte[] toBlockHash32) {
 
         Objects.requireNonNull(message, "message == null");
         if (!isValidSubType(subType)) throw new IllegalArgumentException("Bad Text subType: " + (subType & 0xFFFF));
@@ -198,7 +198,6 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
             if (thisLineNumber != -1) throw new IllegalArgumentException("thisLineNumber must be -1 when prevLineNumber=-1");
         } else {
             if (prevLineHash32 == null || prevLineHash32.length != 32) throw new IllegalArgumentException("prevLineHash32 invalid");
-            // thisLineNumber сервер пока не проверяет (принимаем как есть)
         }
 
         if (isHasTargetSubType(subType)) {
@@ -218,8 +217,8 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
         if (msgUtf8.length == 0) throw new IllegalArgumentException("Text payload is empty");
         if (msgUtf8.length > 65535) throw new IllegalArgumentException("Text too long (>65535 bytes)");
 
-        int cap = 4 + 32 + 4  // line fields
-                + 2 + msgUtf8.length; // text
+        int cap = 4 + 32 + 4
+                + 2 + msgUtf8.length;
 
         byte[] nameBytes = null;
 
@@ -264,20 +263,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
     @Override public int thisLineNumber() { return thisLineNumber; }
 
     /* ====================== BodyHasTarget ===================== */
-    @Override public String toLogin() { return null; }
-
-    @Override
-    public String toBchName() {
-        return isHasTargetSubType(subType) ? toBlockchainName : null;
-    }
-
-    @Override
-    public Integer toBlockGlobalNumber() {
-        return isHasTargetSubType(subType) ? toBlockGlobalNumber : null;
-    }
-
-    @Override
-    public byte[] toBlockHasheBytes() {
-        return isHasTargetSubType(subType) ? toBlockHash32 : null;
-    }
+    @Override public String toBchName() { return isHasTargetSubType(subType) ? toBlockchainName : null; }
+    @Override public Integer toBlockGlobalNumber() { return isHasTargetSubType(subType) ? toBlockGlobalNumber : null; }
+    @Override public byte[] toBlockHashBytes() { return isHasTargetSubType(subType) ? toBlockHash32 : null; }
 }

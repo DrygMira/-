@@ -120,11 +120,7 @@ public final class ReactionBody implements BodyRecord, BodyHasTarget {
 
     /* ====================== BodyHasTarget ====================== */
 
-    @Override public String toLogin() { return null; }
-
     @Override public String toBchName() { return toBlockchainName; }
-
     @Override public Integer toBlockGlobalNumber() { return toBlockGlobalNumber; }
-
-    @Override public byte[] toBlockHasheBytes() { return toBlockHash32; }
+    @Override public byte[] toBlockHashBytes() { return toBlockHash32; }
 }

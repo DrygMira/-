@@ -279,7 +279,7 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
                 be.setToLogin(t.toLogin());
                 be.setToBchName(t.toBchName());
                 be.setToBlockNumber(t.toBlockGlobalNumber());
-                be.setToBlockHash(t.toBlockHasheBytes());
+                be.setToBlockHash(t.toBlockHashBytes());
             }
 
             // edit helper (optional): если TEXT_EDIT — это "редактирование блока цели"

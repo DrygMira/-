@@ -204,8 +204,7 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
 
     /* ====================== BodyHasTarget ===================== */
     // toLogin() теперь default в интерфейсе и вычисляется из toBchName()
-
     @Override public String toBchName() { return toBlockchainName; }
     @Override public Integer toBlockGlobalNumber() { return toBlockGlobalNumber; }
-    @Override public byte[] toBlockHasheBytes() { return toBlockHash32; }
+    @Override public byte[] toBlockHashBytes() { return toBlockHash32; }
 }
