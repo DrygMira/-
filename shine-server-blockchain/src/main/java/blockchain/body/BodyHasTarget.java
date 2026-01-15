@@ -1,20 +1,25 @@
 package blockchain.body;
 
+import utils.blockchain.BlockchainNameUtil;
+
 /**
- * BodyHasTarget — дополнительный интерфейс для body, которые "ссылаются" на цель (to-поля).
+ * BodyHasTarget — контракт для body, которые "ссылаются" на цель (to-поля).
  *
- * Идея:
- *  - Не все body имеют "to".
- *  - Но для индексации и удобства запросов в БД мы хотим единообразно доставать:
- *      toLogin, toBchName, toBlockGlobalNumber, toBlockHashe
+ * ВАЖНО (новое правило):
+ *  - toLogin НЕ храним в байтах блока.
+ *  - toLogin всегда вычисляем из toBchName по стандарту:
+ *      toBchName = login + "-NNN"  =>  toLogin = login
  *
- * Важно:
- *  - Все методы могут возвращать null.
+ * Все методы могут возвращать null (если target отсутствует).
  */
 public interface BodyHasTarget {
 
     /** login цели (nullable). */
-    String toLogin();
+    default String toLogin() {
+        String bch = toBchName();
+        if (bch == null) return null;
+        return BlockchainNameUtil.loginFromBlockchainName(bch);
+    }
 
     /** blockchainName цели (nullable). */
     String toBchName();

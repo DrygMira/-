@@ -19,6 +19,7 @@ import static org.junit.jupiter.api.Assertions.*;
  * ВАЖНО:
  *  - НЕТ обращения к blockchain.LineIndex (можно удалить LineIndex.java).
  *  - Линии берём через ChainState.nextLineByType(TYPE_...).
+ *  - ConnectionBody: toLogin в байтах НЕ хранится, вычисляется из toBlockchainName.
  */
 public class IT_03_AddBlock_NoAuth {
 
@@ -177,7 +178,7 @@ public class IT_03_AddBlock_NoAuth {
                 var ln = st1.nextLineByType(ChainState.TYPE_CONNECTION);
                 sender1.send(new ConnectionBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.CONNECTION_FOLLOW,
-                        u2, bch2, 0, new byte[32]
+                        bch2, 0, new byte[32]
                 ), t);
             }
 
@@ -186,7 +187,7 @@ public class IT_03_AddBlock_NoAuth {
                 var ln = st1.nextLineByType(ChainState.TYPE_CONNECTION);
                 sender1.send(new ConnectionBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.CONNECTION_FOLLOW,
-                        u3, bch3, 0, new byte[32]
+                        bch3, 0, new byte[32]
                 ), t);
             }
 
@@ -195,7 +196,7 @@ public class IT_03_AddBlock_NoAuth {
                 var ln = st2.nextLineByType(ChainState.TYPE_CONNECTION);
                 sender2.send(new ConnectionBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.CONNECTION_FOLLOW,
-                        u1, bch1, 0, new byte[32]
+                        bch1, 0, new byte[32]
                 ), t);
             }
 
@@ -204,7 +205,7 @@ public class IT_03_AddBlock_NoAuth {
                 var ln = st2.nextLineByType(ChainState.TYPE_CONNECTION);
                 sender2.send(new ConnectionBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.CONNECTION_FRIEND,
-                        u1, bch1, 0, new byte[32]
+                        bch1, 0, new byte[32]
                 ), t);
             }
 
@@ -219,7 +220,7 @@ public class IT_03_AddBlock_NoAuth {
                 var ln = st1.nextLineByType(ChainState.TYPE_CONNECTION);
                 sender1.send(new ConnectionBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.CONNECTION_FRIEND,
-                        u2, bch2, 0, new byte[32]
+                        bch2, 0, new byte[32]
                 ), t);
             }
 
@@ -227,7 +228,7 @@ public class IT_03_AddBlock_NoAuth {
                 var ln = st2.nextLineByType(ChainState.TYPE_CONNECTION);
                 sender2.send(new ConnectionBody(ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         MsgSubType.CONNECTION_UNFRIEND,
-                        u1, bch1, 0, new byte[32]
+                        bch1, 0, new byte[32]
                 ), t);
             }
 

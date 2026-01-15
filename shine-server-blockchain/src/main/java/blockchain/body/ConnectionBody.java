@@ -1,6 +1,7 @@
 package blockchain.body;
 
 import blockchain.MsgSubType;
+import utils.blockchain.BlockchainNameUtil;
 
 import java.nio.ByteBuffer;
 import java.nio.ByteOrder;
@@ -16,18 +17,18 @@ import java.util.Objects;
  *   CONTACT=20, UNCONTACT=21
  *   FOLLOW=30, UNFOLLOW=31
  *
- * bodyBytes (BigEndian), новый формат:
+ * bodyBytes (BigEndian), новый формат (toLogin НЕ ХРАНИМ):
  *   [4]  prevLineNumber
  *   [32] prevLineHash32
  *   [4]  thisLineNumber
  *
- *   [1] toLoginLen (uint8)
- *   [N] toLogin UTF-8
- *
  *   [1] toBlockchainNameLen (uint8)
- *   [M] toBlockchainName UTF-8
+ *   [N] toBlockchainName UTF-8
  *   [4] toBlockGlobalNumber (int32)
  *   [32] toBlockHash32 (raw 32 bytes)
+ *
+ * toLogin вычисляется автоматически из toBlockchainName:
+ *   toLogin = BlockchainNameUtil.loginFromBlockchainName(toBlockchainName)
  */
 public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasLine {
 
@@ -45,7 +46,6 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
     public final int thisLineNumber;
 
     // payload
-    public final String toLogin;
     public final String toBlockchainName;
     public final int toBlockGlobalNumber;
     public final byte[] toBlockHash32;
@@ -64,8 +64,8 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
         }
 
         // минимум:
-        // line(4+32+4) + toLoginLen[1]+toLogin[1] + toBchLen[1]+toBch[1] + global[4] + hash[32]
-        if (bodyBytes.length < (4 + 32 + 4) + 1 + 1 + 1 + 1 + 4 + 32) {
+        // line(4+32+4) + toBchLen[1]+toBch[1] + global[4] + hash[32]
+        if (bodyBytes.length < (4 + 32 + 4) + 1 + 1 + 4 + 32) {
             throw new IllegalArgumentException("ConnectionBody too short");
         }
 
@@ -77,14 +77,6 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
         bb.get(this.prevLineHash32);
 
         this.thisLineNumber = bb.getInt();
-
-        int toLoginLen = Byte.toUnsignedInt(bb.get());
-        if (toLoginLen <= 0) throw new IllegalArgumentException("toLoginLen is 0");
-        if (bb.remaining() < toLoginLen) throw new IllegalArgumentException("toLogin payload too short");
-
-        byte[] toLoginBytes = new byte[toLoginLen];
-        bb.get(toLoginBytes);
-        this.toLogin = new String(toLoginBytes, StandardCharsets.UTF_8);
 
         int bchLen = Byte.toUnsignedInt(bb.get());
         if (bchLen <= 0) throw new IllegalArgumentException("toBlockchainNameLen is 0");
@@ -106,20 +98,21 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
                           byte[] prevLineHash32,
                           int thisLineNumber,
                           short subType,
-                          String toLogin,
                           String toBlockchainName,
                           int toBlockGlobalNumber,
                           byte[] toBlockHash32) {
 
-        Objects.requireNonNull(toLogin, "toLogin == null");
         Objects.requireNonNull(toBlockchainName, "toBlockchainName == null");
         Objects.requireNonNull(toBlockHash32, "toBlockHash32 == null");
 
         if (!isValidSubType(subType)) throw new IllegalArgumentException("Bad connection subType: " + (subType & 0xFFFF));
-        if (toLogin.isBlank()) throw new IllegalArgumentException("toLogin is blank");
-        if (!toLogin.matches("^[A-Za-z0-9_]+$")) throw new IllegalArgumentException("toLogin must match ^[A-Za-z0-9_]+$");
 
         if (toBlockchainName.isBlank()) throw new IllegalArgumentException("toBlockchainName is blank");
+        // Железное правило формата: bchName -> login + "-NNN"
+        if (BlockchainNameUtil.loginFromBlockchainName(toBlockchainName) == null) {
+            throw new IllegalArgumentException("toBlockchainName must match login+\"-NNN\": " + toBlockchainName);
+        }
+
         if (toBlockGlobalNumber < 0) throw new IllegalArgumentException("toBlockGlobalNumber < 0");
         if (toBlockHash32.length != 32) throw new IllegalArgumentException("toBlockHash32 != 32");
 
@@ -130,7 +123,6 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
         this.subType = subType;
         this.version = VER;
 
-        this.toLogin = toLogin;
         this.toBlockchainName = toBlockchainName;
         this.toBlockGlobalNumber = toBlockGlobalNumber;
         this.toBlockHash32 = Arrays.copyOf(toBlockHash32, 32);
@@ -158,10 +150,13 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
             if (prevLineHash32 == null || prevLineHash32.length != 32) throw new IllegalArgumentException("prevLineHash32 invalid");
         }
 
-        if (toLogin == null || toLogin.isBlank()) throw new IllegalArgumentException("toLogin is blank");
-        if (!toLogin.matches("^[A-Za-z0-9_]+$")) throw new IllegalArgumentException("toLogin must match ^[A-Za-z0-9_]+$");
+        if (toBlockchainName == null || toBlockchainName.isBlank())
+            throw new IllegalArgumentException("toBlockchainName is blank");
 
-        if (toBlockchainName == null || toBlockchainName.isBlank()) throw new IllegalArgumentException("toBlockchainName is blank");
+        // гарантируем вычислимый toLogin (иначе target “битый” по стандарту)
+        if (BlockchainNameUtil.loginFromBlockchainName(toBlockchainName) == null)
+            throw new IllegalArgumentException("toBlockchainName must match login+\"-NNN\": " + toBlockchainName);
+
         if (toBlockGlobalNumber < 0) throw new IllegalArgumentException("toBlockGlobalNumber < 0");
         if (toBlockHash32 == null || toBlockHash32.length != 32) throw new IllegalArgumentException("toBlockHash32 invalid");
 
@@ -170,10 +165,6 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
 
     @Override
     public byte[] toBytes() {
-        byte[] toLoginBytes = toLogin.getBytes(StandardCharsets.UTF_8);
-        if (toLoginBytes.length == 0 || toLoginBytes.length > 255)
-            throw new IllegalArgumentException("toLogin utf8 len must be 1..255");
-
         byte[] bchBytes = toBlockchainName.getBytes(StandardCharsets.UTF_8);
         if (bchBytes.length == 0 || bchBytes.length > 255)
             throw new IllegalArgumentException("toBlockchainName utf8 len must be 1..255");
@@ -182,7 +173,6 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
             throw new IllegalArgumentException("toBlockHash32 != 32");
 
         int cap = (4 + 32 + 4)
-                + 1 + toLoginBytes.length
                 + 1 + bchBytes.length
                 + 4 + 32;
 
@@ -191,9 +181,6 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
         bb.putInt(prevLineNumber);
         bb.put(prevLineHash32 == null ? new byte[32] : Arrays.copyOf(prevLineHash32, 32));
         bb.putInt(thisLineNumber);
-
-        bb.put((byte) toLoginBytes.length);
-        bb.put(toLoginBytes);
 
         bb.put((byte) bchBytes.length);
         bb.put(bchBytes);
@@ -216,7 +203,8 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
     @Override public int thisLineNumber() { return thisLineNumber; }
 
     /* ====================== BodyHasTarget ===================== */
-    @Override public String toLogin() { return toLogin; }
+    // toLogin() теперь default в интерфейсе и вычисляется из toBchName()
+
     @Override public String toBchName() { return toBlockchainName; }
     @Override public Integer toBlockGlobalNumber() { return toBlockGlobalNumber; }
     @Override public byte[] toBlockHasheBytes() { return toBlockHash32; }
