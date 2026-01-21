@@ -2,6 +2,7 @@ package server.logic.ws_protocol.JSON.handlers.blockchain;
 
 import blockchain.BchBlockEntry;
 import blockchain.BchCryptoVerifier;
+import blockchain.MsgSubType;
 import blockchain.body.BodyHasLine;
 import blockchain.body.BodyHasTarget;
 import org.slf4j.Logger;
@@ -33,13 +34,12 @@ import java.util.concurrent.locks.ReentrantLock;
  *  2) Проверяем:
  *      - incoming.blockNumber == last+1
  *      - incoming.prevHash32 == last_hash (для genesis last_hash = 32 нулей)
- *  3) Считаем hash32 = SHA-256(preimage) (preimage = block_bytes без signature64)
- *  4) Проверяем подпись Ed25519.verify(hash32, signature64, pubKey)
- *  5) Если тип имеет линию:
- *      - если prevLineNumber != -1:
+ *  3) Проверяем подпись Ed25519.verify(hash32(preimage), signature64, pubKey)
+ *  4) Если тип имеет линию:
+ *      - если prevLineNumber != null:
  *           достаём hash блока prevLineNumber из blocks
  *           сравниваем с prevLineHash32 из body
- *  6) Сохраняем блок в blocks + обновляем blockchain_state
+ *  5) Сохраняем блок в blocks + обновляем blockchain_state
  *
  * Важно:
  * - Сетевой протокол AddBlock пока оставляем старые поля (globalNumber/prevGlobalHash),
@@ -224,17 +224,27 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_signature", serverLastNum, serverLastHashHex);
         }
 
-        // 7) линейная проверка (только для типов с линией)
+        // 7) line columns (only for BodyHasLine)
+        Integer lineCode = null;
         Integer prevLineNumber = null;
         byte[] prevLineHash32 = null;
         Integer thisLineNumber = null;
 
         if (block.body instanceof BodyHasLine bl) {
+            lineCode = bl.lineCode();
             prevLineNumber = bl.prevLineNumber();
             prevLineHash32 = bl.prevLineHash32();
             thisLineNumber = bl.thisLineNumber();
 
-            if (prevLineNumber != null && prevLineNumber != -1) {
+            // Нормализация: -1 не пишем в БД (для совместимости со старым TextBody)
+            if (prevLineNumber != null && prevLineNumber == -1) {
+                prevLineNumber = null;
+                prevLineHash32 = null;
+                thisLineNumber = null;
+            }
+
+            // Если prevLineNumber задан — проверяем его хэш
+            if (prevLineNumber != null) {
                 try {
                     byte[] dbPrevHash = blocksDAO.getHashByNumber(blockchainName, prevLineNumber);
                     if (dbPrevHash == null) {
@@ -270,6 +280,7 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
             be.setBlockSignature(block.getSignature64());
 
             // line columns (optional)
+            be.setLineCode(lineCode);
             be.setPrevLineNumber(prevLineNumber);
             be.setPrevLineHash(prevLineHash32);
             be.setThisLineNumber(thisLineNumber);
@@ -282,8 +293,13 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
                 be.setToBlockHash(t.toBlockHashBytes());
             }
 
-            // edit helper (optional): если TEXT_EDIT — это "редактирование блока цели"
-            if ((block.type & 0xFFFF) == 1 && (block.subType & 0xFFFF) == 10 && be.getToBlockNumber() != null) {
+            // edit helper (optional): если TEXT_EDIT_* — это "редактирование блока цели"
+            int type = block.type & 0xFFFF;
+            int sub = block.subType & 0xFFFF;
+
+            if (type == 1
+                    && (sub == (MsgSubType.TEXT_EDIT_POST & 0xFFFF) || sub == (MsgSubType.TEXT_EDIT_REPLY & 0xFFFF))
+                    && be.getToBlockNumber() != null) {
                 be.setEditedByBlockNumber(be.getToBlockNumber());
             }
 

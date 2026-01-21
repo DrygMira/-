@@ -14,17 +14,17 @@ import java.sql.Statement;
 /**
  * DatabaseInitializer — создание новой SQLite-БД по схеме SHiNE.
  *
- * Таблицы:
- *  - solana_users
- *  - active_sessions
- *  - users_params
- *  - ip_geo_cache
- *  - blockchain_state
- *  - blocks
- *  - connections_state
- *  - message_stats
+ * В этой версии:
+ *  - создаём ТОЛЬКО таблицы/индексы
+ *  - в конце вызываем DatabaseTriggersInstaller.createAllTriggers(st)
+ *
+ * Зачем так:
+ *  - триггеры часто ломают совместимость с внешними SQLite-просмотрщиками/сборками
+ *  - проще поддерживать/мигрировать
  */
-public class DatabaseInitializer {
+public final class DatabaseInitializer {
+
+    private DatabaseInitializer() {}
 
     /* ===================== TEXT (msg_type=1) ===================== */
 
@@ -46,7 +46,6 @@ public class DatabaseInitializer {
     public static final short REACTION_LIKE = 1;
 
     /* ===================== CONNECTION (msg_type=3) ===================== */
-    // Приведено к твоему shine.db.MsgSubType:
     // FRIEND=10/11, CONTACT=20/21, FOLLOW=30/31
     public static final short CONNECTION_FRIEND     = 10;
     public static final short CONNECTION_UNFRIEND   = 11;
@@ -264,138 +263,6 @@ public class DatabaseInitializer {
                 ON blocks (bch_name, line_code, this_line_number);
                 """);
 
-            // 6.1) TRIGGER: проверка целостности линии (только если line-поля реально переданы)
-/*     пока просто отключил этот тригер
-            st.executeUpdate("""
-                CREATE TRIGGER IF NOT EXISTS trg_blocks_line_integrity_bi
-                BEFORE INSERT ON blocks
-                WHEN
-                    NEW.line_code IS NOT NULL
-                    OR NEW.prev_line_number IS NOT NULL
-                    OR NEW.prev_line_hash IS NOT NULL
-                    OR NEW.this_line_number IS NOT NULL
-                BEGIN
-                    -- ============================================================
-                    -- LINE-INTEGRITY (BodyHasLine)
-                    --
-                    -- Этот триггер срабатывает ТОЛЬКО если при вставке передали хотя бы одно line-поле.
-                    --
-                    -- Типы, которые МОГУТ быть линейными (BodyHasLine в коде проекта):
-                    --   - TECH        (msg_type=0): CreateChannelBody (и т.п. тех-блоки с линией)
-                    --   - TEXT        (msg_type=1): TextBody в режиме линии (пост/редактирование поста в канале)
-                    --   - CONNECTION  (msg_type=3): ConnectionBody
-                    --   - USER_PARAM  (msg_type=4): UserParamBody
-                    --
-                    -- Проверки:
-                    --  1) Если передали line-поля -> обязаны передать ВСЕ 4:
-                    --     line_code, prev_line_number, prev_line_hash, this_line_number.
-                    --  2) prev блок линии существует и p.block_hash == NEW.prev_line_hash
-                    --  3) line_code корректный:
-                    --     - либо NEW.prev_line_number == NEW.line_code (первый шаг после root),
-                    --     - либо у prev блока p.line_code == NEW.line_code
-                    --  4) this_line_number корректный:
-                    --     - первый шаг после root:
-                    --         TEXT: this=0
-                    --         TECH/CONNECTION/USER_PARAM: this=1
-                    --     - дальше:
-                    --         TEXT: допускаем this = prev.this или prev.this + 1
-                    --         TECH/CONNECTION/USER_PARAM: строго this = prev.this + 1
-                    --
-                    -- Ошибки: RAISE(ABORT, 'LINE_ERR_...') — чтобы Java могла понять причину.
-                    -- ============================================================
-
-                    -- 0) line-поля нельзя у неожиданных типов
-                    SELECT RAISE(ABORT,
-                        'LINE_ERR_UNSUPPORTED_TYPE_WITH_LINE: msg_type=' || NEW.msg_type || ' msg_sub_type=' || NEW.msg_sub_type
-                    )
-                    WHERE NOT (NEW.msg_type IN (0, 1, 3, 4));
-
-                    -- 1) line-поля должны быть заполнены полностью (без “частично”)
-                    SELECT RAISE(ABORT,
-                        'LINE_ERR_PARTIAL_FIELDS: all of (line_code, prev_line_number, prev_line_hash, this_line_number) must be NOT NULL'
-                    )
-                    WHERE NEW.line_code IS NULL
-                       OR NEW.prev_line_number IS NULL
-                       OR NEW.prev_line_hash IS NULL
-                       OR NEW.this_line_number IS NULL;
-
-                    -- 2) prev существует?
-                    SELECT RAISE(ABORT,
-                        'LINE_ERR_NO_PREV: bch=' || NEW.bch_name || ' block=' || NEW.block_number || ' prev=' || NEW.prev_line_number
-                    )
-                    WHERE NOT EXISTS(
-                        SELECT 1
-                        FROM blocks p
-                        WHERE p.bch_name = NEW.bch_name
-                          AND p.block_number = NEW.prev_line_number
-                        LIMIT 1
-                    );
-
-                    -- 3) prev hash совпадает?
-                    SELECT RAISE(ABORT,
-                        'LINE_ERR_PREV_HASH_MISMATCH: bch=' || NEW.bch_name || ' block=' || NEW.block_number || ' prev=' || NEW.prev_line_number
-                    )
-                    WHERE NOT EXISTS(
-                        SELECT 1
-                        FROM blocks p
-                        WHERE p.bch_name = NEW.bch_name
-                          AND p.block_number = NEW.prev_line_number
-                          AND p.block_hash = NEW.prev_line_hash
-                        LIMIT 1
-                    );
-
-                    -- 4) line_code корректный:
-                    --    либо это первый шаг после root (prev_line_number == line_code),
-                    --    либо prev уже в этой линии (p.line_code == NEW.line_code).
-                    SELECT RAISE(ABORT,
-                        'LINE_ERR_LINE_CODE_MISMATCH: bch=' || NEW.bch_name || ' block=' || NEW.block_number ||
-                        ' line_code=' || NEW.line_code || ' prev=' || NEW.prev_line_number
-                    )
-                    WHERE NEW.prev_line_number <> NEW.line_code
-                      AND NOT EXISTS(
-                        SELECT 1
-                        FROM blocks p
-                        WHERE p.bch_name = NEW.bch_name
-                          AND p.block_number = NEW.prev_line_number
-                          AND p.line_code = NEW.line_code
-                        LIMIT 1
-                      );
-
-                    -- 5) первый шаг после root: this_line_number
-                    SELECT RAISE(ABORT,
-                        'LINE_ERR_FIRST_STEP_BAD_THIS: expected this_line_number=0 for TEXT or =1 for other types'
-                    )
-                    WHERE NEW.prev_line_number = NEW.line_code
-                      AND NEW.this_line_number <> (CASE WHEN NEW.msg_type = 1 THEN 0 ELSE 1 END);
-
-                    -- 6) обычный шаг: this_line_number относительно prev
-                    SELECT RAISE(ABORT,
-                        'LINE_ERR_THIS_LINE_BAD_STEP: bch=' || NEW.bch_name || ' block=' || NEW.block_number ||
-                        ' this=' || NEW.this_line_number || ' prev=' || NEW.prev_line_number
-                    )
-                    WHERE NEW.prev_line_number <> NEW.line_code
-                      AND NOT EXISTS(
-                        SELECT 1
-                        FROM blocks p
-                        WHERE p.bch_name = NEW.bch_name
-                          AND p.block_number = NEW.prev_line_number
-                          AND p.this_line_number IS NOT NULL
-                          AND (
-                                -- TEXT: допускаем same или +1 (поддерживает “edit не увеличивает thisLineNumber”)
-                                (NEW.msg_type = 1 AND
-                                    (NEW.this_line_number = p.this_line_number OR NEW.this_line_number = p.this_line_number + 1)
-                                )
-                                OR
-                                -- TECH/CONNECTION/USER_PARAM: строго +1
-                                (NEW.msg_type IN (0,3,4) AND
-                                    NEW.this_line_number = p.this_line_number + 1
-                                )
-                              )
-                        LIMIT 1
-                      );
-                END;
-                """);
-*/
             // 7) connections_state
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS connections_state (
@@ -427,59 +294,7 @@ public class DatabaseInitializer {
                 ON connections_state (login, to_login);
                 """);
 
-            // 8) Trigger: connection state
-            st.executeUpdate("""
-                CREATE TRIGGER IF NOT EXISTS trg_blocks_connection_state_ai
-                AFTER INSERT ON blocks
-                WHEN NEW.msg_type = 3
-                BEGIN
-
-                    INSERT INTO connections_state (
-                        login, rel_type, to_login, to_bch_name, to_block_number, to_block_hash
-                    )
-                    SELECT
-                        NEW.login,
-                        NEW.msg_sub_type,
-                        NEW.to_login,
-                        NEW.to_bch_name,
-                        NEW.to_block_number,
-                        NEW.to_block_hash
-                    WHERE NEW.msg_sub_type IN (%d, %d, %d)
-                      AND NEW.to_login IS NOT NULL
-                      AND NEW.to_bch_name IS NOT NULL
-                    ON CONFLICT(login, rel_type, to_login)
-                    DO UPDATE SET
-                        to_bch_name     = excluded.to_bch_name,
-                        to_block_number = excluded.to_block_number,
-                        to_block_hash   = excluded.to_block_hash;
-
-                    DELETE FROM connections_state
-                    WHERE login = NEW.login
-                      AND to_login = NEW.to_login
-                      AND rel_type = CASE NEW.msg_sub_type
-                          WHEN %d THEN %d
-                          WHEN %d THEN %d
-                          WHEN %d THEN %d
-                          ELSE rel_type
-                      END
-                      AND NEW.msg_sub_type IN (%d, %d, %d);
-
-                END;
-                """.formatted(
-                    (int) CONNECTION_FRIEND,
-                    (int) CONNECTION_CONTACT,
-                    (int) CONNECTION_FOLLOW,
-
-                    (int) CONNECTION_UNFRIEND,  (int) CONNECTION_FRIEND,
-                    (int) CONNECTION_UNCONTACT, (int) CONNECTION_CONTACT,
-                    (int) CONNECTION_UNFOLLOW,  (int) CONNECTION_FOLLOW,
-
-                    (int) CONNECTION_UNFRIEND,
-                    (int) CONNECTION_UNCONTACT,
-                    (int) CONNECTION_UNFOLLOW
-                ));
-
-            // 9) message_stats
+            // 8) message_stats
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS message_stats (
                     to_login          TEXT    NOT NULL,
@@ -510,110 +325,8 @@ public class DatabaseInitializer {
                 ON message_stats (to_login);
                 """);
 
-            // 10) Trigger: LIKE
-            st.executeUpdate("""
-                CREATE TRIGGER IF NOT EXISTS trg_blocks_message_stats_like_ai
-                AFTER INSERT ON blocks
-                WHEN NEW.msg_type = 2 AND NEW.msg_sub_type = %d
-                BEGIN
-                    INSERT INTO message_stats (
-                        to_login,
-                        to_bch_name,
-                        to_block_number,
-                        to_block_hash,
-                        likes_count,
-                        replies_count,
-                        edits_count
-                    )
-                    SELECT
-                        NEW.to_login,
-                        NEW.to_bch_name,
-                        NEW.to_block_number,
-                        NEW.to_block_hash,
-                        1,
-                        0,
-                        0
-                    WHERE NEW.to_login IS NOT NULL
-                      AND NEW.to_bch_name IS NOT NULL
-                      AND NEW.to_block_number IS NOT NULL
-                      AND NEW.to_block_hash IS NOT NULL
-                    ON CONFLICT(to_login, to_bch_name, to_block_number, to_block_hash)
-                    DO UPDATE SET
-                        likes_count = message_stats.likes_count + 1;
-                END;
-                """.formatted((int) REACTION_LIKE));
-
-            // 11) Trigger: REPLY
-            st.executeUpdate("""
-                CREATE TRIGGER IF NOT EXISTS trg_blocks_message_stats_reply_ai
-                AFTER INSERT ON blocks
-                WHEN NEW.msg_type = 1 AND NEW.msg_sub_type = %d
-                BEGIN
-                    INSERT INTO message_stats (
-                        to_login,
-                        to_bch_name,
-                        to_block_number,
-                        to_block_hash,
-                        likes_count,
-                        replies_count,
-                        edits_count
-                    )
-                    SELECT
-                        NEW.to_login,
-                        NEW.to_bch_name,
-                        NEW.to_block_number,
-                        NEW.to_block_hash,
-                        0,
-                        1,
-                        0
-                    WHERE NEW.to_login IS NOT NULL
-                      AND NEW.to_bch_name IS NOT NULL
-                      AND NEW.to_block_number IS NOT NULL
-                      AND NEW.to_block_hash IS NOT NULL
-                    ON CONFLICT(to_login, to_bch_name, to_block_number, to_block_hash)
-                    DO UPDATE SET
-                        replies_count = message_stats.replies_count + 1;
-                END;
-                """.formatted((int) TEXT_REPLY));
-
-            // 12) Trigger: EDIT
-            st.executeUpdate("""
-                CREATE TRIGGER IF NOT EXISTS trg_blocks_edit_apply_ai
-                AFTER INSERT ON blocks
-                WHEN NEW.msg_type = 1 AND NEW.msg_sub_type = %d
-                BEGIN
-                    UPDATE blocks
-                    SET edited_by_block_number = NEW.block_number
-                    WHERE login = NEW.login
-                      AND bch_name = NEW.bch_name
-                      AND block_number = NEW.to_block_number;
-
-                    INSERT INTO message_stats (
-                        to_login,
-                        to_bch_name,
-                        to_block_number,
-                        to_block_hash,
-                        likes_count,
-                        replies_count,
-                        edits_count
-                    )
-                    SELECT
-                        NEW.to_login,
-                        NEW.to_bch_name,
-                        NEW.to_block_number,
-                        NEW.to_block_hash,
-                        0,
-                        0,
-                        1
-                    WHERE NEW.to_login IS NOT NULL
-                      AND NEW.to_bch_name IS NOT NULL
-                      AND NEW.to_block_number IS NOT NULL
-                      AND NEW.to_block_hash IS NOT NULL
-                    ON CONFLICT(to_login, to_bch_name, to_block_number, to_block_hash)
-                    DO UPDATE SET
-                        edits_count = message_stats.edits_count + 1;
-                END;
-                """.formatted((int) TEXT_EDIT));
+            // ВАЖНО: триггеры ставим отдельно
+            DatabaseTriggersInstaller.createAllTriggers(st);
         }
     }
 }

@@ -1,5 +1,7 @@
 package blockchain.body;
 
+import blockchain.MsgSubType;
+
 /**
  * Парсер body выбирает класс по header: type/subType/version,
  * потому что bodyBytes больше НЕ содержат type/subType/version.
@@ -28,7 +30,23 @@ public final class BodyRecordParser {
                 throw new IllegalArgumentException("Unknown TECH subType for type=0 ver=1: subType=" + st);
             }
 
-            case TextBody.KEY       -> new TextBody(subType, version, bodyBytes);
+            // TEXT type=1 ver=1: выбираем класс по subType
+            case TextBody.KEY -> {
+                int st = subType & 0xFFFF;
+
+                if (st == (MsgSubType.TEXT_POST & 0xFFFF)
+                        || st == (MsgSubType.TEXT_EDIT_POST & 0xFFFF)) {
+                    yield new TextLineBody(subType, version, bodyBytes);
+                }
+
+                if (st == (MsgSubType.TEXT_REPLY & 0xFFFF)
+                        || st == (MsgSubType.TEXT_EDIT_REPLY & 0xFFFF)) {
+                    yield new TextReplyBody(subType, version, bodyBytes);
+                }
+
+                throw new IllegalArgumentException("Unknown TEXT subType for type=1 ver=1: subType=" + st);
+            }
+
             case ReactionBody.KEY   -> new ReactionBody(subType, version, bodyBytes);
             case ConnectionBody.KEY -> new ConnectionBody(subType, version, bodyBytes);
             case UserParamBody.KEY  -> new UserParamBody(subType, version, bodyBytes);
