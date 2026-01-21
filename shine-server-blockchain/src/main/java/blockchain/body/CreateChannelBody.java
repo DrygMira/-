@@ -18,7 +18,8 @@ import java.util.Objects;
  *  - prevLineNumber/hash указывают на предыдущее TECH-сообщение (HEADER или прошлый CREATE_CHANNEL)
  *  - thisLineNumber: 1,2,3... (тех-нумерация)
  *
- * bodyBytes (BigEndian):
+ * bodyBytes (BigEndian), новый формат line-prefix:
+ *   [4]  lineCode         (для TECH линии обычно 0)
  *   [4]  prevLineNumber
  *   [32] prevLineHash32
  *   [4]  thisLineNumber
@@ -43,6 +44,7 @@ public final class CreateChannelBody implements BodyRecord, BodyHasLine {
     public final short version;   // из header
 
     // line
+    public final int lineCode;
     public final int prevLineNumber;
     public final byte[] prevLineHash32; // 32
     public final int thisLineNumber;
@@ -63,11 +65,14 @@ public final class CreateChannelBody implements BodyRecord, BodyHasLine {
             throw new IllegalArgumentException("CreateChannelBody subType must be TECH_CREATE_CHANNEL(1), got=" + (this.subType & 0xFFFF));
         }
 
-        if (bodyBytes.length < (4 + 32 + 4) + 1 + 1) {
+        // минимум: lineCode(4) + line(4+32+4) + nameLen(1) + name(1)
+        if (bodyBytes.length < 4 + (4 + 32 + 4) + 1 + 1) {
             throw new IllegalArgumentException("CreateChannelBody too short");
         }
 
         ByteBuffer bb = ByteBuffer.wrap(bodyBytes).order(ByteOrder.BIG_ENDIAN);
+
+        this.lineCode = bb.getInt();
 
         this.prevLineNumber = bb.getInt();
 
@@ -90,12 +95,18 @@ public final class CreateChannelBody implements BodyRecord, BodyHasLine {
         if (bb.remaining() != 0) throw new IllegalArgumentException("Unexpected tail bytes, remaining=" + bb.remaining());
     }
 
-    public CreateChannelBody(int prevLineNumber, byte[] prevLineHash32, int thisLineNumber, String channelName) {
+    public CreateChannelBody(int lineCode,
+                             int prevLineNumber,
+                             byte[] prevLineHash32,
+                             int thisLineNumber,
+                             String channelName) {
         Objects.requireNonNull(channelName, "channelName == null");
+        if (lineCode < 0) throw new IllegalArgumentException("lineCode < 0");
 
         this.subType = SUBTYPE;
         this.version = VER;
 
+        this.lineCode = lineCode;
         this.prevLineNumber = prevLineNumber;
         this.prevLineHash32 = (prevLineHash32 == null ? ZERO32 : Arrays.copyOf(prevLineHash32, 32));
         this.thisLineNumber = thisLineNumber;
@@ -105,6 +116,8 @@ public final class CreateChannelBody implements BodyRecord, BodyHasLine {
 
     @Override
     public CreateChannelBody check() {
+        if (lineCode < 0) throw new IllegalArgumentException("lineCode < 0");
+
         if ((subType & 0xFFFF) != (SUBTYPE & 0xFFFF))
             throw new IllegalArgumentException("CreateChannelBody subType must be TECH_CREATE_CHANNEL(1)");
 
@@ -134,8 +147,10 @@ public final class CreateChannelBody implements BodyRecord, BodyHasLine {
         if (nameUtf8.length == 0 || nameUtf8.length > 255)
             throw new IllegalArgumentException("channelName utf8 len must be 1..255");
 
-        int cap = (4 + 32 + 4) + 1 + nameUtf8.length;
+        int cap = 4 + (4 + 32 + 4) + 1 + nameUtf8.length;
         ByteBuffer bb = ByteBuffer.allocate(cap).order(ByteOrder.BIG_ENDIAN);
+
+        bb.putInt(lineCode);
 
         bb.putInt(prevLineNumber);
         bb.put(prevLineHash32 == null ? ZERO32 : Arrays.copyOf(prevLineHash32, 32));
@@ -148,6 +163,7 @@ public final class CreateChannelBody implements BodyRecord, BodyHasLine {
     }
 
     /* ====================== BodyHasLine ====================== */
+    @Override public int lineCode() { return lineCode; }
     @Override public int prevLineNumber() { return prevLineNumber; }
     @Override public byte[] prevLineHash32() { return prevLineHash32 == null ? null : Arrays.copyOf(prevLineHash32, 32); }
     @Override public int thisLineNumber() { return thisLineNumber; }

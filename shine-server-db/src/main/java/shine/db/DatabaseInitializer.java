@@ -182,8 +182,7 @@ public class DatabaseInitializer {
                 ON ip_geo_cache (updated_at_ms);
                 """);
 
-            // 5. blockchain_state (НОВЫЙ формат под BlockchainStateDAO/Entry)
-            //    ВАЖНО: last_block_number / last_block_hash (а не last_global_*)
+            // 5. blockchain_state
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS blockchain_state (
                     blockchain_name   TEXT    NOT NULL PRIMARY KEY,
@@ -212,13 +211,12 @@ public class DatabaseInitializer {
                 ON blockchain_state (updated_at_ms);
                 """);
 
-            // 6. blocks (НОВЫЙ формат под BlocksDAO/BlockEntry)
-            // Ключ: (bch_name, block_number)
+            // 6. blocks (+ line_code)
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS blocks (
                     login                TEXT    NOT NULL,
                     bch_name             TEXT    NOT NULL,
-                    block_number         INTEGER NOT NULL,
+                    block_number         INTEGER NOT NULL CHECK(block_number >= 0),
 
                     msg_type             INTEGER NOT NULL,
                     msg_sub_type         INTEGER NOT NULL,
@@ -228,7 +226,7 @@ public class DatabaseInitializer {
                     -- target (reply/like/edit и т.д.)
                     to_login             TEXT,
                     to_bch_name          TEXT,
-                    to_block_number      INTEGER,
+                    to_block_number      INTEGER CHECK(to_block_number IS NULL OR to_block_number >= 0),
                     to_block_hash        BLOB,
 
                     -- собственные данные
@@ -236,12 +234,13 @@ public class DatabaseInitializer {
                     block_signature      BLOB    NOT NULL,
 
                     -- если этот блок был изменён последним edit'ом
-                    edited_by_block_number INTEGER,
+                    edited_by_block_number INTEGER CHECK(edited_by_block_number IS NULL OR edited_by_block_number >= 0),
 
                     -- линейность (опционально)
-                    prev_line_number     INTEGER,
-                    prev_line_hash       BLOB,
-                    this_line_number     INTEGER,
+                    line_code           INTEGER CHECK(line_code IS NULL OR line_code >= 0),
+                    prev_line_number    INTEGER CHECK(prev_line_number IS NULL OR prev_line_number >= 0),
+                    prev_line_hash      BLOB,
+                    this_line_number    INTEGER CHECK(this_line_number IS NULL OR this_line_number >= 0),
 
                     FOREIGN KEY (login) REFERENCES solana_users(login),
                     FOREIGN KEY (bch_name) REFERENCES blockchain_state(blockchain_name),
@@ -260,7 +259,143 @@ public class DatabaseInitializer {
                 ON blocks (to_login, to_bch_name, to_block_number);
                 """);
 
-            // 7) connections_state (под SubscriptionsDAO: rel_type + to_login/to_bch_name)
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_blocks_by_line
+                ON blocks (bch_name, line_code, this_line_number);
+                """);
+
+            // 6.1) TRIGGER: проверка целостности линии (только если line-поля реально переданы)
+            st.executeUpdate("""
+                CREATE TRIGGER IF NOT EXISTS trg_blocks_line_integrity_bi
+                BEFORE INSERT ON blocks
+                WHEN
+                    NEW.line_code IS NOT NULL
+                    OR NEW.prev_line_number IS NOT NULL
+                    OR NEW.prev_line_hash IS NOT NULL
+                    OR NEW.this_line_number IS NOT NULL
+                BEGIN
+                    -- ============================================================
+                    -- LINE-INTEGRITY (BodyHasLine)
+                    --
+                    -- Этот триггер срабатывает ТОЛЬКО если при вставке передали хотя бы одно line-поле.
+                    --
+                    -- Типы, которые МОГУТ быть линейными (BodyHasLine в коде проекта):
+                    --   - TECH        (msg_type=0): CreateChannelBody (и т.п. тех-блоки с линией)
+                    --   - TEXT        (msg_type=1): TextBody в режиме линии (пост/редактирование поста в канале)
+                    --   - CONNECTION  (msg_type=3): ConnectionBody
+                    --   - USER_PARAM  (msg_type=4): UserParamBody
+                    --
+                    -- Проверки:
+                    --  1) Если передали line-поля -> обязаны передать ВСЕ 4:
+                    --     line_code, prev_line_number, prev_line_hash, this_line_number.
+                    --  2) prev блок линии существует и p.block_hash == NEW.prev_line_hash
+                    --  3) line_code корректный:
+                    --     - либо NEW.prev_line_number == NEW.line_code (первый шаг после root),
+                    --     - либо у prev блока p.line_code == NEW.line_code
+                    --  4) this_line_number корректный:
+                    --     - первый шаг после root:
+                    --         TEXT: this=0
+                    --         TECH/CONNECTION/USER_PARAM: this=1
+                    --     - дальше:
+                    --         TEXT: допускаем this = prev.this или prev.this + 1
+                    --         TECH/CONNECTION/USER_PARAM: строго this = prev.this + 1
+                    --
+                    -- Ошибки: RAISE(ABORT, 'LINE_ERR_...') — чтобы Java могла понять причину.
+                    -- ============================================================
+
+                    -- 0) line-поля нельзя у неожиданных типов
+                    SELECT RAISE(ABORT,
+                        'LINE_ERR_UNSUPPORTED_TYPE_WITH_LINE: msg_type=' || NEW.msg_type || ' msg_sub_type=' || NEW.msg_sub_type
+                    )
+                    WHERE NOT (NEW.msg_type IN (0, 1, 3, 4));
+
+                    -- 1) line-поля должны быть заполнены полностью (без “частично”)
+                    SELECT RAISE(ABORT,
+                        'LINE_ERR_PARTIAL_FIELDS: all of (line_code, prev_line_number, prev_line_hash, this_line_number) must be NOT NULL'
+                    )
+                    WHERE NEW.line_code IS NULL
+                       OR NEW.prev_line_number IS NULL
+                       OR NEW.prev_line_hash IS NULL
+                       OR NEW.this_line_number IS NULL;
+
+                    -- 2) prev существует?
+                    SELECT RAISE(ABORT,
+                        'LINE_ERR_NO_PREV: bch=' || NEW.bch_name || ' block=' || NEW.block_number || ' prev=' || NEW.prev_line_number
+                    )
+                    WHERE NOT EXISTS(
+                        SELECT 1
+                        FROM blocks p
+                        WHERE p.bch_name = NEW.bch_name
+                          AND p.block_number = NEW.prev_line_number
+                        LIMIT 1
+                    );
+
+                    -- 3) prev hash совпадает?
+                    SELECT RAISE(ABORT,
+                        'LINE_ERR_PREV_HASH_MISMATCH: bch=' || NEW.bch_name || ' block=' || NEW.block_number || ' prev=' || NEW.prev_line_number
+                    )
+                    WHERE NOT EXISTS(
+                        SELECT 1
+                        FROM blocks p
+                        WHERE p.bch_name = NEW.bch_name
+                          AND p.block_number = NEW.prev_line_number
+                          AND p.block_hash = NEW.prev_line_hash
+                        LIMIT 1
+                    );
+
+                    -- 4) line_code корректный:
+                    --    либо это первый шаг после root (prev_line_number == line_code),
+                    --    либо prev уже в этой линии (p.line_code == NEW.line_code).
+                    SELECT RAISE(ABORT,
+                        'LINE_ERR_LINE_CODE_MISMATCH: bch=' || NEW.bch_name || ' block=' || NEW.block_number ||
+                        ' line_code=' || NEW.line_code || ' prev=' || NEW.prev_line_number
+                    )
+                    WHERE NEW.prev_line_number <> NEW.line_code
+                      AND NOT EXISTS(
+                        SELECT 1
+                        FROM blocks p
+                        WHERE p.bch_name = NEW.bch_name
+                          AND p.block_number = NEW.prev_line_number
+                          AND p.line_code = NEW.line_code
+                        LIMIT 1
+                      );
+
+                    -- 5) первый шаг после root: this_line_number
+                    SELECT RAISE(ABORT,
+                        'LINE_ERR_FIRST_STEP_BAD_THIS: expected this_line_number=0 for TEXT or =1 for other types'
+                    )
+                    WHERE NEW.prev_line_number = NEW.line_code
+                      AND NEW.this_line_number <> (CASE WHEN NEW.msg_type = 1 THEN 0 ELSE 1 END);
+
+                    -- 6) обычный шаг: this_line_number относительно prev
+                    SELECT RAISE(ABORT,
+                        'LINE_ERR_THIS_LINE_BAD_STEP: bch=' || NEW.bch_name || ' block=' || NEW.block_number ||
+                        ' this=' || NEW.this_line_number || ' prev=' || NEW.prev_line_number
+                    )
+                    WHERE NEW.prev_line_number <> NEW.line_code
+                      AND NOT EXISTS(
+                        SELECT 1
+                        FROM blocks p
+                        WHERE p.bch_name = NEW.bch_name
+                          AND p.block_number = NEW.prev_line_number
+                          AND p.this_line_number IS NOT NULL
+                          AND (
+                                -- TEXT: допускаем same или +1 (поддерживает “edit не увеличивает thisLineNumber”)
+                                (NEW.msg_type = 1 AND
+                                    (NEW.this_line_number = p.this_line_number OR NEW.this_line_number = p.this_line_number + 1)
+                                )
+                                OR
+                                -- TECH/CONNECTION/USER_PARAM: строго +1
+                                (NEW.msg_type IN (0,3,4) AND
+                                    NEW.this_line_number = p.this_line_number + 1
+                                )
+                              )
+                        LIMIT 1
+                      );
+                END;
+                """);
+
+            // 7) connections_state
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS connections_state (
                     login           TEXT    NOT NULL,
@@ -291,7 +426,7 @@ public class DatabaseInitializer {
                 ON connections_state (login, to_login);
                 """);
 
-            // 8) Trigger: connection state (под новые имена колонок)
+            // 8) Trigger: connection state
             st.executeUpdate("""
                 CREATE TRIGGER IF NOT EXISTS trg_blocks_connection_state_ai
                 AFTER INSERT ON blocks
@@ -343,7 +478,7 @@ public class DatabaseInitializer {
                     (int) CONNECTION_UNFOLLOW
                 ));
 
-            // 9) message_stats (под новые to_* имена) + edits_count
+            // 9) message_stats
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS message_stats (
                     to_login          TEXT    NOT NULL,
@@ -440,20 +575,18 @@ public class DatabaseInitializer {
                 END;
                 """.formatted((int) TEXT_REPLY));
 
-            // 12) Trigger: EDIT — пометить исходный блок + увеличить edits_count
+            // 12) Trigger: EDIT
             st.executeUpdate("""
                 CREATE TRIGGER IF NOT EXISTS trg_blocks_edit_apply_ai
                 AFTER INSERT ON blocks
                 WHEN NEW.msg_type = 1 AND NEW.msg_sub_type = %d
                 BEGIN
-                    -- 1) Помечаем исходный блок, что его изменили последним edit'ом
                     UPDATE blocks
                     SET edited_by_block_number = NEW.block_number
                     WHERE login = NEW.login
                       AND bch_name = NEW.bch_name
                       AND block_number = NEW.to_block_number;
 
-                    -- 2) edits_count +1 в message_stats (upsert)
                     INSERT INTO message_stats (
                         to_login,
                         to_bch_name,

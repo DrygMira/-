@@ -50,10 +50,11 @@ public final class BlocksDAO {
                 block_hash,
                 block_signature,
                 edited_by_block_number,
+                line_code,
                 prev_line_number,
                 prev_line_hash,
                 this_line_number
-            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
             """;
 
         try (PreparedStatement ps = c.prepareStatement(sql)) {
@@ -84,6 +85,10 @@ public final class BlocksDAO {
             ps.setBytes(i++, e.getBlockSignature());
 
             if (e.getEditedByBlockNumber() != null) ps.setInt(i++, e.getEditedByBlockNumber());
+            else ps.setNull(i++, Types.INTEGER);
+
+            // NEW: line_code
+            if (e.getLineCode() != null) ps.setInt(i++, e.getLineCode());
             else ps.setNull(i++, Types.INTEGER);
 
             if (e.getPrevLineNumber() != null) ps.setInt(i++, e.getPrevLineNumber());
@@ -151,6 +156,7 @@ public final class BlocksDAO {
                 block_hash,
                 block_signature,
                 edited_by_block_number,
+                line_code,
                 prev_line_number,
                 prev_line_hash,
                 this_line_number
@@ -210,6 +216,10 @@ public final class BlocksDAO {
 
         Integer editedBy = (Integer) rs.getObject("edited_by_block_number");
         e.setEditedByBlockNumber(editedBy);
+
+        // NEW: line_code
+        Integer lineCode = (Integer) rs.getObject("line_code");
+        e.setLineCode(lineCode);
 
         Integer prevLn = (Integer) rs.getObject("prev_line_number");
         e.setPrevLineNumber(prevLn);

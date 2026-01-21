@@ -17,6 +17,7 @@ import java.util.Objects;
  *   1 = TEXT_TEXT
  *
  * bodyBytes (BigEndian), новый формат:
+ *   [4]  lineCode
  *   [4]  prevLineNumber
  *   [32] prevLineHash32
  *   [4]  thisLineNumber
@@ -38,6 +39,7 @@ public final class UserParamBody implements BodyRecord, BodyHasLine {
     public final short version; // из header
 
     // line
+    public final int lineCode;
     public final int prevLineNumber;
     public final byte[] prevLineHash32;
     public final int thisLineNumber;
@@ -58,12 +60,14 @@ public final class UserParamBody implements BodyRecord, BodyHasLine {
             throw new IllegalArgumentException("Bad UserParam subType: " + (this.subType & 0xFFFF));
         }
 
-        // минимум: line(4+32+4) + keyLen(2)+key(1) + valLen(2)+val(1)
-        if (bodyBytes.length < (4 + 32 + 4) + 2 + 1 + 2 + 1) {
+        // минимум: lineCode(4)+line(4+32+4) + keyLen(2)+key(1) + valLen(2)+val(1)
+        if (bodyBytes.length < 4 + (4 + 32 + 4) + 2 + 1 + 2 + 1) {
             throw new IllegalArgumentException("UserParamBody too short");
         }
 
         ByteBuffer bb = ByteBuffer.wrap(bodyBytes).order(ByteOrder.BIG_ENDIAN);
+
+        this.lineCode = bb.getInt();
 
         this.prevLineNumber = bb.getInt();
 
@@ -95,7 +99,8 @@ public final class UserParamBody implements BodyRecord, BodyHasLine {
         if (this.paramValue.isBlank()) throw new IllegalArgumentException("paramValue is blank");
     }
 
-    public UserParamBody(int prevLineNumber,
+    public UserParamBody(int lineCode,
+                         int prevLineNumber,
                          byte[] prevLineHash32,
                          int thisLineNumber,
                          String paramKey,
@@ -104,9 +109,12 @@ public final class UserParamBody implements BodyRecord, BodyHasLine {
         Objects.requireNonNull(paramKey, "paramKey == null");
         Objects.requireNonNull(paramValue, "paramValue == null");
 
+        if (lineCode < 0) throw new IllegalArgumentException("lineCode < 0");
+
         this.subType = MsgSubType.USER_PARAM_TEXT_TEXT;
         this.version = VER;
 
+        this.lineCode = lineCode;
         this.prevLineNumber = prevLineNumber;
         this.prevLineHash32 = (prevLineHash32 == null ? new byte[32] : Arrays.copyOf(prevLineHash32, 32));
         this.thisLineNumber = thisLineNumber;
@@ -120,6 +128,8 @@ public final class UserParamBody implements BodyRecord, BodyHasLine {
 
     @Override
     public UserParamBody check() {
+        if (lineCode < 0) throw new IllegalArgumentException("lineCode < 0");
+
         if ((subType & 0xFFFF) != (MsgSubType.USER_PARAM_TEXT_TEXT & 0xFFFF))
             throw new IllegalArgumentException("Bad UserParam subType: " + (subType & 0xFFFF));
 
@@ -144,11 +154,13 @@ public final class UserParamBody implements BodyRecord, BodyHasLine {
         if (keyUtf8.length == 0 || keyUtf8.length > 65535) throw new IllegalArgumentException("paramKey utf8 len must be 1..65535");
         if (valUtf8.length == 0 || valUtf8.length > 65535) throw new IllegalArgumentException("paramValue utf8 len must be 1..65535");
 
-        int cap = (4 + 32 + 4)
+        int cap = 4 + (4 + 32 + 4)
                 + 2 + keyUtf8.length
                 + 2 + valUtf8.length;
 
         ByteBuffer bb = ByteBuffer.allocate(cap).order(ByteOrder.BIG_ENDIAN);
+
+        bb.putInt(lineCode);
 
         bb.putInt(prevLineNumber);
         bb.put(prevLineHash32 == null ? new byte[32] : Arrays.copyOf(prevLineHash32, 32));
@@ -182,6 +194,7 @@ public final class UserParamBody implements BodyRecord, BodyHasLine {
     }
 
     /* ====================== BodyHasLine ====================== */
+    @Override public int lineCode() { return lineCode; }
     @Override public int prevLineNumber() { return prevLineNumber; }
     @Override public byte[] prevLineHash32() { return prevLineHash32 == null ? null : Arrays.copyOf(prevLineHash32, 32); }
     @Override public int thisLineNumber() { return thisLineNumber; }

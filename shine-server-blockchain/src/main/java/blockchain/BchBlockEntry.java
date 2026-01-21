@@ -15,7 +15,7 @@ import java.util.Objects;
  * RAW (BigEndian) = preimage:
  *   [32] prevHash32       (SHA-256)  hash предыдущего блока (цепочка)
  *   [4]  blockSize        (int)      = размер preimage (в байтах), БЕЗ signature64
- *   [4]  blockNumber      (int)      глобальный номер блока
+ *   [4]  blockNumber      (int)      глобальный номер блока (>=0)
  *   [8]  timestamp        (long)     unix seconds
  *
  *   [2]  type             (short)    тип сообщения
@@ -62,7 +62,7 @@ public final class BchBlockEntry {
     // --- HEADER (RAW) ---
     public final byte[] prevHash32;   // 32
     public final int blockSize;       // preimage size
-    public final int blockNumber;
+    public final int blockNumber;     // >=0
     public final long timestamp;
     public final short type;
     public final short subType;
@@ -113,6 +113,10 @@ public final class BchBlockEntry {
         }
 
         this.blockNumber = bb.getInt();
+        if (this.blockNumber < 0) {
+            throw new IllegalArgumentException("blockNumber < 0: " + this.blockNumber);
+        }
+
         this.timestamp = bb.getLong();
 
         // запрет “в будущее” больше чем на 1 минуту
@@ -170,6 +174,10 @@ public final class BchBlockEntry {
 
         if (prevHash32.length != 32) throw new IllegalArgumentException("prevHash32 != 32");
         if (signature64.length != SIGNATURE_LEN) throw new IllegalArgumentException("signature64 != 64");
+
+        if (blockNumber < 0) {
+            throw new IllegalArgumentException("blockNumber < 0: " + blockNumber);
+        }
 
         // запрет “в будущее” больше чем на 1 минуту
         long now = Instant.now().getEpochSecond();

@@ -18,6 +18,7 @@ import java.util.Objects;
  *   FOLLOW=30, UNFOLLOW=31
  *
  * bodyBytes (BigEndian), новый формат (toLogin НЕ ХРАНИМ):
+ *   [4]  lineCode
  *   [4]  prevLineNumber
  *   [32] prevLineHash32
  *   [4]  thisLineNumber
@@ -41,6 +42,7 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
     public final short version; // из header
 
     // line
+    public final int lineCode;
     public final int prevLineNumber;
     public final byte[] prevLineHash32;
     public final int thisLineNumber;
@@ -64,12 +66,14 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
         }
 
         // минимум:
-        // line(4+32+4) + toBchLen[1]+toBch[1] + global[4] + hash[32]
-        if (bodyBytes.length < (4 + 32 + 4) + 1 + 1 + 4 + 32) {
+        // lineCode(4) + line(4+32+4) + toBchLen[1]+toBch[1] + global[4] + hash[32]
+        if (bodyBytes.length < 4 + (4 + 32 + 4) + 1 + 1 + 4 + 32) {
             throw new IllegalArgumentException("ConnectionBody too short");
         }
 
         ByteBuffer bb = ByteBuffer.wrap(bodyBytes).order(ByteOrder.BIG_ENDIAN);
+
+        this.lineCode = bb.getInt();
 
         this.prevLineNumber = bb.getInt();
 
@@ -94,7 +98,8 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
         if (bb.remaining() != 0) throw new IllegalArgumentException("Unexpected tail bytes, remaining=" + bb.remaining());
     }
 
-    public ConnectionBody(int prevLineNumber,
+    public ConnectionBody(int lineCode,
+                          int prevLineNumber,
                           byte[] prevLineHash32,
                           int thisLineNumber,
                           short subType,
@@ -105,6 +110,7 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
         Objects.requireNonNull(toBlockchainName, "toBlockchainName == null");
         Objects.requireNonNull(toBlockHash32, "toBlockHash32 == null");
 
+        if (lineCode < 0) throw new IllegalArgumentException("lineCode < 0");
         if (!isValidSubType(subType)) throw new IllegalArgumentException("Bad connection subType: " + (subType & 0xFFFF));
 
         if (toBlockchainName.isBlank()) throw new IllegalArgumentException("toBlockchainName is blank");
@@ -115,6 +121,8 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
 
         if (toBlockGlobalNumber < 0) throw new IllegalArgumentException("toBlockGlobalNumber < 0");
         if (toBlockHash32.length != 32) throw new IllegalArgumentException("toBlockHash32 != 32");
+
+        this.lineCode = lineCode;
 
         this.prevLineNumber = prevLineNumber;
         this.prevLineHash32 = (prevLineHash32 == null ? new byte[32] : Arrays.copyOf(prevLineHash32, 32));
@@ -140,9 +148,10 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
 
     @Override
     public ConnectionBody check() {
+        if (lineCode < 0) throw new IllegalArgumentException("lineCode < 0");
         if (!isValidSubType(subType)) throw new IllegalArgumentException("Bad connection subType: " + (subType & 0xFFFF));
 
-        // line rule
+        // line rule (как было)
         if (prevLineNumber == -1) {
             if (!isAllZero32(prevLineHash32)) throw new IllegalArgumentException("prevLineHash32 must be zero when prevLineNumber=-1");
             if (thisLineNumber != -1) throw new IllegalArgumentException("thisLineNumber must be -1 when prevLineNumber=-1");
@@ -172,11 +181,13 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
         if (toBlockHash32 == null || toBlockHash32.length != 32)
             throw new IllegalArgumentException("toBlockHash32 != 32");
 
-        int cap = (4 + 32 + 4)
+        int cap = 4 + (4 + 32 + 4)
                 + 1 + bchBytes.length
                 + 4 + 32;
 
         ByteBuffer bb = ByteBuffer.allocate(cap).order(ByteOrder.BIG_ENDIAN);
+
+        bb.putInt(lineCode);
 
         bb.putInt(prevLineNumber);
         bb.put(prevLineHash32 == null ? new byte[32] : Arrays.copyOf(prevLineHash32, 32));
@@ -198,12 +209,12 @@ public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasL
     }
 
     /* ====================== BodyHasLine ====================== */
+    @Override public int lineCode() { return lineCode; }
     @Override public int prevLineNumber() { return prevLineNumber; }
     @Override public byte[] prevLineHash32() { return prevLineHash32 == null ? null : Arrays.copyOf(prevLineHash32, 32); }
     @Override public int thisLineNumber() { return thisLineNumber; }
 
     /* ====================== BodyHasTarget ===================== */
-    // toLogin() теперь default в интерфейсе и вычисляется из toBchName()
     @Override public String toBchName() { return toBlockchainName; }
     @Override public Integer toBlockGlobalNumber() { return toBlockGlobalNumber; }
     @Override public byte[] toBlockHashBytes() { return toBlockHash32; }

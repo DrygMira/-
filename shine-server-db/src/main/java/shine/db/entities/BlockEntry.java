@@ -11,9 +11,9 @@ package shine.db.entities;
  *  - block_signature (64 байта)
  *
  * Опционально:
- *  - prev_line_number / prev_line_hash / this_line_number
+ *  - line_code / prev_line_number / prev_line_hash / this_line_number
  *
- * Плюс поля индексации (как раньше было удобно):
+ * Плюс поля индексации:
  *  - msg_type / msg_sub_type
  *  - to_* (если есть target)
  *  - edited_by_block_number (для TEXT_EDIT)
@@ -39,6 +39,9 @@ public class BlockEntry {
     private byte[] blockSignature;
 
     private Integer editedByBlockNumber;
+
+    // NEW:
+    private Integer lineCode;
 
     private Integer prevLineNumber;
     private byte[] prevLineHash;
@@ -84,6 +87,10 @@ public class BlockEntry {
 
     public Integer getEditedByBlockNumber() { return editedByBlockNumber; }
     public void setEditedByBlockNumber(Integer editedByBlockNumber) { this.editedByBlockNumber = editedByBlockNumber; }
+
+    // NEW:
+    public Integer getLineCode() { return lineCode; }
+    public void setLineCode(Integer lineCode) { this.lineCode = lineCode; }
 
     public Integer getPrevLineNumber() { return prevLineNumber; }
     public void setPrevLineNumber(Integer prevLineNumber) { this.prevLineNumber = prevLineNumber; }

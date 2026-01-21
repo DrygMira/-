@@ -22,32 +22,29 @@ import java.util.Objects;
  * =========================================================================
  * КОНЦЕПЦИЯ ЛИНИЙ ДЛЯ ТЕКСТОВЫХ СООБЩЕНИЙ:
  *
- * POST и EDIT_POST принадлежат ЛИНИИ КАНАЛА и имеют hasLine:
- *   [4]  prevLineNumber
- *   [32] prevLineHash32
- *   [4]  thisLineNumber
+ * POST и EDIT_POST принадлежат ЛИНИИ КАНАЛА и имеют hasLine.
+ * В новом формате добавлен lineCode:
+ *   lineCode = 0 для канала "0"
+ *   lineCode = blockNumber "заглавия линии/канала" (например CREATE_CHANNEL)
  *
- * Канал в POST/EDIT_POST НЕ хранится (channelName не лежит в bodyBytes).
- * Канал определяется логически через lineRootBlockNumber:
- *   - канал "0": lineRootBlockNumber = blockNumber заголовка (HEADER)
- *   - канал "X": lineRootBlockNumber = blockNumber тех-сообщения CREATE_CHANNEL("X")
- *
- * REPLY и EDIT_REPLY НЕ имеют линии (нет hasLine).
+ * REPLY и EDIT_REPLY НЕ имеют линии (нет hasLine в байтах).
  *
  * =========================================================================
  * ФОРМАТЫ bodyBytes (BigEndian):
  *
  * 1) POST (subType=10):
+ *   [4]  lineCode
  *   [4]  prevLineNumber
  *   [32] prevLineHash32
- *   [4]  thisLineNumber          // 0,1,2...
+ *   [4]  thisLineNumber
  *   [2]  textLenBytes (uint16)
  *   [N]  text UTF-8
  *
  * 2) EDIT_POST (subType=11):
+ *   [4]  lineCode
  *   [4]  prevLineNumber
  *   [32] prevLineHash32
- *   [4]  thisLineNumber          // равен thisLineNumber предыдущего сообщения линии
+ *   [4]  thisLineNumber
  *
  *   hasTarget (на ОРИГИНАЛЬНЫЙ POST, toBchName НЕ хранить):
  *     [4]  toBlockGlobalNumber
@@ -57,7 +54,7 @@ import java.util.Objects;
  *   [N]  text UTF-8
  *
  * 3) REPLY (subType=20) — НЕ в линии:
- *   hasTarget (может быть на чужой блокчейн; существование НЕ проверяем):
+ *   hasTarget:
  *     [1]  toBlockchainNameLen (uint8)
  *     [N]  toBlockchainName UTF-8
  *     [4]  toBlockGlobalNumber
@@ -73,15 +70,6 @@ import java.util.Objects;
  *
  *   [2]  textLenBytes (uint16)
  *   [N]  text UTF-8
- *
- * =========================================================================
- * ВАЖНО:
- * - Body.check() НЕ имеет доступа к БД, поэтому:
- *   - не проверяет существование prevLineNumber/hash
- *   - не проверяет согласование thisLineNumber относительно prev
- *   - не проверяет существование target для REPLY
- *
- * Эти проверки выполняются на сервере/в БД при вставке.
  */
 public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
 
@@ -95,6 +83,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
 
     // ===== line fields (только для POST/EDIT_POST) =====
     // Для REPLY/EDIT_REPLY эти поля НЕ сериализуются; значения держим как "пустые".
+    public final int lineCode;         // только для line-message; иначе -1
     public final int prevLineNumber;
     public final byte[] prevLineHash32; // 32 or null
     public final int thisLineNumber;
@@ -105,9 +94,9 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
     // ===== target fields =====
     // REPLY: toBlockchainName + globalNumber + hash32
     // EDIT_POST / EDIT_REPLY: только globalNumber + hash32 (без toBlockchainName)
-    public final String toBlockchainName;    // nullable
+    public final String toBlockchainName;     // nullable
     public final Integer toBlockGlobalNumber; // nullable
-    public final byte[] toBlockHash32;       // nullable(но если target есть -> 32)
+    public final byte[] toBlockHash32;        // nullable (но если target есть -> 32)
 
     /* ===================================================================== */
     /* ====================== Конструктор из байт ========================== */
@@ -131,9 +120,10 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
         int st = this.subType & 0xFFFF;
 
         if (st == (MsgSubType.TEXT_POST & 0xFFFF)) {
-            // POST: hasLine + text
-            ensureMin(bb, (4 + 32 + 4) + 2, "POST too short");
+            // POST: hasLine(lineCode+line) + text
+            ensureMin(bb, (4 + 4 + 32 + 4) + 2, "POST too short");
 
+            this.lineCode = bb.getInt();
             this.prevLineNumber = bb.getInt();
             this.prevLineHash32 = new byte[32];
             bb.get(this.prevLineHash32);
@@ -148,9 +138,10 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
             ensureNoTail(bb, "POST");
 
         } else if (st == (MsgSubType.TEXT_EDIT_POST & 0xFFFF)) {
-            // EDIT_POST: hasLine + target(no bch) + text
-            ensureMin(bb, (4 + 32 + 4) + (4 + 32) + 2, "EDIT_POST too short");
+            // EDIT_POST: hasLine(lineCode+line) + target(no bch) + text
+            ensureMin(bb, (4 + 4 + 32 + 4) + (4 + 32) + 2, "EDIT_POST too short");
 
+            this.lineCode = bb.getInt();
             this.prevLineNumber = bb.getInt();
             this.prevLineHash32 = new byte[32];
             bb.get(this.prevLineHash32);
@@ -169,7 +160,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
             ensureNoTail(bb, "EDIT_POST");
 
         } else if (st == (MsgSubType.TEXT_REPLY & 0xFFFF)) {
-            // REPLY: target(with bch) + text
+            // REPLY: target(with bch) + text (без line)
             ensureMin(bb, 1 + 1 + 4 + 32 + 2, "REPLY too short");
 
             int nameLen = Byte.toUnsignedInt(bb.get());
@@ -188,6 +179,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
             this.message = readStrictUtf8Len16(bb, "REPLY text");
 
             // line fields отсутствуют в байтах
+            this.lineCode = -1;
             this.prevLineNumber = -1;
             this.prevLineHash32 = null;
             this.thisLineNumber = -1;
@@ -195,7 +187,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
             ensureNoTail(bb, "REPLY");
 
         } else if (st == (MsgSubType.TEXT_EDIT_REPLY & 0xFFFF)) {
-            // EDIT_REPLY: target(no bch) + text
+            // EDIT_REPLY: target(no bch) + text (без line)
             ensureMin(bb, (4 + 32) + 2, "EDIT_REPLY too short");
 
             int tgtNum = bb.getInt();
@@ -209,6 +201,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
             this.message = readStrictUtf8Len16(bb, "EDIT_REPLY text");
 
             // line fields отсутствуют в байтах
+            this.lineCode = -1;
             this.prevLineNumber = -1;
             this.prevLineHash32 = null;
             this.thisLineNumber = -1;
@@ -216,7 +209,6 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
             ensureNoTail(bb, "EDIT_REPLY");
 
         } else {
-            // недостижимо из-за isValidSubType, но пусть будет
             throw new IllegalArgumentException("Unsupported Text subType: " + st);
         }
     }
@@ -225,25 +217,25 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
     /* ====================== Фабрики (удобно) ============================= */
     /* ===================================================================== */
 
-    public static TextBody newPost(int prevLineNumber, byte[] prevLineHash32, int thisLineNumber, String message) {
-        return new TextBody(MsgSubType.TEXT_POST, prevLineNumber, prevLineHash32, thisLineNumber,
+    public static TextBody newPost(int lineCode, int prevLineNumber, byte[] prevLineHash32, int thisLineNumber, String message) {
+        return new TextBody(MsgSubType.TEXT_POST, lineCode, prevLineNumber, prevLineHash32, thisLineNumber,
                 message, null, null, null);
     }
 
-    public static TextBody newEditPost(int prevLineNumber, byte[] prevLineHash32, int thisLineNumber,
+    public static TextBody newEditPost(int lineCode, int prevLineNumber, byte[] prevLineHash32, int thisLineNumber,
                                        int targetBlockNumber, byte[] targetHash32,
                                        String message) {
-        return new TextBody(MsgSubType.TEXT_EDIT_POST, prevLineNumber, prevLineHash32, thisLineNumber,
+        return new TextBody(MsgSubType.TEXT_EDIT_POST, lineCode, prevLineNumber, prevLineHash32, thisLineNumber,
                 message, null, targetBlockNumber, targetHash32);
     }
 
     public static TextBody newReply(String toBlockchainName, int targetBlockNumber, byte[] targetHash32, String message) {
-        return new TextBody(MsgSubType.TEXT_REPLY, -1, null, -1,
+        return new TextBody(MsgSubType.TEXT_REPLY, -1, -1, null, -1,
                 message, toBlockchainName, targetBlockNumber, targetHash32);
     }
 
     public static TextBody newEditReply(int targetBlockNumber, byte[] targetHash32, String message) {
-        return new TextBody(MsgSubType.TEXT_EDIT_REPLY, -1, null, -1,
+        return new TextBody(MsgSubType.TEXT_EDIT_REPLY, -1, -1, null, -1,
                 message, null, targetBlockNumber, targetHash32);
     }
 
@@ -252,6 +244,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
      * Для REPLY/EDIT_REPLY line поля игнорируются при сериализации (их в формате нет).
      */
     public TextBody(short subType,
+                    int lineCode,
                     int prevLineNumber,
                     byte[] prevLineHash32,
                     int thisLineNumber,
@@ -272,10 +265,13 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
 
         // line применима только к POST/EDIT_POST
         if (st == (MsgSubType.TEXT_POST & 0xFFFF) || st == (MsgSubType.TEXT_EDIT_POST & 0xFFFF)) {
+            if (lineCode < 0) throw new IllegalArgumentException("lineCode < 0 for line message");
+            this.lineCode = lineCode;
             this.prevLineNumber = prevLineNumber;
             this.prevLineHash32 = (prevLineHash32 == null ? new byte[32] : Arrays.copyOf(prevLineHash32, 32));
             this.thisLineNumber = thisLineNumber;
         } else {
+            this.lineCode = -1;
             this.prevLineNumber = -1;
             this.prevLineHash32 = null;
             this.thisLineNumber = -1;
@@ -322,7 +318,6 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
             this.toBlockHash32 = Arrays.copyOf(toBlockHash32, 32);
 
         } else {
-            // недостижимо
             this.toBlockchainName = null;
             this.toBlockGlobalNumber = null;
             this.toBlockHash32 = null;
@@ -349,6 +344,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
 
         // локальные проверки line (БД не трогаем)
         if (st == (MsgSubType.TEXT_POST & 0xFFFF) || st == (MsgSubType.TEXT_EDIT_POST & 0xFFFF)) {
+            if (lineCode < 0) throw new IllegalArgumentException("lineCode < 0 for line message");
             if (prevLineHash32 == null || prevLineHash32.length != 32)
                 throw new IllegalArgumentException("prevLineHash32 invalid");
         } else {
@@ -399,10 +395,11 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
         int st = subType & 0xFFFF;
 
         if (st == (MsgSubType.TEXT_POST & 0xFFFF)) {
-            // hasLine + text
-            int cap = (4 + 32 + 4) + 2 + msgUtf8.length;
+            // hasLine(lineCode+line) + text
+            int cap = (4 + 4 + 32 + 4) + 2 + msgUtf8.length;
 
             ByteBuffer bb = ByteBuffer.allocate(cap).order(ByteOrder.BIG_ENDIAN);
+            bb.putInt(lineCode);
             bb.putInt(prevLineNumber);
             bb.put(prevLineHash32 == null ? new byte[32] : Arrays.copyOf(prevLineHash32, 32));
             bb.putInt(thisLineNumber);
@@ -411,13 +408,14 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
             return bb.array();
 
         } else if (st == (MsgSubType.TEXT_EDIT_POST & 0xFFFF)) {
-            // hasLine + target(no bch) + text
+            // hasLine(lineCode+line) + target(no bch) + text
             if (toBlockGlobalNumber == null) throw new IllegalArgumentException("EDIT_POST missing toBlockGlobalNumber");
             if (toBlockHash32 == null || toBlockHash32.length != 32) throw new IllegalArgumentException("EDIT_POST toBlockHash32 != 32");
 
-            int cap = (4 + 32 + 4) + (4 + 32) + 2 + msgUtf8.length;
+            int cap = (4 + 4 + 32 + 4) + (4 + 32) + 2 + msgUtf8.length;
 
             ByteBuffer bb = ByteBuffer.allocate(cap).order(ByteOrder.BIG_ENDIAN);
+            bb.putInt(lineCode);
             bb.putInt(prevLineNumber);
             bb.put(prevLineHash32 == null ? new byte[32] : Arrays.copyOf(prevLineHash32, 32));
             bb.putInt(thisLineNumber);
@@ -506,6 +504,7 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
     }
 
     /* ====================== BodyHasLine ====================== */
+    @Override public int lineCode() { return lineCode; }
     @Override public int prevLineNumber() { return prevLineNumber; }
     @Override public byte[] prevLineHash32() {
         if (prevLineHash32 == null) return null;
@@ -517,8 +516,6 @@ public final class TextBody implements BodyRecord, BodyHasTarget, BodyHasLine {
     @Override public String toBchName() { return toBlockchainName; }
     @Override public Integer toBlockGlobalNumber() { return toBlockGlobalNumber; }
     @Override public byte[] toBlockHashBytes() { return toBlockHash32; }
-
-
 
     /* ===================================================================== */
     /* ===================== Удобные хелперы (для ChainState) =============== */

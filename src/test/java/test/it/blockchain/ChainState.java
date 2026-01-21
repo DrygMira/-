@@ -1,6 +1,5 @@
 package test.it.blockchain;
 
-import blockchain.MsgSubType;
 import blockchain.body.BodyRecord;
 import blockchain.body.BodyHasLine;
 import blockchain.body.CreateChannelBody;
@@ -22,9 +21,12 @@ import java.util.Map;
  *  - CONNECTION (type=3): одна линия
  *  - USER_PARAM (type=4): одна линия
  *
- * Важно:
+ * ВАЖНО:
  *  - prevLineNumber — это GLOBAL blockNumber предыдущего блока линии.
  *  - thisLineNumber — внутренний номер линии (для постов: 0,1,2...; для тех-линии: 1,2,3...)
+ *  - lineCode — код линии:
+ *      * 0 для канала "0" и для "простых" линий (connection/user_param/tech)
+ *      * для каналов !=0: lineCode = blockNumber "заглавия" канала (CREATE_CHANNEL)
  */
 public final class ChainState {
 
@@ -79,14 +81,16 @@ public final class ChainState {
 
     // ---------- TEXT channels ----------
     public static final class ChannelLineState {
-        final int rootBlockNumber;
+        final int lineCode;        // для каналов: = rootBlockNumber; для канала 0: 0
+        final int rootBlockNumber; // 0 для канала 0, иначе blockNumber CREATE_CHANNEL
         final String rootHashHex;
 
         int lastGlobalNumber;
         String lastHashHex;
         int lastThisLineNumber; // перед первым постом = -1, чтобы первый был 0
 
-        ChannelLineState(int rootBlockNumber, String rootHashHex) {
+        ChannelLineState(int lineCode, int rootBlockNumber, String rootHashHex) {
+            this.lineCode = lineCode;
             this.rootBlockNumber = rootBlockNumber;
             this.rootHashHex = rootHashHex;
             this.lastGlobalNumber = rootBlockNumber;
@@ -95,7 +99,7 @@ public final class ChainState {
         }
     }
 
-    // rootBlockNumber -> state
+    // lineCode -> state (для канала 0 lineCode=0)
     private final Map<Integer, ChannelLineState> textChannels = new HashMap<>();
 
     public ChainState() {
@@ -134,18 +138,20 @@ public final class ChainState {
     // -------------------- line helpers --------------------
 
     public static final class NextLine {
+        public final int lineCode;
         public final int prevLineNumber;     // GLOBAL blockNumber
         public final byte[] prevLineHash32;  // 32 bytes
         public final int thisLineNumber;     // внутр. номер линии
 
-        public NextLine(int prevLineNumber, byte[] prevLineHash32, int thisLineNumber) {
+        public NextLine(int lineCode, int prevLineNumber, byte[] prevLineHash32, int thisLineNumber) {
+            this.lineCode = lineCode;
             this.prevLineNumber = prevLineNumber;
             this.prevLineHash32 = (prevLineHash32 == null ? null : prevLineHash32.clone());
             this.thisLineNumber = thisLineNumber;
         }
     }
 
-    /** Следующие line-поля для TECH/CONNECTION/USER_PARAM. */
+    /** Следующие line-поля для TECH/CONNECTION/USER_PARAM. lineCode=0. */
     public NextLine nextLineByType(short type) {
         if (!hasHeader()) {
             throw new IllegalStateException("Нельзя формировать line-поля до HEADER (нет headerHash32)");
@@ -154,12 +160,15 @@ public final class ChainState {
         int t = type & 0xFFFF;
 
         if (t == TYPE_TECH) {
-            // tech-line: prev = последний TECH; первый CREATE_CHANNEL -> prev = HEADER
             if (techLine.lastGlobalNumber == -1) {
-                // после HEADER мы должны инициализировать techLine (делаем в applyHeader)
                 throw new IllegalStateException("TECH line is not initialized yet");
             }
-            return new NextLine(techLine.lastGlobalNumber, hexToBytes32(techLine.lastHashHex), techLine.lastThisLineNumber + 1);
+            return new NextLine(
+                    0,
+                    techLine.lastGlobalNumber,
+                    hexToBytes32(techLine.lastHashHex),
+                    techLine.lastThisLineNumber + 1
+            );
         }
 
         if (t == TYPE_CONNECTION) {
@@ -175,35 +184,55 @@ public final class ChainState {
     private NextLine nextSimpleLine(SimpleLineState ls) {
         if (ls.lastGlobalNumber == -1) {
             // первый блок линии ссылается на HEADER (block#0)
-            return new NextLine(0, headerHash32.clone(), 1);
+            return new NextLine(0, 0, headerHash32.clone(), 1);
         }
         if (ls.lastHashHex == null || ls.lastHashHex.isBlank()) {
             throw new IllegalStateException("LineState.lastHashHex пуст, но lastGlobalNumber!=-1");
         }
-        return new NextLine(ls.lastGlobalNumber, hexToBytes32(ls.lastHashHex), ls.lastThisLineNumber + 1);
+        return new NextLine(0, ls.lastGlobalNumber, hexToBytes32(ls.lastHashHex), ls.lastThisLineNumber + 1);
     }
 
-    /** Следующие line-поля для TEXT-канала по rootBlockNumber. */
-    public NextLine nextTextLineByRoot(int rootBlockNumber) {
+    /**
+     * Следующие line-поля для TEXT-канала по lineCode.
+     * Для канала 0: lineCode=0.
+     * Для других каналов: lineCode = rootBlockNumber (CREATE_CHANNEL blockNumber).
+     */
+    public NextLine nextTextLineByCode(int lineCode) {
         if (!hasHeader()) throw new IllegalStateException("No HEADER");
-        ChannelLineState cs = textChannels.get(rootBlockNumber);
-        if (cs == null) throw new IllegalStateException("Unknown TEXT channel rootBlockNumber=" + rootBlockNumber);
+        ChannelLineState cs = textChannels.get(lineCode);
+        if (cs == null) throw new IllegalStateException("Unknown TEXT channel lineCode=" + lineCode);
 
         return new NextLine(
+                lineCode,
                 cs.lastGlobalNumber,
                 hexToBytes32(cs.lastHashHex),
                 cs.lastThisLineNumber + 1
         );
     }
 
-    /** Зарегистрировать новый канал TEXT по root = CREATE_CHANNEL block. */
-    public void registerTextChannelRoot(int rootBlockNumber, byte[] rootHash32) {
-        if (rootBlockNumber <= 0) throw new IllegalArgumentException("rootBlockNumber must be > 0 for custom channel");
-        if (rootHash32 == null || rootHash32.length != 32) throw new IllegalArgumentException("rootHash32 invalid");
-        textChannels.put(rootBlockNumber, new ChannelLineState(rootBlockNumber, bytesToHex64(rootHash32)));
+    /** Старое имя — оставил для удобства: rootBlockNumber == lineCode для каналов. */
+    public NextLine nextTextLineByRoot(int rootBlockNumber) {
+        return nextTextLineByCode(rootBlockNumber);
     }
 
-    /** root канала "0" (по умолчанию) — это HEADER block#0. */
+    /**
+     * Зарегистрировать новый канал TEXT:
+     *  - lineCode = rootBlockNumber (blockNumber CREATE_CHANNEL)
+     * ИДЕМПОТЕНТНО: если уже зарегистрирован — ничего не делаем.
+     */
+    public void registerTextChannelRoot(int rootBlockNumber, byte[] rootHash32) {
+        if (rootBlockNumber < 0) throw new IllegalArgumentException("rootBlockNumber must be >= 0");
+        if (rootHash32 == null || rootHash32.length != 32) throw new IllegalArgumentException("rootHash32 invalid");
+
+        if (textChannels.containsKey(rootBlockNumber)) {
+            return; // уже есть — не трогаем, чтобы не сбросить lastThisLineNumber и т.д.
+        }
+
+        int lineCode = rootBlockNumber;
+        textChannels.put(lineCode, new ChannelLineState(lineCode, rootBlockNumber, bytesToHex64(rootHash32)));
+    }
+
+    /** root/lineCode канала "0" (по умолчанию) — это HEADER block#0, lineCode=0. */
     public int rootChannel0() {
         return 0;
     }
@@ -240,8 +269,8 @@ public final class ChainState {
             techLine.lastHashHex = hex64;
             techLine.lastThisLineNumber = 0;
 
-            // TEXT channel "0" root = HEADER, первый пост будет thisLineNumber=0
-            textChannels.put(0, new ChannelLineState(0, hex64));
+            // TEXT channel "0" root = HEADER, lineCode=0
+            registerTextChannelRoot(0, hash32);
 
             return;
         }
@@ -253,6 +282,11 @@ public final class ChainState {
             techLine.lastGlobalNumber = blockNumber;
             techLine.lastHashHex = hex64;
             techLine.lastThisLineNumber = ccb.thisLineNumber;
+
+            // ВАЖНО: CREATE_CHANNEL — это root нового текстового канала:
+            // lineCode для этого канала = blockNumber CREATE_CHANNEL
+            registerTextChannelRoot(blockNumber, hash32);
+
             return;
         }
 
@@ -273,10 +307,14 @@ public final class ChainState {
         // ---- TEXT channels (POST/EDIT_POST) ----
         if (t == TYPE_TEXT && body instanceof TextBody tb) {
             if (tb.isLineMessage()) {
-                // ищем канал по совпадению prevLineNumber с lastGlobalNumber канала
-                ChannelLineState channel = findTextChannelByLastGlobal(tb.prevLineNumber);
+                int lineCode = tb.lineCode;
+
+                ChannelLineState channel = textChannels.get(lineCode);
                 if (channel == null) {
-                    throw new IllegalStateException("TEXT line message prevLineNumber=" + tb.prevLineNumber + " не привязан ни к одному каналу (канал root не зарегистрирован?)");
+                    throw new IllegalStateException(
+                            "TEXT line message has unknown lineCode=" + lineCode +
+                            " (канал не зарегистрирован; ждали CREATE_CHANNEL или HEADER)"
+                    );
                 }
 
                 channel.lastGlobalNumber = blockNumber;
@@ -284,13 +322,6 @@ public final class ChainState {
                 channel.lastThisLineNumber = tb.thisLineNumber;
             }
         }
-    }
-
-    private ChannelLineState findTextChannelByLastGlobal(int prevLineNumber) {
-        for (ChannelLineState cs : textChannels.values()) {
-            if (cs.lastGlobalNumber == prevLineNumber) return cs;
-        }
-        return null;
     }
 
     // -------------------- utils --------------------

@@ -64,13 +64,14 @@ public class IT_03_AddBlock_NoAuth {
             assertTrue(st1.hasHeader());
 
             // канал "0" (root=HEADER) — по умолчанию существует
-            int root0 = st1.rootChannel0();
+            int root0 = st1.rootChannel0(); // lineCode для канала "0" = 0
 
             // POST в канал "0"
             {
                 var ln = st1.nextTextLineByRoot(root0);
                 sender1.send(new TextBody(
                         MsgSubType.TEXT_POST,
+                        root0, // lineCode
                         ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         "U1: story/post in channel 0",
                         null, null, null
@@ -87,11 +88,12 @@ public class IT_03_AddBlock_NoAuth {
             {
                 var ln = st1.nextLineByType(ChainState.TYPE_TECH);
                 sender1.send(new CreateChannelBody(
+                        0, // lineCode для TECH линии
                         ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         "News"
                 ), t);
 
-                newsRootBlock = st1.lastBlockNumber();
+                newsRootBlock = st1.lastBlockNumber();   // root канала = blockNumber CREATE_CHANNEL
                 newsRootHash = st1.getHash32(newsRootBlock);
                 assertNotNull(newsRootHash);
 
@@ -106,6 +108,7 @@ public class IT_03_AddBlock_NoAuth {
                 var ln = st1.nextTextLineByRoot(newsRootBlock);
                 sender1.send(new TextBody(
                         MsgSubType.TEXT_POST,
+                        newsRootBlock, // lineCode = root блока канала (CREATE_CHANNEL)
                         ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         "U1: News post #0",
                         null, null, null
@@ -121,18 +124,19 @@ public class IT_03_AddBlock_NoAuth {
                 var ln = st1.nextTextLineByRoot(newsRootBlock);
                 sender1.send(new TextBody(
                         MsgSubType.TEXT_POST,
+                        newsRootBlock, // lineCode
                         ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         "U1: News post #1",
                         null, null, null
                 ), t);
             }
 
-            // EDIT_POST (не увеличивает thisLineNumber, но является частью линии)
+            // EDIT_POST (является частью линии; lineCode обязателен)
             {
                 var ln = st1.nextTextLineByRoot(newsRootBlock);
-                // edit должен иметь thisLineNumber как у предыдущего сообщения линии (ChainState это уже даёт)
                 sender1.send(new TextBody(
                         MsgSubType.TEXT_EDIT_POST,
+                        newsRootBlock, // lineCode
                         ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
                         "U1: News post #0 (EDIT)",
                         null,
@@ -151,14 +155,13 @@ public class IT_03_AddBlock_NoAuth {
             assertTrue(st2.hasHeader());
 
             // REPLY (20): ответ на post в чужом блокчейне/канале
+            // ВАЖНО: REPLY не имеет line-полей вообще, поэтому используем фабрику newReply().
             {
-                sender2.send(new TextBody(
-                        MsgSubType.TEXT_REPLY,
-                        -1, new byte[32], -1, // для replies линии нет
-                        "U2: reply to U1 News post #0 (cross-chain)",
+                sender2.send(TextBody.newReply(
                         bch1,
                         newsPost0Block,
-                        newsPost0Hash
+                        newsPost0Hash,
+                        "U2: reply to U1 News post #0 (cross-chain)"
                 ), t);
             }
 
