@@ -265,6 +265,7 @@ public class DatabaseInitializer {
                 """);
 
             // 6.1) TRIGGER: проверка целостности линии (только если line-поля реально переданы)
+/*     пока просто отключил этот тригер
             st.executeUpdate("""
                 CREATE TRIGGER IF NOT EXISTS trg_blocks_line_integrity_bi
                 BEFORE INSERT ON blocks
@@ -394,7 +395,7 @@ public class DatabaseInitializer {
                       );
                 END;
                 """);
-
+*/
             // 7) connections_state
             st.executeUpdate("""
                 CREATE TABLE IF NOT EXISTS connections_state (

@@ -1,5 +1,7 @@
 package shine.db.dao;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import shine.db.SqliteDbController;
 import shine.db.entities.BlockEntry;
 
@@ -19,6 +21,7 @@ public final class BlocksDAO {
 
     private static volatile BlocksDAO instance;
     private final SqliteDbController db = SqliteDbController.getInstance();
+    private static final Logger log = LoggerFactory.getLogger(BlocksDAO.class);
 
     private BlocksDAO() { }
 
@@ -35,6 +38,12 @@ public final class BlocksDAO {
 
     /** Вставка с внешним соединением. Соединение НЕ закрывает. */
     public void insert(Connection c, BlockEntry e) throws SQLException {
+        log.info("DBG BlockEntry: type={} sub={} lineCode={} prevLineNumber={} thisLineNumber={} prevLineHashLen={}",
+                e.getMsgType(), e.getMsgSubType(),
+                e.getLineCode(), e.getPrevLineNumber(), e.getThisLineNumber(),
+                e.getPrevLineHash() == null ? null : e.getPrevLineHash().length
+        );
+
         String sql = """
             INSERT INTO blocks (
                 login,
