@@ -31,6 +31,44 @@ import java.util.Objects;
  * toLogin вычисляется автоматически из toBlockchainName:
  *   toLogin = BlockchainNameUtil.loginFromBlockchainName(toBlockchainName)
  */
+
+/**
+ * =========================================================================
+ *  ПРАВИЛО TARGET/ROOT ДЛЯ КАНАЛОВ И СВЯЗЕЙ (важно для подписок/друзей/контактов)
+ * =========================================================================
+ *
+ *  Термины:
+ *   - ROOT линии/канала = блок, который "начинает" линию:
+ *       * для канала "0" root = HEADER (blockNumber=0)
+ *       * для канала "X" root = CREATE_CHANNEL (blockNumber этого блока)
+ *
+ *  1) СВЯЗИ МЕЖДУ ПОЛЬЗОВАТЕЛЯМИ (CONNECTION_*):
+ *     FRIEND / CONTACT  -> цель ВСЕГДА HEADER пользователя:
+ *       toBlockNumber = 0
+ *       toBlockHash32 = hash32(HEADER цели)
+ *
+ *  2) ПОДПИСКИ НА КОНТЕНТ (FOLLOW/SUBSCRIBE):
+ *     FOLLOW пользователя (в целом) -> цель = ROOT дефолтного канала "0" (то есть HEADER):
+ *       toBlockNumber = 0
+ *       toBlockHash32 = hash32(HEADER цели)
+ *
+ *     FOLLOW/подписка на конкретный канал пользователя ->
+ *       цель = ROOT этого канала:
+ *         - канал "0": toBlockNumber=0, toBlockHash32=hash32(HEADER)
+ *         - канал "X": toBlockNumber=blockNumber(CREATE_CHANNEL),
+ *                     toBlockHash32=hash32(CREATE_CHANNEL)
+ *
+ *  3) ЗАПРЕТЫ ВАЛИДАЦИИ (желательно на сервере/в БД):
+ *     - CONNECTION_FRIEND/CONTACT не могут ссылаться на не-HEADER (toBlockNumber != 0 запрещено).
+ *     - FOLLOW на канал "X" не может ссылаться на произвольный пост внутри канала:
+ *       разрешено ТОЛЬКО на ROOT (HEADER или CREATE_CHANNEL).
+ *
+ *  Зачем так:
+ *   - связи и подписки всегда стабильны и не ломаются при новых постах,
+ *   - один понятный инвариант: "подписка всегда указывает на root линии".
+ * =========================================================================
+ */
+
 public final class ConnectionBody implements BodyRecord, BodyHasTarget, BodyHasLine {
 
     public static final short TYPE = 3;
