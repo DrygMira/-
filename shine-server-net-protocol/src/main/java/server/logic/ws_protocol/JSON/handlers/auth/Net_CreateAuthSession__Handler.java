@@ -35,7 +35,7 @@ import java.util.Base64;
  *  - Сервер сохраняет sessionPubKeyB64 в active_sessions.session_key.
  *
  * Подпись deviceKey (Ed25519) проверяется над строкой (UTF-8):
- *   AUTH_CREATE_SESSION:{login}:{timeMs}:{authNonce}:{sessionPubKeyB64}:{storagePwd}
+ *   AUTH_CREATE_SESSION:{login}:{timeMs}:{authNonce}
  *
  * На выходе:
  *  - создаётся запись active_sessions
@@ -106,7 +106,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
             return err;
         }
 
-        // Проверим, что ключ декодируется в 32 байта
+        // Проверим, что sessionPubKeyB64 декодируется в 32 байта
         byte[] sessionPubKey32;
         try {
             sessionPubKey32 = decodeBase64Any(sessionPubKeyB64);
@@ -183,8 +183,6 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     login,
                     authNonce,
                     timeMs,
-                    sessionPubKeyB64,
-                    storagePwd,
                     signatureB64
             );
         } catch (IllegalArgumentException ex) {
@@ -288,15 +286,14 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
             String login,
             String authNonce,
             long timeMs,
-            String sessionPubKeyB64,
-            String storagePwd,
             String signatureB64
     ) throws IllegalArgumentException {
 
+        // deviceKey (pub, 32)
         byte[] publicKey32 = Ed25519Util.keyFromBase64(user.getDeviceKey());
         byte[] signature64 = decodeBase64Any(signatureB64);
 
-        String preimageStr = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce + ":" + sessionPubKeyB64 + ":" + storagePwd;
+        String preimageStr = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce;
         byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
 
         return Ed25519Util.verify(preimage, signature64, publicKey32);
@@ -309,11 +306,15 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
     }
 
     private static byte[] decodeBase64Any(String s) throws IllegalArgumentException {
+        if (s == null) throw new IllegalArgumentException("base64 is null");
+        String x = s.trim();
+        if (x.isEmpty()) throw new IllegalArgumentException("base64 is empty");
+
         // сначала url-safe, потом обычный
         try {
-            return Base64.getUrlDecoder().decode(s);
+            return Base64.getUrlDecoder().decode(x);
         } catch (IllegalArgumentException ignore) {
-            return Base64.getDecoder().decode(s);
+            return Base64.getDecoder().decode(x);
         }
     }
 }

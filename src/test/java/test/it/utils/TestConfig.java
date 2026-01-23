@@ -9,13 +9,14 @@ import java.util.concurrent.ConcurrentHashMap;
 /**
  * TestConfig — конфиг IT тестов:
  *  - 3 пользователя (TestUser1/2/3)
- *  - ключи по login через map (device/solana/blockchain)
+ *  - ключи по login через map (device/solana/blockchain/session)
  *  - blockchainName = login + "-" + "001"
  *
  * Важно:
- *  - privateKey = Ed25519Util.generatePrivateKeyFromString(login) (sha256, 32 bytes)
+ *  - privateKey = Ed25519Util.generatePrivateKeyFromString(seed) (sha256(seed) => 32 bytes)
  *  - publicKey  = Ed25519Util.derivePublicKey(privateKey)
- *  - пока device/solana/blockchain ключи одинаковые (один seed на login)
+ *  - device/solana/blockchain ключи пока одинаковые (seed = login)
+ *  - session ключ отдельный (seed = "session:" + login) — чтобы SessionLogin был честнее.
  */
 public final class TestConfig {
 
@@ -58,6 +59,10 @@ public final class TestConfig {
     private static final Map<String, byte[]> bchPriv = new ConcurrentHashMap<>();
     private static final Map<String, byte[]> bchPub  = new ConcurrentHashMap<>();
 
+    // NEW: session keys (для SessionLogin v2)
+    private static final Map<String, byte[]> sessionPriv = new ConcurrentHashMap<>();
+    private static final Map<String, byte[]> sessionPub  = new ConcurrentHashMap<>();
+
     static {
         initUserKeys(LOGIN());
         initUserKeys(LOGIN2());
@@ -65,6 +70,7 @@ public final class TestConfig {
     }
 
     private static void initUserKeys(String login) {
+        // seed = login
         byte[] priv = Ed25519Util.generatePrivateKeyFromString(login); // sha256(login) => 32 bytes
         byte[] pub  = Ed25519Util.derivePublicKey(priv);
 
@@ -77,6 +83,13 @@ public final class TestConfig {
 
         bchPriv.put(login, priv);
         bchPub.put(login, pub);
+
+        // session seed = "session:" + login (отдельно!)
+        byte[] sPriv = Ed25519Util.generatePrivateKeyFromString("session:" + login);
+        byte[] sPub  = Ed25519Util.derivePublicKey(sPriv);
+
+        sessionPriv.put(login, sPriv);
+        sessionPub.put(login, sPub);
     }
 
     // ============ requested getters (with your names) ============
@@ -90,10 +103,17 @@ public final class TestConfig {
     public static byte[] getBlockchainPrivatKey(String login) { return cloneOrThrow(bchPriv.get(login), "bchPriv", login); }
     public static byte[] getBlockchainPublicKey(String login) { return cloneOrThrow(bchPub.get(login), "bchPub", login); }
 
+    // NEW: session getters
+    public static byte[] getSessionPrivatKey(String login) { return cloneOrThrow(sessionPriv.get(login), "sessionPriv", login); }
+    public static byte[] getSessionPublicKey(String login) { return cloneOrThrow(sessionPub.get(login), "sessionPub", login); }
+
     // ============ base64 helpers ============
     public static String devicePublicKeyB64(String login) { return Base64.getEncoder().encodeToString(getDevicePublicKey(login)); }
     public static String solanaPublicKeyB64(String login) { return Base64.getEncoder().encodeToString(getSolanaPublicKey(login)); }
     public static String blockchainPublicKeyB64(String login) { return Base64.getEncoder().encodeToString(getBlockchainPublicKey(login)); }
+
+    // NEW: session pub b64 helper
+    public static String sessionPublicKeyB64(String login) { return Base64.getEncoder().encodeToString(getSessionPublicKey(login)); }
 
     // ============ backward-compatible helpers for "user1" ============
     public static String BCH_NAME() { return getBlockchainName(LOGIN()); }
@@ -113,6 +133,11 @@ public final class TestConfig {
     public static String DEVICE_PUBKEY_B64() { return devicePublicKeyB64(LOGIN()); }
     public static String DEVICE2_PUBKEY_B64() { return devicePublicKeyB64(LOGIN2()); }
     public static String DEVICE3_PUBKEY_B64() { return devicePublicKeyB64(LOGIN3()); }
+
+    // NEW: session pub b64 compat
+    public static String SESSION_PUBKEY_B64() { return sessionPublicKeyB64(LOGIN()); }
+    public static String SESSION2_PUBKEY_B64() { return sessionPublicKeyB64(LOGIN2()); }
+    public static String SESSION3_PUBKEY_B64() { return sessionPublicKeyB64(LOGIN3()); }
 
     // ============ misc ============
     public static String fakeStoragePwd() {

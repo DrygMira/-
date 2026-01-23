@@ -59,13 +59,20 @@ public final class JsonBuilders {
     }
 
     // ---------------- CreateAuthSession (v2) ----------------
-    // v2: sessionKey генерируется на клиенте, на сервер отправляем только sessionPubKey (base64).
-    // подпись шага CreateAuthSession всё ещё делается deviceKey: "AUTHORIFICATED:" + timeMs + authNonce
+    // v2: sessionKey генерируется/хранится на клиенте, на сервер отправляем sessionPubKeyB64 (base64).
+    //
+    // ВАЖНО (новое правило):
+    // Подпись CreateAuthSession делается ТОЛЬКО deviceKey над строкой:
+    //   preimage = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce
+    //
+    // storagePwd и sessionPubKeyB64 НЕ входят в preimage.
 
     public static String createAuthSessionV2(String login, String authNonce, String storagePwd, String sessionPubKeyB64) {
         long timeMs = System.currentTimeMillis();
+
+        // подпись делаем devicePrivKey
         byte[] devicePriv = TestConfig.getDevicePrivatKey(login);
-        String sigB64 = signAuthorificated(authNonce, timeMs, devicePriv);
+        String sigB64 = signAuthCreateSession(login, timeMs, authNonce, devicePriv);
 
         String requestId = TestIds.next("create");
         return """
@@ -106,6 +113,8 @@ public final class JsonBuilders {
     }
 
     // ---------------- SessionLogin (v2) ----------------
+    // Подпись SessionLogin по-прежнему делается sessionPrivKey:
+    // preimage = "SESSION_LOGIN:" + sessionId + ":" + timeMs + ":" + nonce
 
     public static String sessionLogin(String sessionId, String nonce, byte[] sessionPrivKey) {
         long timeMs = System.currentTimeMillis();
@@ -136,8 +145,6 @@ public final class JsonBuilders {
               "op": "ListSessions",
               "requestId": "%s",
               "payload": {
-                "timeMs": %d,
-                "signatureB64": "%s"
               }
             }
             """.formatted(requestId, timeMs, signatureB64);
@@ -153,9 +160,7 @@ public final class JsonBuilders {
               "op": "CloseActiveSession",
               "requestId": "%s",
               "payload": {
-                "sessionId": "%s",
-                "timeMs": %d,
-                "signatureB64": "%s"
+                "sessionId": "%s"
               }
             }
             """.formatted(requestId, sessionId, timeMs, signatureB64);
@@ -175,12 +180,12 @@ public final class JsonBuilders {
     }
 
     /**
-     * Подпись для режима AUTH_IN_PROGRESS:
-     * preimage = "AUTHORIFICATED:" + timeMs + authNonce
+     * Подпись CreateAuthSession(v2):
+     * preimage = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce
      * подписываем devicePrivKey.
      */
-    public static String signAuthorificated(String authNonce, long timeMs, byte[] devicePrivKey) {
-        String preimageStr = "AUTHORIFICATED:" + timeMs + authNonce;
+    public static String signAuthCreateSession(String login, long timeMs, String authNonce, byte[] devicePrivKey) {
+        String preimageStr = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce;
         byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
         byte[] sig = Ed25519Util.sign(preimage, devicePrivKey);
         return Base64.getEncoder().encodeToString(sig);
