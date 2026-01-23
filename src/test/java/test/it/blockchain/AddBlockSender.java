@@ -15,8 +15,9 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 /**
- * AddBlockSender — под новый формат BchBlockEntry:
- *  - block хранит только preimage + signature
+ * AddBlockSender — под новый формат BchBlockEntry (Frame v0):
+ *  - blockBytes = preimage + sigMarker(2) + signature64
+ *  - preimage начинается с frameCode(2) = 0x0000
  *  - hash32 вычисляется как sha256(preimage)
  *  - signature = Ed25519.sign(hash32)
  *
@@ -74,7 +75,9 @@ public final class AddBlockSender {
 
         byte[] bodyBytes = body.toBytes();
 
+        // ВАЖНО: preimage должен быть БАЙТ-В-БАЙТ таким же, как в BchBlockEntry
         byte[] preimage = buildPreimage(prevHash32, blockNumber, tsSec, type, subType, version, bodyBytes);
+
         byte[] hash32 = blockchain.BchCryptoVerifier.sha256(preimage);
         byte[] signature64 = utils.crypto.Ed25519Util.sign(hash32, loginPrivKey);
 
@@ -191,7 +194,7 @@ public final class AddBlockSender {
         throw new IllegalArgumentException("Unknown body class: " + body.getClass());
     }
 
-    // ---------- preimage builder (строго по BchBlockEntry) ----------
+    // ---------- preimage builder (строго по BchBlockEntry Frame v0) ----------
 
     private static byte[] buildPreimage(byte[] prevHash32,
                                         int blockNumber,
@@ -201,17 +204,36 @@ public final class AddBlockSender {
                                         short version,
                                         byte[] bodyBytes) {
 
-        int blockSize = BchBlockEntry.RAW_HEADER_SIZE + (bodyBytes == null ? 0 : bodyBytes.length);
+        if (prevHash32 == null || prevHash32.length != 32) {
+            throw new IllegalArgumentException("prevHash32 must be 32 bytes");
+        }
+
+        int bodyLen = (bodyBytes == null ? 0 : bodyBytes.length);
+        int blockSize = BchBlockEntry.PREIMAGE_HEADER_SIZE + bodyLen;
 
         java.nio.ByteBuffer bb = java.nio.ByteBuffer.allocate(blockSize).order(java.nio.ByteOrder.BIG_ENDIAN);
 
+        // [2] frameCode (v0)
+        bb.putShort((short) (BchBlockEntry.FRAME_CODE_V0 & 0xFFFF));
+
+        // [32] prevHash32
         bb.put(prevHash32);
+
+        // [4] blockSize (preimage size)
         bb.putInt(blockSize);
+
+        // [4] blockNumber
         bb.putInt(blockNumber);
+
+        // [8] timestamp
         bb.putLong(tsSec);
+
+        // [2][2][2] type/subType/version
         bb.putShort(type);
         bb.putShort(subType);
         bb.putShort(version);
+
+        // [N] bodyBytes
         if (bodyBytes != null) bb.put(bodyBytes);
 
         return bb.array();

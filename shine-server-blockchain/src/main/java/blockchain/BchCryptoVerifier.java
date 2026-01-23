@@ -6,9 +6,11 @@ import java.security.MessageDigest;
 import java.util.Objects;
 
 /**
- * Новый верификатор по ТЗ:
+ * Верификатор SHiNE (Frame v0):
  *
- * preimage = все байты блока без signature64
+ * preimage = первые blockSize байт блока (ВКЛЮЧАЯ frameCode=0x0000),
+ *          = всё до TAIL (sigMarker+signature).
+ *
  * hash32   = SHA-256(preimage)
  * verify   = Ed25519.verify(hash32, signature64, pubKey32)
  */
