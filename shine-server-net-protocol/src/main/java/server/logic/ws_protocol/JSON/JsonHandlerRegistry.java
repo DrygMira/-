@@ -42,9 +42,13 @@ import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_GetUserPar
 import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_ListUserParams_Request;
 import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_UpsertUserParam_Request;
 
-// !!! подставь реальные пакеты/имена, как у тебя в проекте:
+// --- subscriptions ---
 //import server.logic.ws_protocol.JSON.handlers.subscriptions.Net_GetSubscribedChannels_Handler;
 import server.logic.ws_protocol.JSON.handlers.subscriptions.entyties.Net_GetSubscribedChannels_Request;
+
+// --- NEW: connections friends lists ---
+import server.logic.ws_protocol.JSON.handlers.connections.Net_GetFriendsLists_Handler;
+import server.logic.ws_protocol.JSON.handlers.connections.entyties.Net_GetFriendsLists_Request;
 
 import java.util.Map;
 
@@ -54,7 +58,6 @@ import java.util.Map;
  */
 public final class JsonHandlerRegistry {
 
-    // Map.of(...) поддерживает максимум 10 пар => используем Map.ofEntries(...)
     private static final Map<String, JsonMessageHandler> HANDLERS = Map.ofEntries(
             Map.entry("AddUser",            new Net_AddUser_Handler()),
             Map.entry("GetUser",            new Net_GetUser_Handler()),
@@ -76,7 +79,10 @@ public final class JsonHandlerRegistry {
             // --- userParams ---
             Map.entry("UpsertUserParam",    new Net_UpsertUserParam_Handler()),
             Map.entry("GetUserParam",       new Net_GetUserParam_Handler()),
-            Map.entry("ListUserParams",     new Net_ListUserParams_Handler())
+            Map.entry("ListUserParams",     new Net_ListUserParams_Handler()),
+
+            // --- connections ---
+            Map.entry("GetFriendsLists",    new Net_GetFriendsLists_Handler())
 
             // --- subscriptions ---
 //            Map.entry("ListSubscribedChannels", new Net_GetSubscribedChannels_Handler())
@@ -106,7 +112,10 @@ public final class JsonHandlerRegistry {
             Map.entry("ListUserParams",     Net_ListUserParams_Request.class),
 
             // --- subscriptions ---
-            Map.entry("ListSubscribedChannels", Net_GetSubscribedChannels_Request.class)
+            Map.entry("ListSubscribedChannels", Net_GetSubscribedChannels_Request.class),
+
+            // --- connections ---
+            Map.entry("GetFriendsLists",    Net_GetFriendsLists_Request.class)
     );
 
     private JsonHandlerRegistry() { }

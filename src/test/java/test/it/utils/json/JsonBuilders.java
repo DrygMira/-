@@ -75,6 +75,21 @@ public final class JsonBuilders {
                 """.formatted(requestId, prefix);
     }
 
+    // ---------------- GetFriendsLists ----------------
+
+    public static String getFriendsLists(String login) {
+        String requestId = TestIds.next("friends");
+        return """
+            {
+              "op": "GetFriendsLists",
+              "requestId": "%s",
+              "payload": {
+                "login": "%s"
+              }
+            }
+            """.formatted(requestId, login);
+    }
+
     // ---------------- AuthChallenge ----------------
 
     public static String authChallenge(String login) {

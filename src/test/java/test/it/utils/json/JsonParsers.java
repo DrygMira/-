@@ -166,6 +166,42 @@ public final class JsonParsers {
         return res;
     }
 
+    // ---------------- Friends helpers ----------------
+
+    /** payload.login (канонический) */
+    public static String friendsLogin(String json) {
+        return getPayloadText(json, "login");
+    }
+
+    public static List<String> friendsOut(String json) {
+        return getPayloadStringArray(json, "out_friends");
+    }
+
+    public static List<String> friendsIn(String json) {
+        return getPayloadStringArray(json, "in_friends");
+    }
+
+    public static List<String> friendsMutual(String json) {
+        return getPayloadStringArray(json, "mutual_friends");
+    }
+
+    private static List<String> getPayloadStringArray(String json, String field) {
+        List<String> res = new ArrayList<>();
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload == null) return res;
+
+            JsonNode arr = payload.get(field);
+            if (arr == null || !arr.isArray()) return res;
+
+            for (JsonNode x : arr) {
+                if (x != null && !x.isNull()) res.add(x.asText());
+            }
+        } catch (Exception ignored) {}
+        return res;
+    }
+
     private static String getPayloadText(String json, String field) {
         try {
             JsonNode root = MAPPER.readTree(json);

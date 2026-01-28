@@ -4,6 +4,7 @@ import test.it.cases.IT_01_AddUser;
 import test.it.cases.IT_02_Sessions;
 import test.it.cases.IT_03_AddBlock_NoAuth;
 import test.it.cases.IT_04_UserParams_NoAuth;
+import test.it.cases.IT_05_Connections_NoAuth;
 import test.it.utils.log.TestLog;
 
 import java.util.ArrayList;
@@ -47,6 +48,9 @@ public class IT_RunAllMain {
 
         String s4 = IT_04_UserParams_NoAuth.run(); summaries.add(s4);
         if (s4.contains("FAIL:")) { failed++; if (STOP_ON_FIRST_FAIL) return finishEarly(summaries, failed); }
+
+        String s5 = IT_05_Connections_NoAuth.run(); summaries.add(s5);
+        if (s5.contains("FAIL:")) { failed++; if (STOP_ON_FIRST_FAIL) return finishEarly(summaries, failed); }
 
         return finish(summaries, failed);
     }
