@@ -4,7 +4,7 @@ import server.logic.ws_protocol.JSON.entyties.Net_Response;
 
 /**
  * Ответ на SessionChallenge (v2).
- * payload: { "nonce": "base64url(32)" }
+ * payload: { "nonce": "base64(32)" }
  */
 public class Net_SessionChallenge_Response extends Net_Response {
 

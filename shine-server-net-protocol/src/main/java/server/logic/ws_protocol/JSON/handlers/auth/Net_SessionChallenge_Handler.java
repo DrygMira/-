@@ -1,5 +1,6 @@
 package server.logic.ws_protocol.JSON.handlers.auth;
 
+import server.logic.ws_protocol.Base64Ws;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.Net_Request;
 import server.logic.ws_protocol.JSON.entyties.Net_Response;
@@ -13,7 +14,6 @@ import shine.db.entities.ActiveSessionEntry;
 
 import java.security.SecureRandom;
 import java.sql.SQLException;
-import java.util.Base64;
 
 /**
  * SessionChallenge (v2) — шаг 1 входа в существующую сессию.
@@ -70,7 +70,7 @@ public class Net_SessionChallenge_Handler implements JsonMessageHandler {
 
         byte[] buf = new byte[32];
         RANDOM.nextBytes(buf);
-        String nonce = Base64.getUrlEncoder().withoutPadding().encodeToString(buf);
+        String nonce = Base64Ws.encode(buf);
 
         long now = System.currentTimeMillis();
         ctx.setSessionLoginNonce(nonce);

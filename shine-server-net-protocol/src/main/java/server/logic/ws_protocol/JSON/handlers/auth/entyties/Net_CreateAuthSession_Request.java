@@ -18,7 +18,7 @@ import server.logic.ws_protocol.JSON.entyties.Net_Request;
  */
 public class Net_CreateAuthSession_Request extends Net_Request {
 
-    /** Клиентский пароль для хранения данных (base64url от 32 байт). */
+    /** Клиентский пароль для хранения данных (base64 от 32 байт). */
     private String storagePwd;
 
     /** Публичный ключ сессии (sessionPubKey), base64 от 32 байт. */

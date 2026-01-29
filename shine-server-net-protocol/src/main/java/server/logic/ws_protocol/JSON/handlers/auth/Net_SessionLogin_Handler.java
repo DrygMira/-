@@ -2,6 +2,7 @@ package server.logic.ws_protocol.JSON.handlers.auth;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.Base64Ws;
 import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.Net_Request;
@@ -21,7 +22,6 @@ import utils.crypto.Ed25519Util;
 
 import java.nio.charset.StandardCharsets;
 import java.sql.SQLException;
-import java.util.Base64;
 
 /**
  * SessionLogin (v2) — шаг 2 входа в существующую сессию (по sessionKey).
@@ -121,7 +121,7 @@ public class Net_SessionLogin_Handler implements JsonMessageHandler {
             );
         }
 
-        String sessionPubKeyB64 = session.getSessionKey(); // это pubKey
+        String sessionPubKeyB64 = session.getSessionKey(); // это pubKey (Base64(32))
         if (sessionPubKeyB64 == null || sessionPubKeyB64.isBlank()) {
             return NetExceptionResponseFactory.error(
                     req,
@@ -250,20 +250,15 @@ public class Net_SessionLogin_Handler implements JsonMessageHandler {
             String signatureB64
     ) throws IllegalArgumentException {
 
+        // pubKey: Base64(32). (Ed25519Util.keyFromBase64 должен использовать стандартный Base64)
         byte[] publicKey32 = Ed25519Util.keyFromBase64(sessionPubKeyB64);
-        byte[] signature64 = decodeBase64Any(signatureB64);
+
+        // signature: Base64(64) через единую утилиту WS-протокола
+        byte[] signature64 = Base64Ws.decodeLen(signatureB64, 64, "signatureB64");
 
         String preimageStr = "SESSION_LOGIN:" + sessionId + ":" + timeMs + ":" + nonce;
         byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
 
         return Ed25519Util.verify(preimage, signature64, publicKey32);
-    }
-
-    private static byte[] decodeBase64Any(String s) throws IllegalArgumentException {
-        try {
-            return Base64.getUrlDecoder().decode(s);
-        } catch (IllegalArgumentException ignore) {
-            return Base64.getDecoder().decode(s);
-        }
     }
 }

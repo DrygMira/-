@@ -2,6 +2,7 @@ package server.logic.ws_protocol.JSON.handlers.userParams;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.Base64Ws;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.Net_Request;
 import server.logic.ws_protocol.JSON.entyties.Net_Response;
@@ -21,7 +22,6 @@ import utils.crypto.Ed25519Util;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.Base64;
 
 /**
  * Net_UpsertUserParam_Handler
@@ -73,31 +73,14 @@ public class Net_UpsertUserParam_Handler implements JsonMessageHandler {
             byte[] pubKey32;
             byte[] sig64;
             try {
-                pubKey32 = Base64.getDecoder().decode(deviceKeyB64);
-                sig64 = Base64.getDecoder().decode(signatureB64);
+                pubKey32 = Base64Ws.decodeLen(deviceKeyB64, 32, "device_key");
+                sig64 = Base64Ws.decodeLen(signatureB64, 64, "signature");
             } catch (IllegalArgumentException e) {
                 return NetExceptionResponseFactory.error(
                         req,
                         WireCodes.Status.BAD_REQUEST,
                         "BAD_BASE64",
                         "device_key/signature должны быть Base64"
-                );
-            }
-
-            if (pubKey32.length != 32) {
-                return NetExceptionResponseFactory.error(
-                        req,
-                        WireCodes.Status.BAD_REQUEST,
-                        "BAD_DEVICE_KEY",
-                        "device_key должен быть Base64(32 bytes)"
-                );
-            }
-            if (sig64.length != 64) {
-                return NetExceptionResponseFactory.error(
-                        req,
-                        WireCodes.Status.BAD_REQUEST,
-                        "BAD_SIGNATURE",
-                        "signature должна быть Base64(64 bytes)"
                 );
             }
 

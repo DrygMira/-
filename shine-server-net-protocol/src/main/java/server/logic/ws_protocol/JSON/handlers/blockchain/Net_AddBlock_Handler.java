@@ -7,6 +7,7 @@ import blockchain.body.BodyHasLine;
 import blockchain.body.BodyHasTarget;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.Base64Ws;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.Net_Request;
 import server.logic.ws_protocol.JSON.entyties.Net_Response;
@@ -23,7 +24,6 @@ import shine.db.entities.BlockEntry;
 import utils.blockchain.BlockchainNameUtil;
 
 import java.util.Arrays;
-import java.util.Base64;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -325,7 +325,7 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
 
     private static byte[] decodeBase64(String b64) {
         if (b64 == null) throw new IllegalArgumentException("blockBytesB64 == null");
-        return Base64.getDecoder().decode(b64);
+        return Base64Ws.decode(b64);
     }
 
     private static long safeAdd(long a, long b) {

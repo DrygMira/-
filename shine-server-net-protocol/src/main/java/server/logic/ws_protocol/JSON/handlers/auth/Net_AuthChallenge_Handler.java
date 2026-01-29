@@ -1,5 +1,6 @@
 package server.logic.ws_protocol.JSON.handlers.auth;
 
+import server.logic.ws_protocol.Base64Ws;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.Net_Request;
 import server.logic.ws_protocol.JSON.entyties.Net_Response;
@@ -12,7 +13,6 @@ import shine.db.dao.SolanaUsersDAO;
 import shine.db.entities.SolanaUserEntry;
 
 import java.security.SecureRandom;
-import java.util.Base64;
 
 /**
  * AuthChallenge (v2) — шаг 1 создания новой сессии.
@@ -72,7 +72,7 @@ public class Net_AuthChallenge_Handler implements JsonMessageHandler {
 
         byte[] buf = new byte[32];
         RANDOM.nextBytes(buf);
-        String authNonce = Base64.getUrlEncoder().withoutPadding().encodeToString(buf);
+        String authNonce = Base64Ws.encode(buf);
 
         ctx.setAuthNonce(authNonce);
 

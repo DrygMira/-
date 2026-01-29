@@ -1,8 +1,8 @@
 package server.logic.ws_protocol.JSON.handlers.auth;
 
-import org.eclipse.jetty.websocket.api.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.Base64Ws;
 import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.Net_Request;
@@ -20,10 +20,11 @@ import shine.geo.ClientInfoService;
 import shine.geo.GeoLookupService;
 import utils.crypto.Ed25519Util;
 
+import org.eclipse.jetty.websocket.api.Session;
+
 import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.sql.SQLException;
-import java.util.Base64;
 
 /**
  * CreateAuthSession (v2) — шаг 2 создания новой сессии (ТОЛЬКО deviceKey).
@@ -109,7 +110,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
         // Проверим, что sessionPubKeyB64 декодируется в 32 байта
         byte[] sessionPubKey32;
         try {
-            sessionPubKey32 = decodeBase64Any(sessionPubKeyB64);
+            sessionPubKey32 = Base64Ws.decode(sessionPubKeyB64);
         } catch (IllegalArgumentException e) {
             Net_Response err = NetExceptionResponseFactory.error(
                     req,
@@ -291,7 +292,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
 
         // deviceKey (pub, 32)
         byte[] publicKey32 = Ed25519Util.keyFromBase64(user.getDeviceKey());
-        byte[] signature64 = decodeBase64Any(signatureB64);
+        byte[] signature64 = Base64Ws.decode(signatureB64);
 
         String preimageStr = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce;
         byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
@@ -302,19 +303,6 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
     private static String generateRandom32B64Url() {
         byte[] buf = new byte[32];
         RANDOM.nextBytes(buf);
-        return Base64.getUrlEncoder().withoutPadding().encodeToString(buf);
-    }
-
-    private static byte[] decodeBase64Any(String s) throws IllegalArgumentException {
-        if (s == null) throw new IllegalArgumentException("base64 is null");
-        String x = s.trim();
-        if (x.isEmpty()) throw new IllegalArgumentException("base64 is empty");
-
-        // сначала url-safe, потом обычный
-        try {
-            return Base64.getUrlDecoder().decode(x);
-        } catch (IllegalArgumentException ignore) {
-            return Base64.getDecoder().decode(x);
-        }
+        return Base64Ws.encode(buf);
     }
 }

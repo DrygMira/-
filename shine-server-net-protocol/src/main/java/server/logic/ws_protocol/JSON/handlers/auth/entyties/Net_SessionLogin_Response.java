@@ -4,7 +4,7 @@ import server.logic.ws_protocol.JSON.entyties.Net_Response;
 
 /**
  * Ответ на SessionLogin (v2).
- * payload: { "storagePwd": "base64url(32)" }
+ * payload: { "storagePwd": "base64(32)" }
  */
 public class Net_SessionLogin_Response extends Net_Response {
 

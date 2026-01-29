@@ -14,13 +14,13 @@ import server.logic.ws_protocol.JSON.entyties.Net_Response;
  *   "requestId": "...",
  *   "status": 200,
  *   "payload": {
- *     "sessionId": "base64url(32)"
+ *     "sessionId": "base64(32)"
  *   }
  * }
  */
 public class Net_CreateAuthSession_Response extends Net_Response {
 
-    /** Идентификатор сессии, base64url от 32 байт. */
+    /** Идентификатор сессии, base64 от 32 байт. */
     private String sessionId;
 
     public String getSessionId() {

@@ -2,6 +2,7 @@ package server.logic.ws_protocol.JSON.handlers.tempToTest;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.Base64Ws;
 import server.logic.ws_protocol.JSON.ConnectionContext;
 import server.logic.ws_protocol.JSON.entyties.Net_Request;
 import server.logic.ws_protocol.JSON.entyties.Net_Response;
@@ -19,7 +20,6 @@ import utils.blockchain.BlockchainNameUtil;
 
 import java.sql.Connection;
 import java.sql.SQLException;
-import java.util.Base64;
 
 public class Net_AddUser_Handler implements JsonMessageHandler {
 
@@ -62,33 +62,30 @@ public class Net_AddUser_Handler implements JsonMessageHandler {
 
         try {
             // базовая валидация форматов ключей: Base64(32 bytes)
-            byte[] solanaKey32 = Base64.getDecoder().decode(req.getSolanaKey());
-            if (solanaKey32.length != 32) {
+            byte[] solanaKey32;
+            byte[] blockchainKey32;
+            byte[] deviceKey32;
+
+            try {
+                solanaKey32 = Base64Ws.decodeLen(req.getSolanaKey(), 32, "solanaKey");
+                blockchainKey32 = Base64Ws.decodeLen(req.getBlockchainKey(), 32, "blockchainKey");
+                deviceKey32 = Base64Ws.decodeLen(req.getDeviceKey(), 32, "deviceKey");
+            } catch (IllegalArgumentException e) {
                 return NetExceptionResponseFactory.error(
                         req,
                         WireCodes.Status.BAD_REQUEST,
-                        "BAD_SOLANA_KEY",
-                        "solanaKey должен быть Base64(32 bytes)"
+                        "BAD_KEY_FORMAT",
+                        e.getMessage()
                 );
             }
 
-            byte[] blockchainKey32 = Base64.getDecoder().decode(req.getBlockchainKey());
-            if (blockchainKey32.length != 32) {
+            // (переменные не используются дальше, но оставляем для ясности проверки длины)
+            if (solanaKey32.length != 32 || blockchainKey32.length != 32 || deviceKey32.length != 32) {
                 return NetExceptionResponseFactory.error(
                         req,
                         WireCodes.Status.BAD_REQUEST,
-                        "BAD_BLOCKCHAIN_KEY",
-                        "blockchainKey должен быть Base64(32 bytes)"
-                );
-            }
-
-            byte[] deviceKey32 = Base64.getDecoder().decode(req.getDeviceKey());
-            if (deviceKey32.length != 32) {
-                return NetExceptionResponseFactory.error(
-                        req,
-                        WireCodes.Status.BAD_REQUEST,
-                        "BAD_DEVICE_KEY",
-                        "deviceKey должен быть Base64(32 bytes)"
+                        "BAD_KEY_FORMAT",
+                        "solanaKey/blockchainKey/deviceKey должны быть Base64(32 bytes)"
                 );
             }
 
@@ -167,13 +164,6 @@ public class Net_AddUser_Handler implements JsonMessageHandler {
 
             return resp;
 
-        } catch (IllegalArgumentException e) {
-            return NetExceptionResponseFactory.error(
-                    req,
-                    WireCodes.Status.BAD_REQUEST,
-                    "BAD_KEY_FORMAT",
-                    e.getMessage()
-            );
         } catch (SQLException e) {
             log.error("❌ DB error AddUser", e);
             return NetExceptionResponseFactory.error(
