@@ -43,8 +43,6 @@ import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_ListUserPa
 import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_UpsertUserParam_Request;
 
 // --- subscriptions ---
-//import server.logic.ws_protocol.JSON.handlers.subscriptions.Net_GetSubscribedChannels_Handler;
-import server.logic.ws_protocol.JSON.handlers.subscriptions.entyties.Net_GetSubscribedChannels_Request;
 
 // --- NEW: connections friends lists ---
 import server.logic.ws_protocol.JSON.handlers.connections.Net_GetFriendsLists_Handler;
@@ -111,8 +109,6 @@ public final class JsonHandlerRegistry {
             Map.entry("GetUserParam",       Net_GetUserParam_Request.class),
             Map.entry("ListUserParams",     Net_ListUserParams_Request.class),
 
-            // --- subscriptions ---
-            Map.entry("ListSubscribedChannels", Net_GetSubscribedChannels_Request.class),
 
             // --- connections ---
             Map.entry("GetFriendsLists",    Net_GetFriendsLists_Request.class)
