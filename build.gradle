@@ -129,6 +129,7 @@ tasks.register('itDeployServer', JavaExec) {
 
     // можно переопределить при запуске:
     // ./gradlew itDeployServer -Dit.remoteHost=... -Dit.wsUri=...
+    dependsOn shadowJar
     systemProperty "it.remoteHost", System.getProperty("it.remoteHost", "10.147.20.7")
     systemProperty "it.remoteUser", System.getProperty("it.remoteUser", "user")
     systemProperty "it.remoteDir",  System.getProperty("it.remoteDir", "/home/user/docker/shine-server")
