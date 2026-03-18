@@ -1,0 +1,1439 @@
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Шаг 1 авторизации: запрос выдачи одноразового nonce (authNonce).
+ *
+ * Клиент по логину просит сервер сгенерировать случайный authNonce,
+ * который будет использован на втором шаге при подписи.
+ *
+ * Формат входящего JSON:
+ * {
+ *   "op": "AuthChallenge",
+ *   "requestId": "...",
+ *   "payload": {
+ *     "login": "someLogin"
+ *   }
+ * }
+ *
+ * Формат успешного ответа:
+ * {
+ *   "op": "AuthChallenge",
+ *   "requestId": "...",
+ *   "status": 200,
+ *   "payload": {
+ *     "authNonce": "base64-строка-от-32-байт"
+ *   }
+ * }
+ */
+public class Net_AuthChallenge_Request extends Net_Request {
+
+    /**
+     * Логин пользователя, для которого запускается авторизация.
+     */
+    private String login;
+
+    public String getLogin() {
+        return login;
+    }
+    public void setLogin(String login) {
+        this.login = login;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Ответ на AuthChallenge.
+ *
+ * При успехе сервер возвращает одноразовый nonce для подписи (authNonce),
+ * который клиент обязан использовать на втором шаге при формировании строки
+ * для цифровой подписи.
+ *
+ * JSON:
+ * {
+ *   "op": "AuthChallenge",
+ *   "requestId": "...",
+ *   "status": 200,
+ *   "payload": {
+ *     "authNonce": "base64-строка-от-32-байт"
+ *   }
+ * }
+ */
+public class Net_AuthChallenge_Response extends Net_Response {
+
+    /**
+     * Одноразовый nonce для авторификации.
+     * Строка — это base64-представление 32 случайных байт.
+     */
+    private String authNonce;
+
+    public String getAuthNonce() {
+        return authNonce;
+    }
+
+    public void setAuthNonce(String authNonce) {
+        this.authNonce = authNonce;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Запрос CloseActiveSession — закрытие активной сессии пользователя.
+ *
+ * Новая логика (v2):
+ * - Доступно ТОЛЬКО после успешного входа в сессию (AUTH_STATUS_USER).
+ * - Никаких подписей и "AUTH_IN_PROGRESS" здесь больше нет.
+ *
+ * payload:
+ * {
+ *   "sessionId": "..." // опционально; если пусто — закрываем текущую
+ * }
+ */
+public class Net_CloseActiveSession_Request extends Net_Request {
+
+    /** Идентификатор сессии, которую нужно закрыть. Может быть пустым. */
+    private String sessionId;
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Ответ на CloseActiveSession.
+ *
+ * При успехе:
+ *  - status = 200;
+ *  - payload = {}.
+ *
+ * Закрытие WebSocket-соединения может быть выполнено сразу (для другой сессии)
+ * или чуть позже (для текущей сессии) после отправки ответа.
+ */
+public class Net_CloseActiveSession_Response extends Net_Response {
+    // Дополнительных полей пока не требуется.
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Шаг 2 (v2): создание новой сессии ТОЛЬКО через deviceKey.
+ *
+ * Шаги:
+ *  1) AuthChallenge(login) -> authNonce
+ *  2) CreateAuthSession(storagePwd, sessionPubKeyB64, timeMs, signatureB64, clientInfo)
+ *
+ * Подпись deviceKey делается над строкой (UTF-8):
+ *   AUTH_CREATE_SESSION:{login}:{timeMs}:{authNonce}:{sessionPubKeyB64}:{storagePwd}
+ *
+ * Важно:
+ * - sessionKey генерируется на клиенте, на сервер отправляется ТОЛЬКО sessionPubKeyB64 (32 bytes base64).
+ * - В БД active_sessions.session_key хранится sessionPubKeyB64.
+ */
+public class Net_CreateAuthSession_Request extends Net_Request {
+
+    /** Клиентский пароль для хранения данных (base64 от 32 байт). */
+    private String storagePwd;
+
+    /** Публичный ключ сессии (sessionPubKey), base64 от 32 байт. */
+    private String sessionPubKeyB64;
+
+    /** Время на стороне клиента (мс с 1970-01-01). */
+    private long timeMs;
+
+    /** Подпись Ed25519(deviceKey) над строкой AUTH_CREATE_SESSION:... (base64). */
+    private String signatureB64;
+
+    /** Краткая строка от клиента (до 50 символов) с описанием устройства/клиента. */
+    private String clientInfo;
+
+    public String getStoragePwd() {
+        return storagePwd;
+    }
+
+    public void setStoragePwd(String storagePwd) {
+        this.storagePwd = storagePwd;
+    }
+
+    public String getSessionPubKeyB64() {
+        return sessionPubKeyB64;
+    }
+
+    public void setSessionPubKeyB64(String sessionPubKeyB64) {
+        this.sessionPubKeyB64 = sessionPubKeyB64;
+    }
+
+    public long getTimeMs() {
+        return timeMs;
+    }
+
+    public void setTimeMs(long timeMs) {
+        this.timeMs = timeMs;
+    }
+
+    public String getSignatureB64() {
+        return signatureB64;
+    }
+
+    public void setSignatureB64(String signatureB64) {
+        this.signatureB64 = signatureB64;
+    }
+
+    public String getClientInfo() {
+        return clientInfo;
+    }
+
+    public void setClientInfo(String clientInfo) {
+        this.clientInfo = clientInfo;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Ответ на CreateAuthSession (v2).
+ *
+ * При успехе сервер создаёт запись в active_sessions
+ * и возвращает идентификатор сессии sessionId.
+ *
+ * JSON:
+ * {
+ *   "op": "CreateAuthSession",
+ *   "requestId": "...",
+ *   "status": 200,
+ *   "payload": {
+ *     "sessionId": "base64(32)"
+ *   }
+ * }
+ */
+public class Net_CreateAuthSession_Response extends Net_Response {
+
+    /** Идентификатор сессии, base64 от 32 байт. */
+    private String sessionId;
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Запрос ListSessions — список активных сессий пользователя.
+ *
+ * Новая логика (v2):
+ * - Доступно ТОЛЬКО после успешного входа в сессию (AUTH_STATUS_USER).
+ * - Пустой payload.
+ */
+public class Net_ListSessions_Request extends Net_Request {
+    // пусто
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+import java.util.List;
+
+/**
+ * Ответ на ListSessions.
+ *
+ * При успехе:
+ *  - status = 200;
+ *  - payload:
+ *    {
+ *      "sessions": [
+ *        {
+ *          "sessionId": "...",
+ *          "clientInfoFromClient": "...",
+ *          "clientInfoFromRequest": "...",
+ *          "geo": "Country, City" | "unknown",
+ *          "lastAuthirificatedAtMs": 1733310000000
+ *        },
+ *        ...
+ *      ]
+ *    }
+ */
+public class Net_ListSessions_Response extends Net_Response {
+
+    /**
+     * Список активных сессий для текущего пользователя.
+     */
+    private List<SessionInfo> sessions;
+
+    public List<SessionInfo> getSessions() {
+        return sessions;
+    }
+
+    public void setSessions(List<SessionInfo> sessions) {
+        this.sessions = sessions;
+    }
+
+    /**
+     * Описание одной активной сессии.
+     */
+    public static class SessionInfo {
+
+        /** Идентификатор сессии, base64 от 32 байт. */
+        private String sessionId;
+
+        /** Что прислал клиент в CreateAuthSession/RefreshSession (clientInfo). */
+        private String clientInfoFromClient;
+
+        /** Краткая строка, собранная сервером из HTTP-запроса (UA, платформа и т.п.). */
+        private String clientInfoFromRequest;
+
+        /** Строка геолокации вида "Country, City" или "unknown". */
+        private String geo;
+
+        /** Время последней успешной авторизации/refresh (мс с 1970-01-01). */
+        private long lastAuthirificatedAtMs;
+
+        // --- getters / setters ---
+
+        public String getSessionId() {
+            return sessionId;
+        }
+
+        public void setSessionId(String sessionId) {
+            this.sessionId = sessionId;
+        }
+
+        public String getClientInfoFromClient() {
+            return clientInfoFromClient;
+        }
+
+        public void setClientInfoFromClient(String clientInfoFromClient) {
+            this.clientInfoFromClient = clientInfoFromClient;
+        }
+
+        public String getClientInfoFromRequest() {
+            return clientInfoFromRequest;
+        }
+
+        public void setClientInfoFromRequest(String clientInfoFromRequest) {
+            this.clientInfoFromRequest = clientInfoFromRequest;
+        }
+
+        public String getGeo() {
+            return geo;
+        }
+
+        public void setGeo(String geo) {
+            this.geo = geo;
+        }
+
+        public long getLastAuthirificatedAtMs() {
+            return lastAuthirificatedAtMs;
+        }
+
+        public void setLastAuthirificatedAtMs(long lastAuthirificatedAtMs) {
+            this.lastAuthirificatedAtMs = lastAuthirificatedAtMs;
+        }
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Шаг 1 входа в существующую сессию (v2):
+ * SessionChallenge(sessionId) -> nonce
+ */
+public class Net_SessionChallenge_Request extends Net_Request {
+
+    private String sessionId;
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Ответ на SessionChallenge (v2).
+ * payload: { "nonce": "base64(32)" }
+ */
+public class Net_SessionChallenge_Response extends Net_Response {
+
+    private String nonce;
+
+    public String getNonce() {
+        return nonce;
+    }
+
+    public void setNonce(String nonce) {
+        this.nonce = nonce;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Шаг 2 входа в существующую сессию (v2):
+ * SessionLogin(sessionId, timeMs, signatureB64) -> storagePwd, AUTH_STATUS_USER
+ *
+ * Подпись делается sessionKey (приватный ключ на устройстве) над строкой (UTF-8):
+ *   SESSION_LOGIN:{sessionId}:{timeMs}:{nonce}
+ *
+ * nonce берётся из SessionChallenge и хранится в ctx (одноразовый, TTL).
+ */
+public class Net_SessionLogin_Request extends Net_Request {
+
+    private String sessionId;
+    private long timeMs;
+    private String signatureB64;
+
+    /** Краткая строка от клиента (до 50 символов) с описанием устройства/клиента. */
+    private String clientInfo;
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
+
+    public long getTimeMs() {
+        return timeMs;
+    }
+
+    public void setTimeMs(long timeMs) {
+        this.timeMs = timeMs;
+    }
+
+    public String getSignatureB64() {
+        return signatureB64;
+    }
+
+    public void setSignatureB64(String signatureB64) {
+        this.signatureB64 = signatureB64;
+    }
+
+    public String getClientInfo() {
+        return clientInfo;
+    }
+
+    public void setClientInfo(String clientInfo) {
+        this.clientInfo = clientInfo;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Ответ на SessionLogin (v2).
+ * payload: { "storagePwd": "base64(32)" }
+ */
+public class Net_SessionLogin_Response extends Net_Response {
+
+    private String storagePwd;
+
+    public String getStoragePwd() {
+        return storagePwd;
+    }
+
+    public void setStoragePwd(String storagePwd) {
+        this.storagePwd = storagePwd;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth;
+
+import server.logic.ws_protocol.Base64Ws;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_AuthChallenge_Request;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_AuthChallenge_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.dao.SolanaUsersDAO;
+import shine.db.entities.SolanaUserEntry;
+
+import java.security.SecureRandom;
+
+/**
+ * AuthChallenge (v2) — шаг 1 создания новой сессии.
+ *
+ * Логика авторизации (v2):
+ * - Создание новой сессии возможно ТОЛЬКО через deviceKey пользователя.
+ * - Этот handler выдаёт одноразовый authNonce, который клиент использует во втором шаге:
+ *   CreateAuthSession(..., signature(deviceKey, AUTH_CREATE_SESSION:...))
+ *
+ * Что делает:
+ * 1) Проверяет login.
+ * 2) Находит пользователя (solana_users).
+ * 3) Пишет solanaUser в ctx, ставит AUTH_STATUS_AUTH_IN_PROGRESS.
+ * 4) Генерирует authNonce (base64url(32)) и сохраняет в ctx.authNonce.
+ */
+public class Net_AuthChallenge_Handler implements JsonMessageHandler {
+
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    @Override
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
+
+        Net_AuthChallenge_Request req = (Net_AuthChallenge_Request) baseReq;
+
+        String login = req.getLogin();
+        if (login == null || login.isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_LOGIN",
+                    "Пустой логин"
+            );
+        }
+
+        // Если по этому соединению уже есть залогиненный пользователь — не даём повторную авторификацию
+        if (ctx.getLogin() != null) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "ALREADY_AUTHED",
+                    "Попытка повторной авторификации для уже заданного login=" + ctx.getLogin()
+            );
+        }
+
+        SolanaUserEntry solanaUserEntry = SolanaUsersDAO.getInstance().getByLogin(login);
+        if (solanaUserEntry == null) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "UNKNOWN_USER",
+                    "Пользователь с таким логином не найден"
+            );
+        }
+
+        ctx.setSolanaUser(solanaUserEntry);
+        ctx.setAuthenticationStatus(ConnectionContext.AUTH_STATUS_AUTH_IN_PROGRESS);
+
+        byte[] buf = new byte[32];
+        RANDOM.nextBytes(buf);
+        String authNonce = Base64Ws.encode(buf);
+
+        ctx.setAuthNonce(authNonce);
+
+        Net_AuthChallenge_Response resp = new Net_AuthChallenge_Response();
+        resp.setOp(req.getOp());
+        resp.setRequestId(req.getRequestId());
+        resp.setStatus(WireCodes.Status.OK);
+        resp.setAuthNonce(authNonce);
+
+        return resp;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_CloseActiveSession_Request;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_CloseActiveSession_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import server.ws.WsConnectionUtils;
+import shine.db.dao.ActiveSessionsDAO;
+import shine.db.entities.ActiveSessionEntry;
+import shine.db.entities.SolanaUserEntry;
+
+import java.sql.SQLException;
+
+/**
+ * CloseActiveSession (v2) — закрытие текущей или другой сессии.
+ *
+ * Логика авторизации (v2):
+ * - Доступно ТОЛЬКО после успешного входа в сессию (AUTH_STATUS_USER).
+ * - Никаких подписей и AUTH_IN_PROGRESS здесь больше нет.
+ *
+ * Закрытие:
+ * - удаляем запись из БД
+ * - если по sessionId есть активный WS — закрываем его
+ */
+public class Net_CloseActiveSession_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_CloseActiveSession_Handler.class);
+
+    @Override
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
+        Net_CloseActiveSession_Request req = (Net_CloseActiveSession_Request) baseReq;
+
+        if (ctx == null || ctx.getSolanaUser() == null || ctx.getAuthenticationStatus() != ConnectionContext.AUTH_STATUS_USER) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "NOT_AUTHENTICATED",
+                    "Операция доступна только для авторизованных пользователей"
+            );
+        }
+
+        SolanaUserEntry user = ctx.getSolanaUser();
+        String currentLogin = user.getLogin();
+
+        String targetSessionId = req.getSessionId();
+        if (targetSessionId == null || targetSessionId.isBlank()) {
+            if (ctx.getSessionId() != null && !ctx.getSessionId().isBlank()) {
+                targetSessionId = ctx.getSessionId();
+            } else if (ctx.getActiveSession() != null && ctx.getActiveSession().getSessionId() != null) {
+                targetSessionId = ctx.getActiveSession().getSessionId();
+            } else {
+                return NetExceptionResponseFactory.error(
+                        req,
+                        WireCodes.Status.BAD_REQUEST,
+                        "NO_SESSION_TO_CLOSE",
+                        "Не удалось определить, какую сессию нужно закрыть"
+                );
+            }
+        }
+
+        ActiveSessionEntry targetSession;
+        try {
+            targetSession = ActiveSessionsDAO.getInstance().getBySessionId(targetSessionId);
+        } catch (SQLException e) {
+            log.error("Ошибка БД при поиске сессии для CloseActiveSession sessionId={}", targetSessionId, e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR",
+                    "Ошибка доступа к базе данных при поиске сессии"
+            );
+        }
+
+        if (targetSession == null) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "SESSION_NOT_FOUND",
+                    "Сессия для закрытия не найдена"
+            );
+        }
+
+        if (currentLogin == null || !currentLogin.equals(targetSession.getLogin())) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "SESSION_OF_ANOTHER_USER",
+                    "Нельзя закрывать сессию другого пользователя"
+            );
+        }
+
+        boolean isCurrentSession = targetSessionId.equals(ctx.getSessionId());
+
+        closeActiveSession(targetSessionId, ctx, isCurrentSession);
+
+        Net_CloseActiveSession_Response resp = new Net_CloseActiveSession_Response();
+        resp.setOp(req.getOp());
+        resp.setRequestId(req.getRequestId());
+        resp.setStatus(WireCodes.Status.OK);
+        return resp;
+    }
+
+    private void closeActiveSession(String targetSessionId,
+                                    ConnectionContext currentCtx,
+                                    boolean isCurrentSession) {
+
+        try {
+            ActiveSessionsDAO.getInstance().deleteBySessionId(targetSessionId);
+        } catch (SQLException e) {
+            log.error("Ошибка БД при удалении сессии sessionId={}", targetSessionId, e);
+        }
+
+        ConnectionContext ctxToClose =
+                ActiveConnectionsRegistry.getInstance().getBySessionId(targetSessionId);
+
+        if (ctxToClose == null) return;
+
+        if (isCurrentSession && ctxToClose == currentCtx) {
+            new Thread(() -> {
+                try { Thread.sleep(50); } catch (InterruptedException ignored) {}
+                WsConnectionUtils.closeConnection(
+                        ctxToClose,
+                        4000,
+                        "Session closed by client via CloseActiveSession"
+                );
+            }, "CloseSession-" + targetSessionId).start();
+        } else {
+            WsConnectionUtils.closeConnection(
+                    ctxToClose,
+                    4000,
+                    "Session closed by client via CloseActiveSession"
+            );
+        }
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.Base64Ws;
+import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_CreateAuthSession_Request;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_CreateAuthSession_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import server.ws.WsConnectionUtils;
+import shine.db.dao.ActiveSessionsDAO;
+import shine.db.entities.ActiveSessionEntry;
+import shine.db.entities.SolanaUserEntry;
+import shine.geo.ClientInfoService;
+import shine.geo.GeoLookupService;
+import utils.crypto.Ed25519Util;
+
+import org.eclipse.jetty.websocket.api.Session;
+
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.sql.SQLException;
+
+/**
+ * CreateAuthSession (v2) — шаг 2 создания новой сессии (ТОЛЬКО deviceKey).
+ *
+ * Логика авторизации (v2):
+ *  - Создание сессии: AuthChallenge(login) -> authNonce -> CreateAuthSession(...)
+ *  - Клиент генерирует sessionKey (Ed25519), хранит приватный ключ у себя,
+ *    отправляет на сервер ТОЛЬКО sessionPubKeyB64.
+ *  - Сервер сохраняет sessionPubKeyB64 в active_sessions.session_key.
+ *
+ * Подпись deviceKey (Ed25519) проверяется над строкой (UTF-8):
+ *   AUTH_CREATE_SESSION:{login}:{timeMs}:{authNonce}
+ *
+ * На выходе:
+ *  - создаётся запись active_sessions
+ *  - ctx становится AUTH_STATUS_USER (вход выполнен как "текущая сессия")
+ *  - ответ: sessionId
+ */
+public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_CreateAuthSession__Handler.class);
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    public static final long ALLOWED_SKEW_MS = 30_000L;
+
+    @Override
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
+
+        Net_CreateAuthSession_Request req = (Net_CreateAuthSession_Request) baseReq;
+
+        if (ctx == null
+                || ctx.getSolanaUser() == null
+                || ctx.getAuthNonce() == null
+                || ctx.getAuthenticationStatus() != ConnectionContext.AUTH_STATUS_AUTH_IN_PROGRESS) {
+
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "NO_STEP1_CONTEXT",
+                    "Шаг 1 авторизации не был корректно выполнен для данного соединения"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: no step1 context or bad auth state");
+            return err;
+        }
+
+        SolanaUserEntry user = ctx.getSolanaUser();
+        String login = user.getLogin();
+        if (login == null || login.isBlank()) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "NO_LOGIN",
+                    "Для пользователя не задан login в БД"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: no login");
+            return err;
+        }
+
+        String storagePwd = req.getStoragePwd();
+        if (storagePwd == null || storagePwd.isBlank()) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_STORAGE_PWD",
+                    "Пустой storagePwd"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty storagePwd");
+            return err;
+        }
+
+        String sessionPubKeyB64 = req.getSessionPubKeyB64();
+        if (sessionPubKeyB64 == null || sessionPubKeyB64.isBlank()) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_SESSION_PUBKEY",
+                    "Пустой sessionPubKeyB64"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty session pubkey");
+            return err;
+        }
+
+        // Проверим, что sessionPubKeyB64 декодируется в 32 байта
+        byte[] sessionPubKey32;
+        try {
+            sessionPubKey32 = Base64Ws.decode(sessionPubKeyB64);
+        } catch (IllegalArgumentException e) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_BASE64",
+                    "Некорректный base64 в sessionPubKeyB64"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad session pubkey base64");
+            return err;
+        }
+        if (sessionPubKey32.length != 32) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_SESSION_PUBKEY_LEN",
+                    "sessionPubKey должен быть 32 байта"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad session pubkey length");
+            return err;
+        }
+
+        String signatureB64 = req.getSignatureB64();
+        if (signatureB64 == null || signatureB64.isBlank()) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_SIGNATURE",
+                    "Пустая цифровая подпись"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty signature");
+            return err;
+        }
+
+        long timeMs = req.getTimeMs();
+        long nowMs = System.currentTimeMillis();
+        long diff = Math.abs(nowMs - timeMs);
+        if (diff > ALLOWED_SKEW_MS) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "TIME_SKEW",
+                    "Время клиента отличается от сервера более чем на 30 секунд"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: time skew");
+            return err;
+        }
+
+        String clientInfoFromClient = req.getClientInfo();
+        if (clientInfoFromClient != null && clientInfoFromClient.length() > 50) {
+            clientInfoFromClient = clientInfoFromClient.substring(0, 50);
+        }
+
+        String devicePubKeyB64 = user.getDeviceKey();
+        if (devicePubKeyB64 == null || devicePubKeyB64.isBlank()) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "NO_DEVICE_KEY",
+                    "Отсутствует deviceKey у пользователя"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: no deviceKey");
+            return err;
+        }
+
+        String authNonce = ctx.getAuthNonce();
+
+        boolean sigOk;
+        try {
+            sigOk = verifyCreateSessionSignature(
+                    user,
+                    login,
+                    authNonce,
+                    timeMs,
+                    signatureB64
+            );
+        } catch (IllegalArgumentException ex) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_BASE64",
+                    "Некорректный формат Base64 для ключа или подписи"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad base64");
+            return err;
+        }
+
+        if (!sigOk) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "BAD_SIGNATURE",
+                    "Подпись не прошла проверку"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad signature");
+            return err;
+        }
+
+        // --- генерируем sessionId ---
+        String sessionId = generateRandom32B64Url();
+        long now = System.currentTimeMillis();
+
+        // --- Сбор данных о клиенте (IP, UA, язык) ---
+        Session wsSession = ctx.getWsSession();
+        String clientInfoFromRequest = ClientInfoService.buildClientInfoString(wsSession);
+        String userLanguage = ClientInfoService.extractPreferredLanguageTag(wsSession);
+
+        String clientIp = "";
+        if (wsSession != null) {
+            String ip = ClientInfoService.extractClientIp(wsSession);
+            if (ip != null) clientIp = ip;
+
+            if (!clientIp.isBlank()) {
+                try {
+                    GeoLookupService.resolveCountryCityOrIpWithCache(clientIp);
+                } catch (Exception e) {
+                    log.debug("Geo lookup failed for ip={}", clientIp, e);
+                }
+            }
+        }
+
+        // --- создаём запись ActiveSession и сохраняем в БД ---
+        ActiveSessionsDAO dao = ActiveSessionsDAO.getInstance();
+        ActiveSessionEntry activeSessionEntry;
+
+        try {
+            activeSessionEntry = new ActiveSessionEntry(
+                    sessionId,
+                    login,
+                    sessionPubKeyB64,         // session_key (pubkey)
+                    storagePwd,
+                    now,
+                    now,
+                    null,                    // pushEndpoint
+                    null,                    // pushP256dhKey
+                    null,                    // pushAuthKey
+                    clientIp,
+                    clientInfoFromClient,
+                    clientInfoFromRequest,
+                    userLanguage
+            );
+
+            dao.insert(activeSessionEntry);
+        } catch (SQLException e) {
+            log.error("Ошибка БД при создании новой сессии для login={}", login, e);
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR_SESSION_CREATE",
+                    "Ошибка БД при создании сессии"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: db error");
+            return err;
+        }
+
+        // --- обновляем контекст ---
+        ctx.setActiveSession(activeSessionEntry);
+        ctx.setSessionId(sessionId);
+        ctx.setAuthNonce(null);
+        ctx.setAuthenticationStatus(ConnectionContext.AUTH_STATUS_USER);
+
+        ActiveConnectionsRegistry.getInstance().register(ctx);
+
+        // --- формируем ответ ---
+        Net_CreateAuthSession_Response resp = new Net_CreateAuthSession_Response();
+        resp.setOp(req.getOp());
+        resp.setRequestId(req.getRequestId());
+        resp.setStatus(WireCodes.Status.OK);
+        resp.setSessionId(sessionId);
+        return resp;
+    }
+
+    private static boolean verifyCreateSessionSignature(
+            SolanaUserEntry user,
+            String login,
+            String authNonce,
+            long timeMs,
+            String signatureB64
+    ) throws IllegalArgumentException {
+
+        // deviceKey (pub, 32)
+        byte[] publicKey32 = Ed25519Util.keyFromBase64(user.getDeviceKey());
+        byte[] signature64 = Base64Ws.decode(signatureB64);
+
+        String preimageStr = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce;
+        byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
+
+        return Ed25519Util.verify(preimage, signature64, publicKey32);
+    }
+
+    private static String generateRandom32B64Url() {
+        byte[] buf = new byte[32];
+        RANDOM.nextBytes(buf);
+        return Base64Ws.encode(buf);
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_ListSessions_Request;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_ListSessions_Response;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_ListSessions_Response.SessionInfo;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.dao.ActiveSessionsDAO;
+import shine.db.entities.ActiveSessionEntry;
+import shine.db.entities.SolanaUserEntry;
+import shine.geo.GeoLookupService;
+
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * ListSessions (v2) — список активных сессий.
+ *
+ * Логика авторизации (v2):
+ * - Доступно ТОЛЬКО после успешного входа в сессию (AUTH_STATUS_USER).
+ * - Никаких подписей здесь больше нет.
+ */
+public class Net_ListSessions_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_ListSessions_Handler.class);
+
+    @Override
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
+        Net_ListSessions_Request req = (Net_ListSessions_Request) baseReq;
+
+        if (ctx == null || ctx.getSolanaUser() == null || ctx.getAuthenticationStatus() != ConnectionContext.AUTH_STATUS_USER) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "NOT_AUTHENTICATED",
+                    "Операция доступна только для авторизованных пользователей"
+            );
+        }
+
+        SolanaUserEntry user = ctx.getSolanaUser();
+        String currentLogin = user.getLogin();
+
+        List<ActiveSessionEntry> sessions;
+        try {
+            sessions = ActiveSessionsDAO.getInstance().getByLogin(currentLogin);
+        } catch (SQLException e) {
+            log.error("Ошибка БД при получении списка сессий для login={}", currentLogin, e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR_LIST_SESSIONS",
+                    "Ошибка доступа к базе данных при получении списка сессий"
+            );
+        }
+
+        List<SessionInfo> resultList = new ArrayList<>();
+        for (ActiveSessionEntry s : sessions) {
+            SessionInfo info = new SessionInfo();
+            info.setSessionId(s.getSessionId());
+            info.setClientInfoFromClient(s.getClientInfoFromClient());
+            info.setClientInfoFromRequest(s.getClientInfoFromRequest());
+            info.setLastAuthirificatedAtMs(s.getLastAuthirificatedAtMs());
+
+            String ip = s.getClientIp();
+            String geo = GeoLookupService.resolveCountryCityOrIpWithCache(ip);
+            info.setGeo(geo);
+
+            resultList.add(info);
+        }
+
+        Net_ListSessions_Response resp = new Net_ListSessions_Response();
+        resp.setOp(req.getOp());
+        resp.setRequestId(req.getRequestId());
+        resp.setStatus(WireCodes.Status.OK);
+        resp.setSessions(resultList);
+
+        return resp;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth;
+
+import server.logic.ws_protocol.Base64Ws;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_SessionChallenge_Request;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_SessionChallenge_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.dao.ActiveSessionsDAO;
+import shine.db.entities.ActiveSessionEntry;
+
+import java.security.SecureRandom;
+import java.sql.SQLException;
+
+/**
+ * SessionChallenge (v2) — шаг 1 входа в существующую сессию.
+ *
+ * Логика авторизации (v2):
+ * - Вход в существующую сессию ВСЕГДА в 2 шага:
+ *   1) SessionChallenge(sessionId) -> nonce
+ *   2) SessionLogin(sessionId, timeMs, signature(sessionKey, SESSION_LOGIN:...))
+ *
+ * Что делает:
+ * - Проверяет, что sessionId существует в БД.
+ * - Генерирует одноразовый nonce (base64url(32)), сохраняет его в ctx:
+ *   ctx.sessionLoginNonce, ctx.sessionLoginSessionId, ctx.sessionLoginNonceExpiresAtMs.
+ */
+public class Net_SessionChallenge_Handler implements JsonMessageHandler {
+
+    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final long NONCE_TTL_MS = 60_000L;
+
+    @Override
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
+        Net_SessionChallenge_Request req = (Net_SessionChallenge_Request) baseReq;
+
+        String sessionId = req.getSessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_SESSION_ID",
+                    "Пустой sessionId"
+            );
+        }
+
+        ActiveSessionEntry session;
+        try {
+            session = ActiveSessionsDAO.getInstance().getBySessionId(sessionId);
+        } catch (SQLException e) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR",
+                    "Ошибка доступа к базе данных"
+            );
+        }
+
+        if (session == null) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "SESSION_NOT_FOUND",
+                    "Сессия не найдена"
+            );
+        }
+
+        byte[] buf = new byte[32];
+        RANDOM.nextBytes(buf);
+        String nonce = Base64Ws.encode(buf);
+
+        long now = System.currentTimeMillis();
+        ctx.setSessionLoginNonce(nonce);
+        ctx.setSessionLoginSessionId(sessionId);
+        ctx.setSessionLoginNonceExpiresAtMs(now + NONCE_TTL_MS);
+
+        Net_SessionChallenge_Response resp = new Net_SessionChallenge_Response();
+        resp.setOp(req.getOp());
+        resp.setRequestId(req.getRequestId());
+        resp.setStatus(WireCodes.Status.OK);
+        resp.setNonce(nonce);
+        return resp;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.Base64Ws;
+import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_SessionLogin_Request;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_SessionLogin_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.dao.ActiveSessionsDAO;
+import shine.db.dao.SolanaUsersDAO;
+import shine.db.entities.ActiveSessionEntry;
+import shine.db.entities.SolanaUserEntry;
+import shine.geo.ClientInfoService;
+import shine.geo.GeoLookupService;
+import utils.crypto.Ed25519Util;
+
+import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
+
+/**
+ * SessionLogin (v2) — шаг 2 входа в существующую сессию (по sessionKey).
+ *
+ * Логика авторизации (v2):
+ * - SessionChallenge(sessionId) выдаёт nonce (одноразовый, TTL).
+ * - SessionLogin проверяет подпись sessionKey над строкой:
+ *     SESSION_LOGIN:{sessionId}:{timeMs}:{nonce}
+ * - sessionPubKey берём из БД: active_sessions.session_key (base64 32 bytes).
+ *
+ * При успехе:
+ * - ctx становится AUTH_STATUS_USER
+ * - обновляем метаданные сессии (lastAuth + clientIp + clientInfo + lang)
+ * - возвращаем storagePwd
+ */
+public class Net_SessionLogin_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_SessionLogin_Handler.class);
+
+    private static final long ALLOWED_SKEW_MS = 30_000L;
+
+    @Override
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
+        Net_SessionLogin_Request req = (Net_SessionLogin_Request) baseReq;
+
+        String sessionId = req.getSessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_SESSION_ID",
+                    "Пустой sessionId"
+            );
+        }
+
+        // проверка челленджа
+        if (ctx.getSessionLoginNonce() == null
+                || ctx.getSessionLoginSessionId() == null
+                || System.currentTimeMillis() > ctx.getSessionLoginNonceExpiresAtMs()) {
+
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "NO_CHALLENGE",
+                    "Нет активного SessionChallenge или nonce истёк"
+            );
+        }
+
+        if (!sessionId.equals(ctx.getSessionLoginSessionId())) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "SESSION_ID_MISMATCH",
+                    "nonce был выдан для другого sessionId"
+            );
+        }
+
+        long timeMs = req.getTimeMs();
+        long nowMs = System.currentTimeMillis();
+        if (Math.abs(nowMs - timeMs) > ALLOWED_SKEW_MS) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "TIME_SKEW",
+                    "Время клиента отличается от сервера более чем на 30 секунд"
+            );
+        }
+
+        String signatureB64 = req.getSignatureB64();
+        if (signatureB64 == null || signatureB64.isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_SIGNATURE",
+                    "Пустая подпись"
+            );
+        }
+
+        ActiveSessionEntry session;
+        try {
+            session = ActiveSessionsDAO.getInstance().getBySessionId(sessionId);
+        } catch (SQLException e) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR",
+                    "Ошибка доступа к базе данных"
+            );
+        }
+
+        if (session == null) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "SESSION_NOT_FOUND",
+                    "Сессия не найдена"
+            );
+        }
+
+        String sessionPubKeyB64 = session.getSessionKey(); // это pubKey (Base64(32))
+        if (sessionPubKeyB64 == null || sessionPubKeyB64.isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "NO_SESSION_KEY",
+                    "В сессии не задан session_key"
+            );
+        }
+
+        String nonce = ctx.getSessionLoginNonce();
+
+        boolean sigOk;
+        try {
+            sigOk = verifySessionLoginSignature(sessionPubKeyB64, sessionId, timeMs, nonce, signatureB64);
+        } catch (IllegalArgumentException e) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_BASE64",
+                    "Некорректный Base64 для ключа/подписи"
+            );
+        }
+
+        if (!sigOk) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "BAD_SIGNATURE",
+                    "Подпись не прошла проверку"
+            );
+        }
+
+        // сжигаем nonce
+        ctx.setSessionLoginNonce(null);
+        ctx.setSessionLoginSessionId(null);
+        ctx.setSessionLoginNonceExpiresAtMs(0);
+
+        // подтягиваем пользователя
+        SolanaUserEntry user;
+        try {
+            user = SolanaUsersDAO.getInstance().getByLogin(session.getLogin());
+        } catch (SQLException e) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR_USER_LOOKUP",
+                    "Ошибка доступа к базе данных при получении пользователя"
+            );
+        }
+
+        if (user == null) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "USER_NOT_FOUND_FOR_SESSION",
+                    "Пользователь для данной сессии не найден"
+            );
+        }
+
+        // обновление метаданных
+        String clientInfoFromClient = req.getClientInfo();
+        if (clientInfoFromClient != null && clientInfoFromClient.length() > 50) {
+            clientInfoFromClient = clientInfoFromClient.substring(0, 50);
+        }
+
+        String clientIp = null;
+        String clientInfoFromRequest = null;
+        String userLanguage = null;
+
+        if (ctx.getWsSession() != null) {
+            clientIp = ClientInfoService.extractClientIp(ctx.getWsSession());
+            clientInfoFromRequest = ClientInfoService.buildClientInfoString(ctx.getWsSession());
+            userLanguage = ClientInfoService.extractPreferredLanguageTag(ctx.getWsSession());
+
+            if (clientIp != null && !clientIp.isBlank()) {
+                try {
+                    GeoLookupService.resolveCountryCityOrIpWithCache(clientIp);
+                } catch (Exception e) {
+                    log.debug("Geo lookup failed for ip={}", clientIp, e);
+                }
+            }
+        }
+
+        long now = System.currentTimeMillis();
+        try {
+            ActiveSessionsDAO.getInstance().updateOnRefresh(
+                    sessionId,
+                    now,
+                    clientIp,
+                    clientInfoFromClient,
+                    clientInfoFromRequest,
+                    userLanguage
+            );
+        } catch (SQLException e) {
+            log.error("Ошибка БД при updateOnRefresh sessionId={}", sessionId, e);
+        }
+
+        session.setLastAuthirificatedAtMs(now);
+        session.setClientIp(clientIp);
+        session.setClientInfoFromClient(clientInfoFromClient);
+        session.setClientInfoFromRequest(clientInfoFromRequest);
+        session.setUserLanguage(userLanguage);
+
+        // ctx
+        ctx.setActiveSession(session);
+        ctx.setSolanaUser(user);
+        ctx.setSessionId(sessionId);
+        ctx.setAuthenticationStatus(ConnectionContext.AUTH_STATUS_USER);
+
+        ActiveConnectionsRegistry.getInstance().register(ctx);
+
+        // ответ
+        Net_SessionLogin_Response resp = new Net_SessionLogin_Response();
+        resp.setOp(req.getOp());
+        resp.setRequestId(req.getRequestId());
+        resp.setStatus(WireCodes.Status.OK);
+        resp.setStoragePwd(session.getStoragePwd());
+        return resp;
+    }
+
+    private static boolean verifySessionLoginSignature(
+            String sessionPubKeyB64,
+            String sessionId,
+            long timeMs,
+            String nonce,
+            String signatureB64
+    ) throws IllegalArgumentException {
+
+        // pubKey: Base64(32). (Ed25519Util.keyFromBase64 должен использовать стандартный Base64)
+        byte[] publicKey32 = Ed25519Util.keyFromBase64(sessionPubKeyB64);
+
+        // signature: Base64(64) через единую утилиту WS-протокола
+        byte[] signature64 = Base64Ws.decodeLen(signatureB64, 64, "signatureB64");
+
+        String preimageStr = "SESSION_LOGIN:" + sessionId + ":" + timeMs + ":" + nonce;
+        byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
+
+        return Ed25519Util.verify(preimage, signature64, publicKey32);
+    }
+}

@@ -1,0 +1,2951 @@
+package test.it.blockchain;
+
+import blockchain.BchBlockEntry;
+import blockchain.body.*;
+import test.it.utils.TestConfig;
+import test.it.utils.TestIds;
+import test.it.utils.json.JsonParsers;
+import test.it.utils.log.TestLog;
+import test.it.utils.ws.WsSession;
+
+import java.time.Duration;
+import java.util.Base64;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+
+/**
+ * AddBlockSender — под новый формат BchBlockEntry (Frame v0):
+ *  - blockBytes = preimage + sigMarker(2) + signature64
+ *  - preimage начинается с frameCode(2) = 0x0000
+ *  - hash32 вычисляется как sha256(preimage)
+ *  - signature = Ed25519.sign(hash32)
+ *
+ * ВАЖНО:
+ *  - Линии по ТЗ ведём на стороне сервера/БД (триггеры), а в тестах считаем локально.
+ */
+public final class AddBlockSender {
+
+    private static final String ZERO64 = "0".repeat(64);
+
+    private final WsSession ws;
+    private final ChainState state;
+
+    private final String login;
+    private final String blockchainName;
+    private final byte[] loginPrivKey;
+
+    public AddBlockSender(WsSession ws, ChainState state, String login, String blockchainName, byte[] loginPrivKey) {
+        this.ws = ws;
+        this.state = state;
+        this.login = login;
+        this.blockchainName = blockchainName;
+        this.loginPrivKey = (loginPrivKey == null ? null : loginPrivKey.clone());
+        if (this.ws == null) throw new IllegalArgumentException("ws == null");
+        if (this.state == null) throw new IllegalArgumentException("state == null");
+        if (this.loginPrivKey == null) throw new IllegalArgumentException("loginPrivKey == null");
+    }
+
+    public ChainState state() { return state; }
+
+    public void send(BodyRecord body, Duration timeout) {
+        if (body == null) throw new IllegalArgumentException("body == null");
+
+        body.check();
+
+        boolean isHeader = (body instanceof HeaderBody);
+
+        if (isHeader) {
+            if (state.lastBlockNumber() != -1) {
+                throw new IllegalStateException("HEADER должен быть первым: lastBlockNumber уже " + state.lastBlockNumber());
+            }
+        } else {
+            if (!state.hasHeader()) {
+                throw new IllegalStateException("Нельзя слать блоки до HEADER (нет headerHash32)");
+            }
+        }
+
+        int blockNumber = state.nextBlockNumber();
+        byte[] prevHash32 = state.prevHash32ForNext();
+        long tsSec = System.currentTimeMillis() / 1000L;
+
+        short type = typeOf(body);
+        short subType = subTypeOf(body);
+        short version = versionOf(body);
+
+        byte[] bodyBytes = body.toBytes();
+
+        // ВАЖНО: preimage должен быть БАЙТ-В-БАЙТ таким же, как в BchBlockEntry
+        byte[] preimage = buildPreimage(prevHash32, blockNumber, tsSec, type, subType, version, bodyBytes);
+
+        byte[] hash32 = blockchain.BchCryptoVerifier.sha256(preimage);
+        byte[] signature64 = utils.crypto.Ed25519Util.sign(hash32, loginPrivKey);
+
+        BchBlockEntry entry = new BchBlockEntry(
+                prevHash32,
+                blockNumber,
+                tsSec,
+                type,
+                subType,
+                version,
+                bodyBytes,
+                signature64
+        );
+
+        String prevHashHexForReq = (blockNumber == 0) ? ZERO64 : state.lastBlockHashHex();
+
+        String reqJson = buildAddBlockJson(blockchainName, blockNumber, prevHashHexForReq, base64(entry.toBytes()));
+        String op = "AddBlock(user=" + login + ", block=" + blockNumber + ", type=" + (type & 0xFFFF) + ", sub=" + (subType & 0xFFFF) + ")";
+
+        String resp = ws.call(op, reqJson, timeout);
+
+        assert200(op, resp);
+
+        String serverLastHash = JsonMini.extractPayloadString(resp, "serverLastBlockHash");
+        if (serverLastHash == null) {
+            serverLastHash = JsonMini.extractPayloadString(resp, "serverLastGlobalHash");
+        }
+
+        assertNotNull(serverLastHash, op + ": payload.serverLastBlockHash must not be null");
+        assertEquals(64, serverLastHash.trim().length(), op + ": serverLastBlockHash must be 64 hex chars");
+
+        String localHashHex = bytesToHex64(entry.getHash32());
+
+        if (TestConfig.DEBUG()) {
+            TestLog.info(op + ": localHash=" + localHashHex);
+            TestLog.info(op + ": serverLastBlockHash=" + serverLastHash);
+        }
+
+        assertEquals(localHashHex, serverLastHash, op + ": serverLastBlockHash must match local hash");
+
+        state.applyAppendedBlock(blockNumber, entry.getHash32(), isHeader, type, body);
+
+        if (TestConfig.DEBUG()) TestLog.info(op + ": state updated");
+    }
+
+    // ---------- request JSON ----------
+
+    private static String buildAddBlockJson(String blockchainName, int blockNumber, String prevBlockHashHex, String blockBytesB64) {
+        String requestId = TestIds.next("addblock");
+        return """
+            {
+              "op": "AddBlock",
+              "requestId": "%s",
+              "payload": {
+                "blockchainName": "%s",
+                "blockNumber": %d,
+                "prevBlockHash": "%s",
+                "blockBytesB64": "%s"
+              }
+            }
+            """.formatted(requestId, blockchainName, blockNumber, prevBlockHashHex, blockBytesB64);
+    }
+
+    private static void assert200(String op, String resp) {
+        int st = JsonParsers.status(resp);
+        assertEquals(200, st, op + ": expected status=200, but got=" + st + ", resp=" + resp);
+        TestLog.ok(op + ": status=200");
+    }
+
+    private static String base64(byte[] bytes) {
+        return Base64.getEncoder().encodeToString(bytes);
+    }
+
+    private static String bytesToHex64(byte[] b32) {
+        char[] out = new char[64];
+        final char[] HEX = "0123456789abcdef".toCharArray();
+        for (int i = 0; i < 32; i++) {
+            int v = b32[i] & 0xFF;
+            out[i * 2] = HEX[v >>> 4];
+            out[i * 2 + 1] = HEX[v & 0x0F];
+        }
+        return new String(out);
+    }
+
+    // ---------- header extraction from body ----------
+
+    private static short typeOf(BodyRecord body) {
+        if (body instanceof HeaderBody) return HeaderBody.TYPE;
+        if (body instanceof CreateChannelBody) return CreateChannelBody.TYPE;
+        if (body instanceof TextBody) return TextBody.TYPE;
+        if (body instanceof ReactionBody) return ReactionBody.TYPE;
+        if (body instanceof ConnectionBody) return ConnectionBody.TYPE;
+        if (body instanceof UserParamBody) return UserParamBody.TYPE;
+        throw new IllegalArgumentException("Unknown body class: " + body.getClass());
+    }
+
+    private static short subTypeOf(BodyRecord body) {
+        if (body instanceof HeaderBody hb) return hb.subType;
+        if (body instanceof CreateChannelBody cb) return cb.subType;
+        if (body instanceof TextBody tb) return tb.subType;
+        if (body instanceof ReactionBody rb) return rb.subType;
+        if (body instanceof ConnectionBody cb) return cb.subType;
+        if (body instanceof UserParamBody ub) return ub.subType;
+        throw new IllegalArgumentException("Unknown body class: " + body.getClass());
+    }
+
+    private static short versionOf(BodyRecord body) {
+        if (body instanceof HeaderBody hb) return hb.version;
+        if (body instanceof CreateChannelBody cb) return cb.version;
+        if (body instanceof TextBody tb) return tb.version;
+        if (body instanceof ReactionBody rb) return rb.version;
+        if (body instanceof ConnectionBody cb) return cb.version;
+        if (body instanceof UserParamBody ub) return ub.version;
+        throw new IllegalArgumentException("Unknown body class: " + body.getClass());
+    }
+
+    // ---------- preimage builder (строго по BchBlockEntry Frame v0) ----------
+
+    private static byte[] buildPreimage(byte[] prevHash32,
+                                        int blockNumber,
+                                        long tsSec,
+                                        short type,
+                                        short subType,
+                                        short version,
+                                        byte[] bodyBytes) {
+
+        if (prevHash32 == null || prevHash32.length != 32) {
+            throw new IllegalArgumentException("prevHash32 must be 32 bytes");
+        }
+
+        int bodyLen = (bodyBytes == null ? 0 : bodyBytes.length);
+        int blockSize = BchBlockEntry.PREIMAGE_HEADER_SIZE + bodyLen;
+
+        java.nio.ByteBuffer bb = java.nio.ByteBuffer.allocate(blockSize).order(java.nio.ByteOrder.BIG_ENDIAN);
+
+        // [2] frameCode (v0)
+        bb.putShort((short) (BchBlockEntry.FRAME_CODE_V0 & 0xFFFF));
+
+        // [32] prevHash32
+        bb.put(prevHash32);
+
+        // [4] blockSize (preimage size)
+        bb.putInt(blockSize);
+
+        // [4] blockNumber
+        bb.putInt(blockNumber);
+
+        // [8] timestamp
+        bb.putLong(tsSec);
+
+        // [2][2][2] type/subType/version
+        bb.putShort(type);
+        bb.putShort(subType);
+        bb.putShort(version);
+
+        // [N] bodyBytes
+        if (bodyBytes != null) bb.put(bodyBytes);
+
+        return bb.array();
+    }
+}
+package test.it.blockchain;
+
+import blockchain.body.BodyRecord;
+import blockchain.body.BodyHasLine;
+import blockchain.body.CreateChannelBody;
+import blockchain.body.TextBody;
+
+import java.util.HashMap;
+import java.util.Map;
+
+/**
+ * ChainState — состояние глобальной цепочки + состояние линий.
+ *
+ * Глобальная цепочка:
+ *  - lastBlockNumber / lastBlockHashHex
+ *  - map blockNumber -> hash32
+ *
+ * Линии:
+ *  - TECH (type=0): только CREATE_CHANNEL (hasLine), root = HEADER
+ *  - TEXT (type=1): линии каналов, root = HEADER (канал "0") или CREATE_CHANNEL (канал "X")
+ *  - CONNECTION (type=3): одна линия
+ *  - USER_PARAM (type=4): одна линия
+ *
+ * ВАЖНО:
+ *  - prevLineNumber — это GLOBAL blockNumber предыдущего блока линии.
+ *  - thisLineNumber — внутренний номер линии (для постов: 0,1,2...; для тех-линии: 1,2,3...)
+ *  - lineCode — код линии:
+ *      * 0 для канала "0" и для "простых" линий (connection/user_param/tech)
+ *      * для каналов !=0: lineCode = blockNumber "заглавия" канала (CREATE_CHANNEL)
+ */
+public final class ChainState {
+
+    public static final short TYPE_TECH       = 0; // header/create_channel
+    public static final short TYPE_TEXT       = 1;
+    public static final short TYPE_REACTION   = 2;
+    public static final short TYPE_CONNECTION = 3;
+    public static final short TYPE_USER_PARAM = 4;
+
+    private static final byte[] ZERO32 = new byte[32];
+    private static final String ZERO64 = "0".repeat(64);
+
+    // global chain
+    private int lastBlockNumber = -1;
+    private String lastBlockHashHex = ZERO64;
+
+    // header (block#0)
+    private byte[] headerHash32 = null;
+
+    private final Map<Integer, byte[]> hash32ByNumber = new HashMap<>();
+
+    // ---------- TECH line state ----------
+    private static final class TechLineState {
+        int lastGlobalNumber = -1;   // последний TECH-блок (HEADER или CREATE_CHANNEL)
+        String lastHashHex = "";
+        int lastThisLineNumber = 0;  // 0 у HEADER (логически), дальше 1,2,3...
+
+        void reset() {
+            lastGlobalNumber = -1;
+            lastHashHex = "";
+            lastThisLineNumber = 0;
+        }
+    }
+
+    private final TechLineState techLine = new TechLineState();
+
+    // ---------- CONNECTION/USER_PARAM line state ----------
+    private static final class SimpleLineState {
+        int lastGlobalNumber = -1;
+        String lastHashHex = "";
+        int lastThisLineNumber = 0;
+
+        void reset() {
+            lastGlobalNumber = -1;
+            lastHashHex = "";
+            lastThisLineNumber = 0;
+        }
+    }
+
+    private final SimpleLineState connectionLine = new SimpleLineState();
+    private final SimpleLineState userParamLine = new SimpleLineState();
+
+    // ---------- TEXT channels ----------
+    public static final class ChannelLineState {
+        final int lineCode;        // для каналов: = rootBlockNumber; для канала 0: 0
+        final int rootBlockNumber; // 0 для канала 0, иначе blockNumber CREATE_CHANNEL
+        final String rootHashHex;
+
+        int lastGlobalNumber;
+        String lastHashHex;
+        int lastThisLineNumber; // перед первым постом = -1, чтобы первый был 0
+
+        ChannelLineState(int lineCode, int rootBlockNumber, String rootHashHex) {
+            this.lineCode = lineCode;
+            this.rootBlockNumber = rootBlockNumber;
+            this.rootHashHex = rootHashHex;
+            this.lastGlobalNumber = rootBlockNumber;
+            this.lastHashHex = rootHashHex;
+            this.lastThisLineNumber = -1;
+        }
+    }
+
+    // lineCode -> state (для канала 0 lineCode=0)
+    private final Map<Integer, ChannelLineState> textChannels = new HashMap<>();
+
+    public ChainState() {
+        techLine.reset();
+        connectionLine.reset();
+        userParamLine.reset();
+    }
+
+    // -------------------- global getters --------------------
+
+    public int lastBlockNumber() { return lastBlockNumber; }
+    public String lastBlockHashHex() { return lastBlockHashHex; }
+
+    public boolean hasHeader() {
+        return headerHash32 != null && headerHash32.length == 32 && lastBlockNumber >= 0;
+    }
+
+    public int nextBlockNumber() {
+        return lastBlockNumber + 1;
+    }
+
+    public byte[] prevHash32ForNext() {
+        if (lastBlockNumber < 0) return ZERO32;
+        return hexToBytes32(lastBlockHashHex);
+    }
+
+    public byte[] headerHash32() {
+        return headerHash32 == null ? null : headerHash32.clone();
+    }
+
+    public byte[] getHash32(int blockNumber) {
+        byte[] h = hash32ByNumber.get(blockNumber);
+        return h == null ? null : h.clone();
+    }
+
+    // -------------------- line helpers --------------------
+
+    public static final class NextLine {
+        public final int lineCode;
+        public final int prevLineNumber;     // GLOBAL blockNumber
+        public final byte[] prevLineHash32;  // 32 bytes
+        public final int thisLineNumber;     // внутр. номер линии
+
+        public NextLine(int lineCode, int prevLineNumber, byte[] prevLineHash32, int thisLineNumber) {
+            this.lineCode = lineCode;
+            this.prevLineNumber = prevLineNumber;
+            this.prevLineHash32 = (prevLineHash32 == null ? null : prevLineHash32.clone());
+            this.thisLineNumber = thisLineNumber;
+        }
+    }
+
+    /** Следующие line-поля для TECH/CONNECTION/USER_PARAM. lineCode=0. */
+    public NextLine nextLineByType(short type) {
+        if (!hasHeader()) {
+            throw new IllegalStateException("Нельзя формировать line-поля до HEADER (нет headerHash32)");
+        }
+
+        int t = type & 0xFFFF;
+
+        if (t == TYPE_TECH) {
+            if (techLine.lastGlobalNumber == -1) {
+                throw new IllegalStateException("TECH line is not initialized yet");
+            }
+            return new NextLine(
+                    0,
+                    techLine.lastGlobalNumber,
+                    hexToBytes32(techLine.lastHashHex),
+                    techLine.lastThisLineNumber + 1
+            );
+        }
+
+        if (t == TYPE_CONNECTION) {
+            return nextSimpleLine(connectionLine);
+        }
+        if (t == TYPE_USER_PARAM) {
+            return nextSimpleLine(userParamLine);
+        }
+
+        throw new IllegalArgumentException("Type " + t + " не поддерживает nextLineByType()");
+    }
+
+    private NextLine nextSimpleLine(SimpleLineState ls) {
+        if (ls.lastGlobalNumber == -1) {
+            // первый блок линии ссылается на HEADER (block#0)
+            return new NextLine(0, 0, headerHash32.clone(), 1);
+        }
+        if (ls.lastHashHex == null || ls.lastHashHex.isBlank()) {
+            throw new IllegalStateException("LineState.lastHashHex пуст, но lastGlobalNumber!=-1");
+        }
+        return new NextLine(0, ls.lastGlobalNumber, hexToBytes32(ls.lastHashHex), ls.lastThisLineNumber + 1);
+    }
+
+    /**
+     * Следующие line-поля для TEXT-канала по lineCode.
+     * Для канала 0: lineCode=0.
+     * Для других каналов: lineCode = rootBlockNumber (CREATE_CHANNEL blockNumber).
+     */
+    public NextLine nextTextLineByCode(int lineCode) {
+        if (!hasHeader()) throw new IllegalStateException("No HEADER");
+        ChannelLineState cs = textChannels.get(lineCode);
+        if (cs == null) throw new IllegalStateException("Unknown TEXT channel lineCode=" + lineCode);
+
+        return new NextLine(
+                lineCode,
+                cs.lastGlobalNumber,
+                hexToBytes32(cs.lastHashHex),
+                cs.lastThisLineNumber + 1
+        );
+    }
+
+    /** Старое имя — оставил для удобства: rootBlockNumber == lineCode для каналов. */
+    public NextLine nextTextLineByRoot(int rootBlockNumber) {
+        return nextTextLineByCode(rootBlockNumber);
+    }
+
+    /**
+     * Зарегистрировать новый канал TEXT:
+     *  - lineCode = rootBlockNumber (blockNumber CREATE_CHANNEL)
+     * ИДЕМПОТЕНТНО: если уже зарегистрирован — ничего не делаем.
+     */
+    public void registerTextChannelRoot(int rootBlockNumber, byte[] rootHash32) {
+        if (rootBlockNumber < 0) throw new IllegalArgumentException("rootBlockNumber must be >= 0");
+        if (rootHash32 == null || rootHash32.length != 32) throw new IllegalArgumentException("rootHash32 invalid");
+
+        if (textChannels.containsKey(rootBlockNumber)) {
+            return; // уже есть — не трогаем, чтобы не сбросить lastThisLineNumber и т.д.
+        }
+
+        int lineCode = rootBlockNumber;
+        textChannels.put(lineCode, new ChannelLineState(lineCode, rootBlockNumber, bytesToHex64(rootHash32)));
+    }
+
+    /** root/lineCode канала "0" (по умолчанию) — это HEADER block#0, lineCode=0. */
+    public int rootChannel0() {
+        return 0;
+    }
+
+    // -------------------- apply --------------------
+
+    public void applyAppendedBlock(int blockNumber, byte[] hash32, boolean isHeader, short type, BodyRecord body) {
+        if (hash32 == null || hash32.length != 32) {
+            throw new IllegalArgumentException("hash32 must be 32 bytes");
+        }
+        if (blockNumber != lastBlockNumber + 1) {
+            throw new IllegalStateException("blockNumber sequence broken: expected=" + (lastBlockNumber + 1) + " got=" + blockNumber);
+        }
+
+        if (isHeader) {
+            if (blockNumber != 0) throw new IllegalStateException("HEADER must be blockNumber=0");
+            headerHash32 = hash32.clone();
+        } else {
+            if (blockNumber == 0) throw new IllegalStateException("Non-header block can't be blockNumber=0");
+            if (headerHash32 == null) throw new IllegalStateException("Header must be sent before non-header blocks");
+        }
+
+        String hex64 = bytesToHex64(hash32);
+
+        lastBlockNumber = blockNumber;
+        lastBlockHashHex = hex64;
+
+        hash32ByNumber.put(blockNumber, hash32.clone());
+
+        // ---- init after HEADER ----
+        if (isHeader) {
+            // TECH line root = HEADER
+            techLine.lastGlobalNumber = 0;
+            techLine.lastHashHex = hex64;
+            techLine.lastThisLineNumber = 0;
+
+            // TEXT channel "0" root = HEADER, lineCode=0
+            registerTextChannelRoot(0, hash32);
+
+            return;
+        }
+
+        int t = type & 0xFFFF;
+
+        // ---- TECH (CREATE_CHANNEL) ----
+        if (t == TYPE_TECH && body instanceof CreateChannelBody ccb) {
+            techLine.lastGlobalNumber = blockNumber;
+            techLine.lastHashHex = hex64;
+            techLine.lastThisLineNumber = ccb.thisLineNumber;
+
+            // ВАЖНО: CREATE_CHANNEL — это root нового текстового канала:
+            // lineCode для этого канала = blockNumber CREATE_CHANNEL
+            registerTextChannelRoot(blockNumber, hash32);
+
+            return;
+        }
+
+        // ---- CONNECTION / USER_PARAM ----
+        if (t == TYPE_CONNECTION && body instanceof BodyHasLine hlc) {
+            connectionLine.lastGlobalNumber = blockNumber;
+            connectionLine.lastHashHex = hex64;
+            connectionLine.lastThisLineNumber = hlc.lineSeq();
+            return;
+        }
+        if (t == TYPE_USER_PARAM && body instanceof BodyHasLine hlu) {
+            userParamLine.lastGlobalNumber = blockNumber;
+            userParamLine.lastHashHex = hex64;
+            userParamLine.lastThisLineNumber = hlu.lineSeq();
+            return;
+        }
+
+        // ---- TEXT channels (POST/EDIT_POST) ----
+        if (t == TYPE_TEXT && body instanceof TextBody tb) {
+            if (tb.isLineMessage()) {
+                int lineCode = tb.lineCode;
+
+                ChannelLineState channel = textChannels.get(lineCode);
+                if (channel == null) {
+                    throw new IllegalStateException(
+                            "TEXT line message has unknown lineCode=" + lineCode +
+                            " (канал не зарегистрирован; ждали CREATE_CHANNEL или HEADER)"
+                    );
+                }
+
+                channel.lastGlobalNumber = blockNumber;
+                channel.lastHashHex = hex64;
+                channel.lastThisLineNumber = tb.thisLineNumber;
+            }
+        }
+    }
+
+    // -------------------- utils --------------------
+
+    private static byte[] hexToBytes32(String hex) {
+        if (hex == null) throw new IllegalArgumentException("hex is null");
+        String s = hex.trim();
+        if (s.length() != 64) throw new IllegalArgumentException("hex must be 64 chars, got " + s.length());
+        byte[] out = new byte[32];
+        for (int i = 0; i < 32; i++) {
+            int hi = Character.digit(s.charAt(i * 2), 16);
+            int lo = Character.digit(s.charAt(i * 2 + 1), 16);
+            if (hi < 0 || lo < 0) throw new IllegalArgumentException("bad hex at pos " + (i * 2));
+            out[i] = (byte) ((hi << 4) | lo);
+        }
+        return out;
+    }
+
+    private static String bytesToHex64(byte[] b32) {
+        char[] out = new char[64];
+        final char[] HEX = "0123456789abcdef".toCharArray();
+        for (int i = 0; i < 32; i++) {
+            int v = b32[i] & 0xFF;
+            out[i * 2] = HEX[v >>> 4];
+            out[i * 2 + 1] = HEX[v & 0x0F];
+        }
+        return new String(out);
+    }
+}
+package test.it.blockchain;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+/**
+ * JsonMini — маленькие утилиты, чтобы не раздувать зависимости.
+ */
+final class JsonMini {
+    private static final ObjectMapper M = new ObjectMapper();
+    private JsonMini() {}
+
+    static String extractPayloadString(String json, String field) {
+        try {
+            JsonNode root = M.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload != null && payload.has(field)) {
+                JsonNode v = payload.get(field);
+                return (v == null || v.isNull()) ? null : v.asText();
+            }
+        } catch (Exception ignore) {}
+        return null;
+    }
+}
+package test.it.cases;
+
+import test.it.utils.TestConfig;
+import test.it.utils.json.JsonBuilders;
+import test.it.utils.json.JsonParsers;
+import test.it.utils.log.TestResult;
+import test.it.utils.ws.WsSession;
+
+import java.time.Duration;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.fail;
+
+/**
+ * IT_01_AddUser
+ * Создаёт 3 пользователей: TestUser1/2/3 (200 OK или 409 USER_ALREADY_EXISTS).
+ *
+ * Обновление:
+ * - теперь AddUser может вернуть 409 не только USER_ALREADY_EXISTS,
+ *   но и BLOCKCHAIN_ALREADY_EXISTS / BLOCKCHAIN_STATE_ALREADY_EXISTS.
+ * - дополнительно проверяем GetUser (status=200 всегда).
+ * - добавлен SearchUsers: поиск по префиксу (первые 3 символа).
+ */
+public class IT_01_AddUser {
+
+    public static void main(String[] args) {
+        String summary = run();
+        System.out.println(summary);
+    }
+
+    public static String run() {
+        TestResult r = new TestResult("IT_01_AddUser");
+
+        Duration t = Duration.ofSeconds(5);
+
+        try (WsSession ws = WsSession.open()) {
+
+            r.ok("AddUser USER1: " + TestConfig.LOGIN());
+            String resp1 = ws.call("AddUser#USER1", JsonBuilders.addUser(TestConfig.LOGIN()), t);
+            checkAddUser200or409(r, resp1);
+            checkGetUserMustExist(r, ws, TestConfig.LOGIN(), t);
+
+            r.ok("AddUser USER2: " + TestConfig.LOGIN2());
+            String resp2 = ws.call("AddUser#USER2", JsonBuilders.addUser(TestConfig.LOGIN2()), t);
+            checkAddUser200or409(r, resp2);
+            checkGetUserMustExist(r, ws, TestConfig.LOGIN2(), t);
+
+            r.ok("AddUser USER3: " + TestConfig.LOGIN3());
+            String resp3 = ws.call("AddUser#USER3", JsonBuilders.addUser(TestConfig.LOGIN3()), t);
+            checkAddUser200or409(r, resp3);
+            checkGetUserMustExist(r, ws, TestConfig.LOGIN3(), t);
+
+            // Доп: проверяем case-insensitive поиск в GetUser
+            String mixed = mixCase(TestConfig.LOGIN());
+            r.ok("GetUser case-insensitive: запрос=" + mixed + " (должен найти " + TestConfig.LOGIN() + ")");
+            checkGetUserMustExist(r, ws, mixed, t);
+
+            // Доп: проверяем "не существует" (но status=200)
+            String missing = "NoSuchUser_987654321";
+            r.ok("GetUser missing: " + missing);
+            checkGetUserMustNotExist(r, ws, missing, t);
+
+            // SearchUsers: один раз ищем по первым трём символам логина USER1
+            String prefix3 = first3(TestConfig.LOGIN());
+            String prefix3Mixed = mixCase(prefix3);
+            r.ok("SearchUsers: prefix(3)='" + prefix3Mixed + "' (должен вернуть список и содержать " + TestConfig.LOGIN() + ")");
+            checkSearchUsersMustContain(r, ws, prefix3Mixed, TestConfig.LOGIN(), t);
+
+        } catch (Throwable e) {
+            r.fail("IT_01_AddUser упал: " + e.getMessage());
+        }
+
+        return r.summaryLine();
+    }
+
+    private static void checkAddUser200or409(TestResult r, String resp) {
+        int st = JsonParsers.status(resp);
+        if (st == 200) {
+            r.ok("AddUser: status=200 (создан)");
+            return;
+        }
+        if (st == 409) {
+            String code = JsonParsers.errorCode(resp);
+
+            // раньше был только USER_ALREADY_EXISTS, теперь добавились ещё варианты
+            if ("USER_ALREADY_EXISTS".equals(code)) {
+                r.ok("AddUser: status=409 USER_ALREADY_EXISTS (уже был)");
+                return;
+            }
+            if ("BLOCKCHAIN_ALREADY_EXISTS".equals(code)) {
+                r.ok("AddUser: status=409 BLOCKCHAIN_ALREADY_EXISTS (blockchainName уже занят)");
+                return;
+            }
+            if ("BLOCKCHAIN_STATE_ALREADY_EXISTS".equals(code)) {
+                r.ok("AddUser: status=409 BLOCKCHAIN_STATE_ALREADY_EXISTS (blockchain_state уже есть)");
+                return;
+            }
+
+            r.fail("AddUser: status=409 но code=" + code + ", resp=" + resp);
+            fail("AddUser unexpected 409 code=" + code);
+        }
+        r.fail("AddUser: неожиданный status=" + st + ", resp=" + resp);
+        fail("AddUser unexpected status=" + st);
+    }
+
+    private static void checkGetUserMustExist(TestResult r, WsSession ws, String loginQuery, Duration t) {
+        String resp = ws.call("GetUser#" + loginQuery, JsonBuilders.getUser(loginQuery), t);
+
+        int st = JsonParsers.status(resp);
+        if (st != 200) {
+            r.fail("GetUser: ожидали status=200, получили " + st + ", resp=" + resp);
+            fail("GetUser unexpected status=" + st);
+        }
+
+        Boolean exists = JsonParsers.exists(resp);
+        if (exists == null || !exists) {
+            r.fail("GetUser: ожидали exists=true, resp=" + resp);
+            fail("GetUser expected exists=true");
+        }
+
+        // Проверяем, что сервер возвращает данные
+        String login = JsonParsers.userLogin(resp);
+        String blockchainName = JsonParsers.userBlockchainName(resp);
+        String solanaKey = JsonParsers.userSolanaKey(resp);
+        String blockchainKey = JsonParsers.userBlockchainKey(resp);
+        String deviceKey = JsonParsers.userDeviceKey(resp);
+
+        if (isBlank(login) || isBlank(blockchainName) || isBlank(solanaKey) || isBlank(blockchainKey) || isBlank(deviceKey)) {
+            r.fail("GetUser: exists=true, но поля пустые/неполные, resp=" + resp);
+            fail("GetUser returned incomplete user data");
+        }
+
+        // ВАЖНО:
+        // Поиск делается без учета регистра, но login/blockchainName должны вернуться как в БД.
+        // Для тех логинов, которые мы создаем в тесте, это ровно TestConfig.LOGIN*().
+        // Поэтому если запрос был смешанный регистр — сравниваем не с loginQuery, а с "каноничным" логином из конфига.
+        String canonical = canonicalLogin(loginQuery);
+        if (canonical != null) {
+            if (!login.equals(canonical)) {
+                r.fail("GetUser: login должен вернуться как в БД. expected=" + canonical + ", got=" + login + ", resp=" + resp);
+                fail("GetUser wrong login case");
+            }
+
+            String expectedBch = TestConfig.getBlockchainName(canonical);
+            if (!blockchainName.equals(expectedBch)) {
+                r.fail("GetUser: blockchainName должен вернуться как в БД. expected=" + expectedBch + ", got=" + blockchainName + ", resp=" + resp);
+                fail("GetUser wrong blockchainName");
+            }
+
+            // ключи должны совпадать с теми, что AddUser использует при регистрации
+            String expSol = TestConfig.solanaPublicKeyB64(canonical);
+            String expBchKey = TestConfig.blockchainPublicKeyB64(canonical);
+            String expDev = TestConfig.devicePublicKeyB64(canonical);
+
+            if (!solanaKey.equals(expSol)) {
+                r.fail("GetUser: solanaKey mismatch, resp=" + resp);
+                fail("GetUser solanaKey mismatch");
+            }
+            if (!blockchainKey.equals(expBchKey)) {
+                r.fail("GetUser: blockchainKey mismatch, resp=" + resp);
+                fail("GetUser blockchainKey mismatch");
+            }
+            if (!deviceKey.equals(expDev)) {
+                r.fail("GetUser: deviceKey mismatch, resp=" + resp);
+                fail("GetUser deviceKey mismatch");
+            }
+        }
+
+        r.ok("GetUser: exists=true, login=" + login + ", blockchainName=" + blockchainName);
+    }
+
+    private static void checkGetUserMustNotExist(TestResult r, WsSession ws, String loginQuery, Duration t) {
+        String resp = ws.call("GetUser#" + loginQuery, JsonBuilders.getUser(loginQuery), t);
+
+        int st = JsonParsers.status(resp);
+        if (st != 200) {
+            r.fail("GetUser(not exist): ожидали status=200, получили " + st + ", resp=" + resp);
+            fail("GetUser(not exist) unexpected status=" + st);
+        }
+
+        Boolean exists = JsonParsers.exists(resp);
+        if (exists == null) {
+            r.fail("GetUser(not exist): payload.exists отсутствует, resp=" + resp);
+            fail("GetUser(not exist) missing exists");
+        }
+        if (exists) {
+            r.fail("GetUser(not exist): ожидали exists=false, resp=" + resp);
+            fail("GetUser(not exist) expected exists=false");
+        }
+
+        r.ok("GetUser: exists=false (ok)");
+    }
+
+    private static void checkSearchUsersMustContain(TestResult r, WsSession ws, String prefix, String expectedLogin, Duration t) {
+        String resp = ws.call("SearchUsers#" + prefix, JsonBuilders.searchUsers(prefix), t);
+
+        int st = JsonParsers.status(resp);
+        if (st != 200) {
+            r.fail("SearchUsers: ожидали status=200, получили " + st + ", resp=" + resp);
+            fail("SearchUsers unexpected status=" + st);
+        }
+
+        List<String> logins = JsonParsers.searchLogins(resp);
+        if (logins == null || logins.isEmpty()) {
+            r.fail("SearchUsers: ожидали непустой список, resp=" + resp);
+            fail("SearchUsers expected non-empty list");
+        }
+
+        // ВАЖНО: ожидаемый логин должен быть в ответе в регистре БД (каноничный expectedLogin)
+        boolean found = false;
+        for (String s : logins) {
+            if (expectedLogin.equals(s)) {
+                found = true;
+                break;
+            }
+        }
+        if (!found) {
+            r.fail("SearchUsers: ожидаемый логин не найден. expected=" + expectedLogin + ", got=" + logins + ", resp=" + resp);
+            fail("SearchUsers expected login not found");
+        }
+
+        r.ok("SearchUsers: ok, prefix=" + prefix + ", results=" + logins.size() + ", contains=" + expectedLogin);
+    }
+
+    private static String canonicalLogin(String anyCaseLogin) {
+        if (anyCaseLogin == null) return null;
+        String x = anyCaseLogin.trim();
+        if (x.isEmpty()) return null;
+
+        // Привязка только к нашим тестовым логинам, чтобы не гадать.
+        if (x.equalsIgnoreCase(TestConfig.LOGIN())) return TestConfig.LOGIN();
+        if (x.equalsIgnoreCase(TestConfig.LOGIN2())) return TestConfig.LOGIN2();
+        if (x.equalsIgnoreCase(TestConfig.LOGIN3())) return TestConfig.LOGIN3();
+
+        return null;
+    }
+
+    private static String mixCase(String s) {
+        if (s == null) return null;
+        String x = s.trim();
+        if (x.length() < 2) return x;
+        // простой "микс" без рандома, чтобы тест был детерминированный
+        return Character.toUpperCase(x.charAt(0)) + x.substring(1).toLowerCase();
+    }
+
+    private static String first3(String s) {
+        if (s == null) return "";
+        String x = s.trim();
+        if (x.length() <= 3) return x;
+        return x.substring(0, 3);
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.trim().isEmpty();
+    }
+}
+package test.it.cases;
+
+import test.it.utils.TestConfig;
+import test.it.utils.json.JsonBuilders;
+import test.it.utils.json.JsonParsers;
+import test.it.utils.log.TestLog;
+import test.it.utils.log.TestResult;
+import test.it.utils.ws.WsSession;
+
+import java.time.Duration;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * IT_02_Sessions (v2)
+ *
+ * Цель:
+ *  - проверить создание/листинг/вход-в-сессию(2 шага)/close
+ *  - и после завершения оставить в БД 3 активных сессии (S1,S2,S3)
+ *
+ * Протокол v2:
+ *  - создание сессии: AuthChallenge -> CreateAuthSession (deviceKey подпись, + sessionPubKey)
+ *  - вход в сессию: SessionChallenge(sessionId) -> nonce, затем SessionLogin(sessionId,time,signature(sessionKey))
+ *  - ListSessions и CloseActiveSession доступны только в AUTH_STATUS_USER (после SessionLogin)
+ */
+public class IT_02_Sessions {
+
+    private static final String LOGIN = TestConfig.LOGIN();
+
+    public static void main(String[] args) {
+        TestLog.info("Standalone: этот тест требует заранее созданных пользователей -> сначала запускаю IT_01_AddUser");
+        System.out.println(IT_01_AddUser.run());
+        String summary = run();
+        System.out.println(summary);
+    }
+
+    public static String run() {
+        TestResult r = new TestResult("IT_02_Sessions(v2)");
+
+        Duration t = Duration.ofSeconds(5);
+
+        Session s1, s2, s3;
+
+        try {
+            // 1) Создаём 3 сессии (каждая — отдельным соединением)
+            s1 = createSession(LOGIN, t, r, "S1");
+            s2 = createSession(LOGIN, t, r, "S2");
+            s3 = createSession(LOGIN, t, r, "S3");
+
+            // 2) Входим в S1 (2 шага) и делаем ListSessions (AUTH_STATUS_USER) — должны быть S1,S2,S3
+            try (WsSession ws = WsSession.open()) {
+                sessionLogin2Steps(ws, s1, t, "Login(S1)", r);
+
+                String listResp = ws.call("ListSessions(AUTH_STATUS_USER)", JsonBuilders.listSessions(0L, ""), t);
+                assertEquals(200, JsonParsers.status(listResp), "ListSessions(AUTH_STATUS_USER) must be 200");
+
+                List<String> ids = JsonParsers.sessionIds(listResp);
+                r.ok("ListSessions(AUTH_STATUS_USER): " + ids);
+
+                assertTrue(ids.contains(s1.sessionId), "Must contain S1");
+                assertTrue(ids.contains(s2.sessionId), "Must contain S2");
+                assertTrue(ids.contains(s3.sessionId), "Must contain S3");
+                r.ok("Проверка OK: список содержит S1,S2,S3");
+            }
+
+            // 3) Проверяем CloseActiveSession так, чтобы итогом всё равно осталось 3 сессии:
+            //    создаём TEMP, логинимся в S1, закрываем TEMP, убеждаемся что S1,S2,S3 остались.
+            Session temp = createSession(LOGIN, t, r, "TEMP");
+
+            try (WsSession ws = WsSession.open()) {
+                sessionLogin2Steps(ws, s1, t, "Login(S1) for close", r);
+
+                String closeResp = ws.call("CloseActiveSession(TEMP)", JsonBuilders.closeActiveSession(temp.sessionId, 0L, ""), t);
+                assertEquals(200, JsonParsers.status(closeResp), "CloseActiveSession(TEMP) must be 200");
+                r.ok("CloseActiveSession(TEMP): OK");
+            }
+
+            // 4) Финальная проверка: снова логинимся в S1 и ListSessions => S1,S2,S3 должны остаться, TEMP нет
+            try (WsSession ws = WsSession.open()) {
+                sessionLogin2Steps(ws, s1, t, "Final Login(S1)", r);
+
+                String listResp = ws.call("ListSessions(final)", JsonBuilders.listSessions(0L, ""), t);
+                assertEquals(200, JsonParsers.status(listResp));
+
+                List<String> ids = JsonParsers.sessionIds(listResp);
+                r.ok("Final ListSessions: " + ids);
+
+                assertTrue(ids.contains(s1.sessionId));
+                assertTrue(ids.contains(s2.sessionId));
+                assertTrue(ids.contains(s3.sessionId));
+                assertFalse(ids.contains(temp.sessionId));
+                r.ok("ИТОГ OK: после теста в БД остались 3 активные сессии (S1,S2,S3)");
+            }
+
+        } catch (Throwable e) {
+            r.fail("IT_02_Sessions(v2) упал: " + e.getMessage());
+        }
+
+        return r.summaryLine();
+    }
+
+    private static Session createSession(String login, Duration t, TestResult r, String label) {
+        try (WsSession ws = WsSession.open()) {
+
+            // шаг 1: AuthChallenge
+            String nonceResp = ws.call("AuthChallenge(" + label + ")", JsonBuilders.authChallenge(login), t);
+            assertEquals(200, JsonParsers.status(nonceResp), "AuthChallenge(" + label + ") must be 200");
+            String authNonce = JsonParsers.authNonce(nonceResp);
+            assertNotNull(authNonce, "authNonce must not be null for " + label);
+
+            // для тестов: sessionKey = deviceKey (в реале будет отдельный keypair)
+            String sessionPubKeyB64 = TestConfig.devicePublicKeyB64(login);
+
+            // storagePwd на клиенте (сохраняем, чтобы потом проверить, что сервер вернул именно его)
+            String storagePwd = TestConfig.fakeStoragePwd();
+
+            // шаг 2: CreateAuthSession (device подпись + sessionPubKey)
+            String createResp = ws.call(
+                    "CreateAuthSession(" + label + ")",
+                    JsonBuilders.createAuthSessionV2(login, authNonce, storagePwd, sessionPubKeyB64),
+                    t
+            );
+            assertEquals(200, JsonParsers.status(createResp), "CreateAuthSession(" + label + ") must be 200");
+
+            String sid = JsonParsers.sessionId(createResp);
+            assertNotNull(sid, "sessionId must not be null");
+
+            r.ok("Создана сессия " + label + ": sessionId=" + sid);
+
+            // для тестов используем devicePriv как sessionPriv
+            byte[] sessionPrivKey = TestConfig.getDevicePrivatKey(login);
+
+            return new Session(sid, sessionPrivKey, storagePwd);
+        }
+    }
+
+    private static void sessionLogin2Steps(WsSession ws, Session s, Duration t, String label, TestResult r) {
+        // шаг 1: SessionChallenge(sessionId)
+        String chResp = ws.call("SessionChallenge " + label, JsonBuilders.sessionChallenge(s.sessionId), t);
+        assertEquals(200, JsonParsers.status(chResp), "SessionChallenge must be 200");
+        String nonce = JsonParsers.sessionNonce(chResp);
+        assertNotNull(nonce, "SessionChallenge nonce must not be null");
+
+        // шаг 2: SessionLogin(sessionId, timeMs, signature(sessionKey, SESSION_LOGIN:...))
+        String loginResp = ws.call("SessionLogin " + label, JsonBuilders.sessionLogin(s.sessionId, nonce, s.sessionPrivKey), t);
+        assertEquals(200, JsonParsers.status(loginResp), "SessionLogin must be 200");
+
+        String storagePwd = JsonParsers.storagePwd(loginResp);
+        assertNotNull(storagePwd, "storagePwd must not be null after SessionLogin");
+        assertEquals(s.storagePwd, storagePwd, "storagePwd must match what client provided on CreateAuthSession");
+
+        r.ok(label + ": SessionLogin OK, storagePwd verified");
+    }
+
+    private record Session(String sessionId, byte[] sessionPrivKey, String storagePwd) {}
+}
+package test.it.cases;
+
+import blockchain.MsgSubType;
+import blockchain.body.ConnectionBody;
+import blockchain.body.CreateChannelBody;
+import blockchain.body.HeaderBody;
+import blockchain.body.TextBody;
+import test.it.blockchain.AddBlockSender;
+import test.it.blockchain.ChainState;
+import test.it.utils.TestConfig;
+import test.it.utils.log.TestLog;
+import test.it.utils.log.TestResult;
+import test.it.utils.ws.WsSession;
+
+import java.time.Duration;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * IT_03_AddBlock_NoAuth — сценарий блоков (новый формат + каналы + связи).
+ *
+ * CONNECTION (type=3):
+ *  - всегда имеет hasLine (lineCode+prevLineNumber+prevLineHash32+thisLineNumber)
+ *  - всегда имеет target:
+ *      toBlockchainName + toBlockGlobalNumber + toBlockHash32
+ *
+ * Правило target для связей/подписок:
+ *  - FRIEND/CONTACT -> target = HEADER цели (blockNumber=0)
+ *  - FOLLOW пользователя -> target = HEADER цели (blockNumber=0)
+ *  - FOLLOW канала -> target = ROOT канала:
+ *      канал "0" -> HEADER (0)
+ *      канал "X" -> CREATE_CHANNEL (blockNumber create_channel)
+ */
+public class IT_03_AddBlock_NoAuth {
+
+    public static void main(String[] args) {
+        TestLog.info("Standalone: этот тест требует заранее созданных пользователей -> запускаю IT_01_AddUser");
+        System.out.println(IT_01_AddUser.run());
+        String summary = run();
+        System.out.println(summary);
+    }
+
+    public static String run() {
+        TestResult r = new TestResult("IT_03_AddBlock_NoAuth");
+
+        String u1 = TestConfig.LOGIN();
+        String u2 = TestConfig.LOGIN2();
+        String u3 = TestConfig.LOGIN3();
+
+        String bch1 = TestConfig.getBlockchainName(u1);
+        String bch2 = TestConfig.getBlockchainName(u2);
+        String bch3 = TestConfig.getBlockchainName(u3);
+
+        Duration t = Duration.ofSeconds(1);
+
+        try (WsSession ws = WsSession.open()) {
+
+            if (TestConfig.DEBUG()) {
+                TestLog.titleBlock(
+                        "IT_03:\n" +
+                        " USER1=" + u1 + " bch=" + bch1 + "\n" +
+                        " USER2=" + u2 + " bch=" + bch2 + "\n" +
+                        " USER3=" + u3 + " bch=" + bch3 + "\n" +
+                        "\nСценарий: каналы + кросс-чейн reply + connections (follow/friend/contact/uncontact)."
+                );
+            }
+
+            // =========================
+            // USER1
+            // =========================
+            ChainState st1 = new ChainState();
+            AddBlockSender sender1 = new AddBlockSender(ws, st1, u1, bch1, TestConfig.getBlockchainPrivatKey(u1));
+
+            sender1.send(new HeaderBody(u1), t);
+            assertTrue(st1.hasHeader());
+
+            int u1HeaderBlock = 0;
+            byte[] u1HeaderHash = st1.getHash32(u1HeaderBlock);
+            assertNotNull(u1HeaderHash);
+
+            // канал "0" root = HEADER (0)
+            int root0 = st1.rootChannel0();
+
+            // POST в канал "0"
+            {
+                var ln = st1.nextTextLineByRoot(root0);
+                sender1.send(new TextBody(
+                        MsgSubType.TEXT_POST,
+                        root0,
+                        ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
+                        "U1: story/post in channel 0",
+                        null, null, null
+                ), t);
+            }
+
+            int post0Block = st1.lastBlockNumber();
+            byte[] post0Hash = st1.getHash32(post0Block);
+            assertNotNull(post0Hash);
+
+            // CREATE_CHANNEL "News" (TECH line)
+            int newsRootBlock;
+            byte[] newsRootHash;
+            {
+                var ln = st1.nextLineByType(ChainState.TYPE_TECH);
+                sender1.send(new CreateChannelBody(
+                        0, // lineCode TECH
+                        ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
+                        "News"
+                ), t);
+
+                newsRootBlock = st1.lastBlockNumber(); // root канала = blockNumber этого CREATE_CHANNEL
+                newsRootHash = st1.getHash32(newsRootBlock);
+                assertNotNull(newsRootHash);
+
+                st1.registerTextChannelRoot(newsRootBlock, newsRootHash);
+            }
+
+            // POST #0 в канал "News"
+            int newsPost0Block;
+            byte[] newsPost0Hash;
+            {
+                var ln = st1.nextTextLineByRoot(newsRootBlock);
+                sender1.send(new TextBody(
+                        MsgSubType.TEXT_POST,
+                        newsRootBlock,
+                        ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
+                        "U1: News post #0",
+                        null, null, null
+                ), t);
+
+                newsPost0Block = st1.lastBlockNumber();
+                newsPost0Hash = st1.getHash32(newsPost0Block);
+                assertNotNull(newsPost0Hash);
+            }
+
+            // POST #1 в канал "News"
+            {
+                var ln = st1.nextTextLineByRoot(newsRootBlock);
+                sender1.send(new TextBody(
+                        MsgSubType.TEXT_POST,
+                        newsRootBlock,
+                        ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
+                        "U1: News post #1",
+                        null, null, null
+                ), t);
+            }
+
+            // EDIT_POST (в линии канала) -> target на ОРИГИНАЛЬНЫЙ POST (без toBlockchainName)
+            {
+                var ln = st1.nextTextLineByRoot(newsRootBlock);
+                sender1.send(new TextBody(
+                        MsgSubType.TEXT_EDIT_POST,
+                        newsRootBlock,
+                        ln.prevLineNumber, ln.prevLineHash32, ln.thisLineNumber,
+                        "U1: News post #0 (EDIT)",
+                        null,
+                        newsPost0Block,
+                        newsPost0Hash
+                ), t);
+            }
+
+            // =========================
+            // USER2
+            // =========================
+            ChainState st2 = new ChainState();
+            AddBlockSender sender2 = new AddBlockSender(ws, st2, u2, bch2, TestConfig.getBlockchainPrivatKey(u2));
+
+            sender2.send(new HeaderBody(u2), t);
+            assertTrue(st2.hasHeader());
+
+            int u2HeaderBlock = 0;
+            byte[] u2HeaderHash = st2.getHash32(u2HeaderBlock);
+            assertNotNull(u2HeaderHash);
+
+            // =========================
+            // СВЯЗИ (CONNECTION)
+            // =========================
+
+            // 1) U1 подписался на U2 (FOLLOW на пользователя -> target=HEADER U2)
+            sendConnection(sender1, st1, MsgSubType.CONNECTION_FOLLOW,
+                    bch2, u2HeaderBlock, u2HeaderHash,
+                    "U1 follows U2 (target=U2 HEADER)", t);
+
+            // 2) U2 подписался на канал U1 "News" (FOLLOW на канал -> target=root CREATE_CHANNEL U1)
+            sendConnection(sender2, st2, MsgSubType.CONNECTION_FOLLOW,
+                    bch1, newsRootBlock, newsRootHash,
+                    "U2 follows U1 channel 'News' (target=U1 CREATE_CHANNEL root)", t);
+
+            // 3) FRIEND взаимно (на HEADER)
+            sendConnection(sender1, st1, MsgSubType.CONNECTION_FRIEND,
+                    bch2, u2HeaderBlock, u2HeaderHash,
+                    "U1 -> U2: FRIEND", t);
+
+            sendConnection(sender2, st2, MsgSubType.CONNECTION_FRIEND,
+                    bch1, u1HeaderBlock, u1HeaderHash,
+                    "U2 -> U1: FRIEND", t);
+
+            // 4) CONTACT несколько
+            sendConnection(sender1, st1, MsgSubType.CONNECTION_CONTACT,
+                    bch2, u2HeaderBlock, u2HeaderHash,
+                    "U1 -> U2: CONTACT", t);
+
+            sendConnection(sender2, st2, MsgSubType.CONNECTION_CONTACT,
+                    bch1, u1HeaderBlock, u1HeaderHash,
+                    "U2 -> U1: CONTACT", t);
+
+            // =========================
+            // USER2 REPLY (ответ в чужой канал)
+            // =========================
+            {
+                sender2.send(TextBody.newReply(
+                        bch1,
+                        newsPost0Block,
+                        newsPost0Hash,
+                        "U2: reply to U1 News post #0 (cross-chain)"
+                ), t);
+            }
+
+            // =========================
+            // USER3 + доп. контакт
+            // =========================
+            ChainState st3 = new ChainState();
+            AddBlockSender sender3 = new AddBlockSender(ws, st3, u3, bch3, TestConfig.getBlockchainPrivatKey(u3));
+
+            sender3.send(new HeaderBody(u3), t);
+            assertTrue(st3.hasHeader());
+
+            int u3HeaderBlock = 0;
+            byte[] u3HeaderHash = st3.getHash32(u3HeaderBlock);
+            assertNotNull(u3HeaderHash);
+
+            // U1 -> U3: CONTACT
+            sendConnection(sender1, st1, MsgSubType.CONNECTION_CONTACT,
+                    bch3, u3HeaderBlock, u3HeaderHash,
+                    "U1 -> U3: CONTACT", t);
+
+            // 5) U1 убирает U2 из контактов (UNCONTACT)
+            sendConnection(sender1, st1, MsgSubType.CONNECTION_UNCONTACT,
+                    bch2, u2HeaderBlock, u2HeaderHash,
+                    "U1 -> U2: UNCONTACT", t);
+
+            r.ok("IT_03 сценарий блоков + connections выполнен");
+
+        } catch (Throwable e) {
+            r.fail("IT_03 упал: " + e.getMessage());
+        }
+
+        return r.summaryLine();
+    }
+
+    /**
+     * Отправка 1 блока CONNECTION.
+     *
+     * ВАЖНО: ConnectionBody НЕ содержит note в байтах.
+     * Если нужно “описание” — логируем отдельно.
+     */
+    private static void sendConnection(AddBlockSender sender,
+                                       ChainState st,
+                                       short subType,
+                                       String toBlockchainName,
+                                       int toBlockNumber,
+                                       byte[] toBlockHash32,
+                                       String logNote,
+                                       Duration timeout) {
+
+        if (TestConfig.DEBUG()) {
+            TestLog.info("CONNECTION: subType=" + (subType & 0xFFFF)
+                    + " to=" + toBlockchainName
+                    + " targetBlock=" + toBlockNumber
+                    + " note=" + logNote);
+        }
+
+        var ln = st.nextLineByType(ChainState.TYPE_CONNECTION);
+
+        // КОНСТРУКТОР ИЗ ТВОЕГО КОДА:
+        // ConnectionBody(int lineCode, int prevLineNumber, byte[] prevLineHash32, int thisLineNumber,
+        //                short subType, String toBlockchainName, int toBlockGlobalNumber, byte[] toBlockHash32)
+        sender.send(new ConnectionBody(
+                0, // lineCode для connection линии
+                ln.prevLineNumber,
+                ln.prevLineHash32,
+                ln.thisLineNumber,
+                subType,
+                toBlockchainName,
+                toBlockNumber,
+                toBlockHash32
+        ), timeout);
+    }
+}
+package test.it.cases;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import test.it.utils.*;
+import test.it.utils.TestConfig;
+import test.it.utils.json.JsonParsers;
+import test.it.utils.log.TestLog;
+import test.it.utils.log.TestResult;
+import test.it.utils.ws.WsSession;
+import utils.config.ShineSignatureConstants;
+import utils.crypto.Ed25519Util;
+
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.Base64;
+
+import static org.junit.jupiter.api.Assertions.*;
+
+/**
+ * IT_04_UserParams_NoAuth
+ *
+ * ВАЖНО:
+ *  - пользователей НЕ создаём (их создаёт IT_01)
+ */
+public class IT_04_UserParams_NoAuth {
+
+    private static final ObjectMapper M = new ObjectMapper();
+
+    public static void main(String[] args) {
+        TestLog.info("Standalone: этот тест требует заранее созданных пользователей -> сначала запускаю IT_01_AddUser");
+        System.out.println(IT_01_AddUser.run());
+        String summary = run();
+        System.out.println(summary);
+    }
+
+    public static String run() {
+        TestResult r = new TestResult("IT_04_UserParams_NoAuth");
+
+        Duration timeout = Duration.ofSeconds(5);
+
+        final String login = TestConfig.LOGIN();
+        final String deviceKeyB64 = TestConfig.devicePublicKeyB64(login);
+        final byte[] devicePrivKey = TestConfig.getDevicePrivatKey(login);
+
+        try {
+            // 1) сохранить param1
+            final String p1 = "profile:name";
+            final String v1 = "Anna";
+            final long t1 = System.currentTimeMillis();
+            upsertUserParam_OK(r, login, p1, t1, v1, deviceKeyB64, devicePrivKey, timeout);
+
+            // 2) получить param1 и проверить
+            NetParam got1 = getUserParam_200(r, login, p1, timeout);
+            assertEquals(login, got1.login);
+            assertEquals(p1, got1.param);
+            assertEquals(t1, got1.timeMs);
+            assertEquals(v1, got1.value);
+            assertEquals(deviceKeyB64, got1.deviceKeyB64);
+            assertNotNull(got1.signatureB64);
+            assertFalse(got1.signatureB64.isBlank());
+            r.ok("GetUserParam(param1) OK");
+
+            // 3) сохранить param2
+            final String p2 = "profile:city";
+            final String v2 = "Amsterdam";
+            final long t2 = t1 + 10;
+            upsertUserParam_OK(r, login, p2, t2, v2, deviceKeyB64, devicePrivKey, timeout);
+
+            // 4) обновить param1
+            final String v1b = "Anna Updated";
+            final long t1b = t2 + 10;
+            upsertUserParam_OK(r, login, p1, t1b, v1b, deviceKeyB64, devicePrivKey, timeout);
+
+            NetParam got1b = getUserParam_200(r, login, p1, timeout);
+            assertEquals(t1b, got1b.timeMs);
+            assertEquals(v1b, got1b.value);
+            r.ok("GetUserParam(updated param1) OK");
+
+            // 5) list всех параметров
+            NetParamList list = listUserParams_200(r, login, timeout);
+
+            NetParam lp1 = list.find(p1);
+            NetParam lp2 = list.find(p2);
+
+            assertNotNull(lp1, "ListUserParams должен содержать param1=" + p1);
+            assertNotNull(lp2, "ListUserParams должен содержать param2=" + p2);
+
+            assertEquals(t1b, lp1.timeMs);
+            assertEquals(v1b, lp1.value);
+
+            assertEquals(t2, lp2.timeMs);
+            assertEquals(v2, lp2.value);
+
+            assertEquals(deviceKeyB64, lp1.deviceKeyB64);
+            assertEquals(deviceKeyB64, lp2.deviceKeyB64);
+            assertNotNull(lp1.signatureB64);
+            assertNotNull(lp2.signatureB64);
+
+            r.ok("ListUserParams OK");
+
+        } catch (Throwable e) {
+            r.fail("IT_04 упал: " + e.getMessage());
+        }
+
+        return r.summaryLine();
+    }
+
+    // =================================================================================
+    // WS helpers: Upsert/Get/List
+    // =================================================================================
+
+    private static void upsertUserParam_OK(TestResult r, String login, String param, long timeMs, String value, String deviceKeyB64, byte[] devicePrivKey, Duration timeout) {
+        String signatureB64 = signUserParam(devicePrivKey, login, param, timeMs, value);
+
+        String reqJson = """
+                {
+                  "op": "UpsertUserParam",
+                  "requestId": "%s",
+                  "payload": {
+                    "login": "%s",
+                    "param": "%s",
+                    "time_ms": %d,
+                    "value": "%s",
+                    "device_key": "%s",
+                    "signature": "%s"
+                  }
+                }
+                """.formatted(TestIds.next("upsert"), login, param, timeMs, jsonEscape(value), deviceKeyB64, signatureB64);
+
+        try (WsSession ws = WsSession.open()) {
+            String resp = ws.call("UpsertUserParam(" + param + ")", reqJson, timeout);
+            assertEquals(200, JsonParsers.status(resp), "UpsertUserParam expected 200, resp=" + resp);
+            r.ok("UpsertUserParam(" + param + "): OK");
+        }
+    }
+
+    private static NetParam getUserParam_200(TestResult r, String login, String param, Duration timeout) {
+        String reqJson = """
+                {
+                  "op": "GetUserParam",
+                  "requestId": "%s",
+                  "payload": {
+                    "login": "%s",
+                    "param": "%s"
+                  }
+                }
+                """.formatted(TestIds.next("getparam"), login, param);
+
+        try (WsSession ws = WsSession.open()) {
+            String resp = ws.call("GetUserParam(" + param + ")", reqJson, timeout);
+            assertEquals(200, JsonParsers.status(resp), "GetUserParam expected 200, resp=" + resp);
+            r.ok("GetUserParam(" + param + "): OK");
+            return parseParamFromResponsePayload(resp);
+        }
+    }
+
+    private static NetParamList listUserParams_200(TestResult r, String login, Duration timeout) {
+        String reqJson = """
+                {
+                  "op": "ListUserParams",
+                  "requestId": "%s",
+                  "payload": { "login": "%s" }
+                }
+                """.formatted(TestIds.next("listparams"), login);
+
+        try (WsSession ws = WsSession.open()) {
+            String resp = ws.call("ListUserParams", reqJson, timeout);
+            assertEquals(200, JsonParsers.status(resp), "ListUserParams expected 200, resp=" + resp);
+            r.ok("ListUserParams: OK");
+            return parseParamListFromResponsePayload(resp);
+        }
+    }
+
+    // =================================================================================
+    // Parsing helpers
+    // =================================================================================
+
+    private static NetParam parseParamFromResponsePayload(String respJson) {
+        try {
+            JsonNode root = M.readTree(respJson);
+            JsonNode payload = root.get("payload");
+            assertNotNull(payload, "payload is null: " + respJson);
+
+            NetParam p = new NetParam();
+            p.login = text(payload, "login");
+            p.param = text(payload, "param");
+            p.timeMs = longVal(payload, "time_ms");
+            p.value = text(payload, "value");
+            p.deviceKeyB64 = text(payload, "device_key");
+            p.signatureB64 = text(payload, "signature");
+            return p;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to parse GetUserParam response: " + respJson, e);
+        }
+    }
+
+    private static NetParamList parseParamListFromResponsePayload(String respJson) {
+        try {
+            JsonNode root = M.readTree(respJson);
+            JsonNode payload = root.get("payload");
+            assertNotNull(payload, "payload is null: " + respJson);
+
+            NetParamList out = new NetParamList();
+            out.login = text(payload, "login");
+
+            JsonNode arr = payload.get("params");
+            assertNotNull(arr, "payload.params is null: " + respJson);
+            assertTrue(arr.isArray(), "payload.params must be array: " + respJson);
+
+            for (JsonNode it : arr) {
+                NetParam p = new NetParam();
+                p.login = text(it, "login");
+                p.param = text(it, "param");
+                p.timeMs = longVal(it, "time_ms");
+                p.value = text(it, "value");
+                p.deviceKeyB64 = text(it, "device_key");
+                p.signatureB64 = text(it, "signature");
+                out.items = out.itemsAppend(p);
+            }
+            return out;
+        } catch (Exception e) {
+            throw new RuntimeException("Failed to parse ListUserParams response: " + respJson, e);
+        }
+    }
+
+    private static String text(JsonNode obj, String field) {
+        JsonNode v = obj.get(field);
+        return (v == null || v.isNull()) ? null : v.asText();
+    }
+
+    private static long longVal(JsonNode obj, String field) {
+        JsonNode v = obj.get(field);
+        if (v == null || v.isNull()) return 0;
+        return v.asLong();
+    }
+
+    // =================================================================================
+    // Signature + JSON helpers
+    // =================================================================================
+
+    private static String signUserParam(byte[] devicePrivKey, String login, String param, long timeMs, String value) {
+        String signText = ShineSignatureConstants.USER_PARAMETER_PREFIX + login + param + timeMs + value;
+        byte[] signBytes = signText.getBytes(StandardCharsets.UTF_8);
+        byte[] sig64 = Ed25519Util.sign(signBytes, devicePrivKey);
+        return Base64.getEncoder().encodeToString(sig64);
+    }
+
+    private static String jsonEscape(String s) {
+        if (s == null) return "";
+        return s.replace("\\", "\\\\").replace("\"", "\\\"");
+    }
+
+    // =================================================================================
+    // DTOs
+    // =================================================================================
+
+    private static final class NetParam {
+        String login;
+        String param;
+        long timeMs;
+        String value;
+        String deviceKeyB64;
+        String signatureB64;
+    }
+
+    private static final class NetParamList {
+        String login;
+        NetParam[] items = new NetParam[0];
+
+        NetParam[] itemsAppend(NetParam p) {
+            NetParam[] n = new NetParam[items.length + 1];
+            System.arraycopy(items, 0, n, 0, items.length);
+            n[items.length] = p;
+            items = n;
+            return items;
+        }
+
+        NetParam find(String param) {
+            for (NetParam p : items) {
+                if (p != null && param.equals(p.param)) return p;
+            }
+            return null;
+        }
+    }
+}
+package test.it.cases;
+
+import test.it.utils.TestConfig;
+import test.it.utils.json.JsonBuilders;
+import test.it.utils.json.JsonParsers;
+import test.it.utils.log.TestResult;
+import test.it.utils.ws.WsSession;
+
+import java.time.Duration;
+import java.util.List;
+
+import static org.junit.jupiter.api.Assertions.fail;
+
+/**
+ * IT_05_UserConnections
+ *
+ * Делает пару запросов GetFriendsLists (без проверок существования юзеров — это уже в IT_01).
+ *
+ * Ожидаемый формат ответа:
+ * {
+ *   "op":"GetFriendsLists",
+ *   "requestId":"...",
+ *   "status":200,
+ *   "payload":{
+ *     "login":"TestUser1",          // канонический регистр из БД
+ *     "out_friends":[...],          // кому login поставил FRIEND
+ *     "in_friends":[...]            // кто поставил FRIEND login
+ *   }
+ * }
+ *
+ * ВАЖНО:
+ * - login в запросе может быть в любом регистре,
+ * - но в ответе payload.login должен быть канонический (как в БД).
+ */
+public class IT_05_UserConnections {
+
+    public static void main(String[] args) {
+        String summary = run();
+        System.out.println(summary);
+    }
+
+    public static String run() {
+        TestResult r = new TestResult("IT_05_UserConnections");
+        Duration t = Duration.ofSeconds(5);
+
+        final String u1 = TestConfig.LOGIN();
+        final String u2 = TestConfig.LOGIN2();
+
+        try (WsSession ws = WsSession.open()) {
+
+            // 1) Запрос списков связей для u1 (канонический регистр)
+            r.ok("GetFriendsLists USER1: " + u1);
+            String resp1 = ws.call("GetFriendsLists#U1", JsonBuilders.getFriendsLists(u1), t);
+            check200(r, resp1);
+            checkCanonicalLogin(r, resp1, u1);
+            checkTwoListsPresent(r, resp1);
+
+            // 2) Запрос списков связей для u1 (смешанный регистр)
+            String u1mixed = mixCase(u1);
+            r.ok("GetFriendsLists USER1 mixed-case request: " + u1mixed + " (expect login=" + u1 + ")");
+            String resp2 = ws.call("GetFriendsLists#U1_MIX", JsonBuilders.getFriendsLists(u1mixed), t);
+            check200(r, resp2);
+            checkCanonicalLogin(r, resp2, u1);
+            checkTwoListsPresent(r, resp2);
+
+            // 3) Ещё один запрос — для u2 (просто чтобы "пару запросов")
+            r.ok("GetFriendsLists USER2: " + u2);
+            String resp3 = ws.call("GetFriendsLists#U2", JsonBuilders.getFriendsLists(u2), t);
+            check200(r, resp3);
+            checkCanonicalLogin(r, resp3, u2);
+            checkTwoListsPresent(r, resp3);
+
+            // лог для наглядности (могут быть пустые, это ок)
+            List<String> out1 = JsonParsers.friendsOut(resp1);
+            List<String> in1  = JsonParsers.friendsIn(resp1);
+
+            r.ok("Friends lists USER1: out=" + out1.size() + ", in=" + in1.size());
+
+        } catch (Throwable e) {
+            r.fail("IT_05_UserConnections упал: " + e.getMessage());
+        }
+
+        return r.summaryLine();
+    }
+
+    // ================= checks =================
+
+    private static void check200(TestResult r, String resp) {
+        int st = JsonParsers.status(resp);
+        if (st != 200) {
+            r.fail("ожидали status=200, получили " + st + ", resp=" + resp);
+            fail("unexpected status=" + st);
+        }
+    }
+
+    private static void checkCanonicalLogin(TestResult r, String resp, String expectedCanonicalLogin) {
+        String got = JsonParsers.friendsLogin(resp);
+        if (got == null) {
+            r.fail("GetFriendsLists: payload.login отсутствует, resp=" + resp);
+            fail("GetFriendsLists missing payload.login");
+        }
+        if (!expectedCanonicalLogin.equals(got)) {
+            r.fail("GetFriendsLists: login должен вернуться канонический. expected=" + expectedCanonicalLogin + ", got=" + got + ", resp=" + resp);
+            fail("GetFriendsLists wrong login case");
+        }
+    }
+
+    private static void checkTwoListsPresent(TestResult r, String resp) {
+        // В JsonParsers.getPayloadStringArray сейчас возвращает пустой список, даже если поле отсутствует/не массив.
+        // Поэтому дополнительно проверяем, что парсер вернул НЕ null (он и не должен возвращать null).
+        List<String> out = JsonParsers.friendsOut(resp);
+        List<String> in  = JsonParsers.friendsIn(resp);
+
+        if (out == null || in == null) {
+            r.fail("GetFriendsLists: out_friends/in_friends не должны быть null, resp=" + resp);
+            fail("GetFriendsLists lists are null");
+        }
+
+        // Просто отмечаем, что поля читаются, даже если пустые.
+        r.ok("GetFriendsLists lists present: out=" + out.size() + ", in=" + in.size());
+    }
+
+    private static String mixCase(String s) {
+        if (s == null) return null;
+        String x = s.trim();
+        if (x.length() < 2) return x;
+        return Character.toUpperCase(x.charAt(0)) + x.substring(1).toLowerCase();
+    }
+}
+package test.it;
+
+import test.it.runner.IT_RunAllMain;
+
+import java.util.Objects;
+
+public class IT_DeployRestartAndRunRemoteMain {
+
+    // ====== НАСТРОЙКИ (можно переопределять systemProperty) ======
+    private static final String REMOTE_HOST = System.getProperty("it.remoteHost", "10.147.20.7");
+    private static final String REMOTE_USER = System.getProperty("it.remoteUser", "user");
+
+    private static final String REMOTE_DIR  = System.getProperty("it.remoteDir", "/home/user/docker/shine-server");
+    private static final String REMOTE_JAR  = REMOTE_DIR + "/shine-server.jar";
+    private static final String REMOTE_DATA = System.getProperty("it.remoteDataDir", REMOTE_DIR + "/data");
+
+    private static final String SERVICE_NAME = System.getProperty("it.service", "shine-server");
+
+    private static final String LOCAL_JAR = System.getProperty("it.localJar", "build/libs/shine-server.jar");
+
+    // URI для IT-тестов (переключаем на сервер)
+    private static final String WS_URI_SERVER = System.getProperty("it.wsUri", "wss://shineup.me/ws");
+
+    public static void main(String[] args) {
+
+        // 0) Build shadowJar локально
+//        shStrict("./gradlew -q shadowJar");
+
+        // 1) stop service на сервере
+        sshStrict("sudo systemctl stop " + SERVICE_NAME + " || true");
+
+        // 2) upload jar -> .new
+        scpStrict(LOCAL_JAR, REMOTE_JAR + ".new");
+
+        // 3) заменить jar атомарно
+        sshStrict("mv -f " + q(REMOTE_JAR + ".new") + " " + q(REMOTE_JAR));
+
+        // 4) удалить data/*
+        // (на всякий случай: если папки нет — создать)
+        sshStrict("mkdir -p " + q(REMOTE_DATA) + " && rm -rf " + q(REMOTE_DATA) + "/*");
+
+        // 5) start service
+        sshStrict("sudo systemctl start " + SERVICE_NAME);
+
+        // 6) дождаться поднятия (простая проверка: порт слушается)
+        waitRemotePort7070();
+
+        // 7) переключаем IT на серверный WS URI (без правок исходников)
+        System.setProperty("it.wsUri", WS_URI_SERVER);
+
+        // 8) прогон тестов
+        int failed = IT_RunAllMain.runAll();
+        System.exit(failed);
+    }
+
+    private static void waitRemotePort7070() {
+        for (int i = 0; i < 50; i++) {
+            int code = ssh("ss -ltnp | grep -q ':7070'"); // 0 если найдено
+            if (code == 0) return;
+            sleepMs(200);
+        }
+        throw new RuntimeException("Remote port 7070 did not start in time on " + REMOTE_HOST);
+    }
+
+    // ---------- helpers ----------
+    private static void shStrict(String cmd) {
+        int code = sh(cmd);
+        if (code != 0) throw new RuntimeException("Command failed (" + code + "): " + cmd);
+    }
+
+    private static void sshStrict(String remoteCmd) {
+        int code = ssh(remoteCmd);
+        if (code != 0) throw new RuntimeException("SSH command failed (" + code + "): " + remoteCmd);
+    }
+
+    private static int ssh(String remoteCmd) {
+        String cmd = "ssh " + REMOTE_USER + "@" + REMOTE_HOST + " " + q("bash -lc " + q(remoteCmd));
+        return sh(cmd);
+    }
+
+    private static void scpStrict(String local, String remote) {
+        Objects.requireNonNull(local);
+        Objects.requireNonNull(remote);
+        int code = sh("scp -p " + q(local) + " " + REMOTE_USER + "@" + REMOTE_HOST + ":" + q(remote));
+        if (code != 0) throw new RuntimeException("SCP failed (" + code + ")");
+    }
+
+    private static int sh(String cmd) {
+        try {
+            Process p = new ProcessBuilder("bash", "-lc", cmd).inheritIO().start();
+            return p.waitFor();
+        } catch (Exception e) {
+            throw new RuntimeException("Command error: " + cmd, e);
+        }
+    }
+
+    private static String q(String s) {
+        // простая одинарная кавычка для bash
+        return "'" + s.replace("'", "'\"'\"'") + "'";
+    }
+
+    private static void sleepMs(long ms) {
+        try { Thread.sleep(ms); }
+        catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+    }
+}
+package test.it;
+
+import server.ws.WsServer;
+import test.it.runner.IT_CleanAllDate;
+import test.it.runner.IT_RunAllMain;
+
+public class IT_RunAllCleanStartWsMain {
+
+    public static void main(String[] args) {
+        runBash("kill -9 $(lsof -t -i:7070) 2>/dev/null || true");
+
+        IT_CleanAllDate.main(new String[0]);
+
+        Thread wsThread = new Thread(() -> {
+            try {
+                WsServer.main(new String[0]);
+            } catch (Throwable t) {
+                t.printStackTrace(System.out);
+            }
+        }, "wsServer-thread");
+        wsThread.setDaemon(true);
+        wsThread.start();
+
+        sleepMs(1000);
+
+        int failed = IT_RunAllMain.runAll();
+        System.exit(failed);
+    }
+
+    private static void runBash(String cmd) {
+        try {
+            Process p = new ProcessBuilder("bash", "-lc", cmd).inheritIO().start();
+            p.waitFor();
+        } catch (Exception e) {
+            System.out.println("WARN: bash command failed: " + e);
+        }
+    }
+
+    private static void sleepMs(long ms) {
+        try {
+            Thread.sleep(ms);
+        } catch (InterruptedException ignored) {
+            Thread.currentThread().interrupt();
+        }
+    }
+}
+package test.it.runner;
+
+import test.it.utils.TestConfig;
+import test.it.utils.log.TestLog;
+
+import java.io.IOException;
+import java.nio.file.*;
+import java.util.Comparator;
+
+/**
+ *
+ * Делает:
+ *  1) чистит папку data/
+ */
+public class IT_CleanAllDate {
+
+    private static final String DATA_DIR = "data";
+
+    public static void main(String[] args) {
+//        ItRunContext.initIfNeeded();
+
+        TestLog.title("IT RUN CLEAN: очистка data/ + запуск всех тестов");
+
+        try {
+            cleanupDataDir(DATA_DIR);
+        } catch (Throwable t) {
+            TestLog.boom("Не смог очистить data/. Причина: " + t.getMessage());
+            if (TestConfig.DEBUG()) t.printStackTrace(System.out);
+            System.exit(1);
+        }
+
+    }
+
+    private static void cleanupDataDir(String dirName) throws IOException {
+        Path dir = Paths.get(dirName);
+
+        if (!Files.exists(dir)) {
+            TestLog.warn("data dir not found: " + dir.toAbsolutePath() + " (создаю)");
+            Files.createDirectories(dir);
+            return;
+        }
+
+        // удаляем ВСЁ внутри папки, но саму папку оставляем
+        Files.walk(dir)
+                .sorted(Comparator.reverseOrder())
+                .filter(p -> !p.equals(dir))
+                .forEach(p -> {
+                    try {
+                        Files.deleteIfExists(p);
+                    } catch (IOException e) {
+                        throw new RuntimeException("Не смог удалить: " + p.toAbsolutePath(), e);
+                    }
+                });
+
+        TestLog.ok("data очищена: " + dir.toAbsolutePath());
+    }
+}
+package test.it.runner;
+
+import test.it.cases.IT_01_AddUser;
+import test.it.cases.IT_02_Sessions;
+import test.it.cases.IT_03_AddBlock_NoAuth;
+import test.it.cases.IT_04_UserParams_NoAuth;
+import test.it.cases.IT_05_UserConnections;
+import test.it.utils.log.TestLog;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Ручной запуск всех IT тестов БЕЗ JUnit.
+ * Печатает итоги по каждому тесту отдельной строкой.
+ */
+public class IT_RunAllMain {
+
+    /**
+     * Настройка поведения прогона:
+     *  - true  : остановить запуск сразу после первого упавшего теста
+     *  - false : прогнать все тесты до конца, даже если некоторые упали
+     */
+    private static final boolean STOP_ON_FIRST_FAIL = true;
+
+    public static void main(String[] args) {
+        int failed = runAll();
+        // при желании можно вернуть код выхода ОС:
+        // System.exit(failed == 0 ? 0 : 1);
+    }
+
+    public static int runAll() {
+
+        List<String> summaries = new ArrayList<>();
+        int failed = 0;
+
+        TestLog.title("IT RUN: запуск всех тестов подряд"
+                + (STOP_ON_FIRST_FAIL ? " (STOP_ON_FIRST_FAIL=ON)" : " (STOP_ON_FIRST_FAIL=OFF)"));
+
+        String s1 = IT_01_AddUser.run(); summaries.add(s1);
+        if (s1.contains("FAIL:")) { failed++; if (STOP_ON_FIRST_FAIL) return finishEarly(summaries, failed); }
+
+        String s2 = IT_02_Sessions.run(); summaries.add(s2);
+        if (s2.contains("FAIL:")) { failed++; if (STOP_ON_FIRST_FAIL) return finishEarly(summaries, failed); }
+
+        String s3 = IT_03_AddBlock_NoAuth.run(); summaries.add(s3);
+        if (s3.contains("FAIL:")) { failed++; if (STOP_ON_FIRST_FAIL) return finishEarly(summaries, failed); }
+
+        String s4 = IT_04_UserParams_NoAuth.run(); summaries.add(s4);
+        if (s4.contains("FAIL:")) { failed++; if (STOP_ON_FIRST_FAIL) return finishEarly(summaries, failed); }
+
+        String s5 = IT_05_UserConnections.run(); summaries.add(s5);
+        if (s5.contains("FAIL:")) { failed++; if (STOP_ON_FIRST_FAIL) return finishEarly(summaries, failed); }
+
+        return finish(summaries, failed);
+    }
+
+    private static int finishEarly(List<String> summaries, int failed) {
+        TestLog.boom("⛔ Остановка прогона: найден FAIL, STOP_ON_FIRST_FAIL=ON");
+        return finish(summaries, failed);
+    }
+
+    private static int finish(List<String> summaries, int failed) {
+        TestLog.title("IT RUN RESULT (per test)");
+        for (String s : summaries) System.out.println(s);
+
+        if (failed == 0) TestLog.ok("\n  ВСЕ IT ТЕСТЫ УСПЕШНО ЗАВЕРШЕНЫ");
+        else TestLog.boom("❌ IT ПРОГОН УПАЛ: failed=" + failed + " из " + summaries.size());
+
+        return failed;
+    }
+}
+package test.it.suite;
+
+import org.junit.platform.suite.api.SelectClasses;
+import org.junit.platform.suite.api.Suite;
+import test.it.cases.IT_01_AddUser;
+import test.it.cases.IT_02_Sessions;
+import test.it.cases.IT_03_AddBlock_NoAuth;
+
+/**
+ * Сьют, который запускает IT тесты строго в заданном порядке.
+ *
+ * Запуск:
+ *   ./gradlew test --tests test.it.suite.IT_00_Suite
+ */
+@Suite
+@SelectClasses({
+        IT_01_AddUser.class,
+        IT_02_Sessions.class,
+        IT_03_AddBlock_NoAuth.class
+})
+public class IT_00_Suite {
+    // пусто
+}
+package test.it.utils.json;
+
+import test.it.utils.TestIds;
+import test.it.utils.TestConfig;
+import utils.crypto.Ed25519Util;
+
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
+/** Builder'ы JSON запросов. Внутри автоматически генерим requestId. */
+public final class JsonBuilders {
+    private JsonBuilders() {}
+
+    // ---------------- AddUser ----------------
+
+    public static String addUser(String login) {
+        String requestId = TestIds.next("adduser");
+        String blockchainName = TestConfig.getBlockchainName(login);
+
+        String solanaKeyB64 = TestConfig.solanaPublicKeyB64(login);
+        String blockchainKeyB64 = TestConfig.blockchainPublicKeyB64(login);
+        String deviceKeyB64 = TestConfig.devicePublicKeyB64(login);
+
+        return """
+                {
+                  "op": "AddUser",
+                  "requestId": "%s",
+                  "payload": {
+                    "login": "%s",
+                    "blockchainName": "%s",
+                    "solanaKey": "%s",
+                    "blockchainKey": "%s",
+                    "deviceKey": "%s",
+                    "bchLimit": %d
+                  }
+                }
+                """.formatted(
+                requestId,
+                login,
+                blockchainName,
+                solanaKeyB64,
+                blockchainKeyB64,
+                deviceKeyB64,
+                TestConfig.TEST_BCH_LIMIT
+        );
+    }
+
+    // ---------------- GetUser ----------------
+
+    public static String getUser(String login) {
+        String requestId = TestIds.next("getuser");
+        return """
+                {
+                  "op": "GetUser",
+                  "requestId": "%s",
+                  "payload": {
+                    "login": "%s"
+                  }
+                }
+                """.formatted(requestId, login);
+    }
+
+    // ---------------- SearchUsers ----------------
+
+    public static String searchUsers(String prefix) {
+        String requestId = TestIds.next("searchusers");
+        return """
+                {
+                  "op": "SearchUsers",
+                  "requestId": "%s",
+                  "payload": {
+                    "prefix": "%s"
+                  }
+                }
+                """.formatted(requestId, prefix);
+    }
+
+    // ---------------- GetFriendsLists ----------------
+
+    public static String getFriendsLists(String login) {
+        String requestId = TestIds.next("friends");
+        return """
+            {
+              "op": "GetFriendsLists",
+              "requestId": "%s",
+              "payload": {
+                "login": "%s"
+              }
+            }
+            """.formatted(requestId, login);
+    }
+
+    // ---------------- AuthChallenge ----------------
+
+    public static String authChallenge(String login) {
+        String requestId = TestIds.next("auth");
+        return """
+                {
+                  "op": "AuthChallenge",
+                  "requestId": "%s",
+                  "payload": { "login": "%s" }
+                }
+                """.formatted(requestId, login);
+    }
+
+    // ---------------- CreateAuthSession (v2) ----------------
+    // v2: sessionKey генерируется/хранится на клиенте, на сервер отправляем sessionPubKeyB64 (base64).
+    //
+    // ВАЖНО (новое правило):
+    // Подпись CreateAuthSession делается ТОЛЬКО deviceKey над строкой:
+    //   preimage = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce
+    //
+    // storagePwd и sessionPubKeyB64 НЕ входят в preimage.
+
+    public static String createAuthSessionV2(String login, String authNonce, String storagePwd, String sessionPubKeyB64) {
+        long timeMs = System.currentTimeMillis();
+
+        // подпись делаем devicePrivKey
+        byte[] devicePriv = TestConfig.getDevicePrivatKey(login);
+        String sigB64 = signAuthCreateSession(login, timeMs, authNonce, devicePriv);
+
+        String requestId = TestIds.next("create");
+        return """
+                {
+                  "op": "CreateAuthSession",
+                  "requestId": "%s",
+                  "payload": {
+                    "storagePwd": "%s",
+                    "sessionPubKeyB64": "%s",
+                    "timeMs": %d,
+                    "signatureB64": "%s",
+                    "clientInfo": "%s"
+                  }
+                }
+                """.formatted(
+                requestId,
+                storagePwd,
+                sessionPubKeyB64,
+                timeMs,
+                sigB64,
+                TestConfig.TEST_CLIENT_INFO
+        );
+    }
+
+    // ---------------- SessionChallenge (v2) ----------------
+
+    public static String sessionChallenge(String sessionId) {
+        String requestId = TestIds.next("sch");
+        return """
+            {
+              "op": "SessionChallenge",
+              "requestId": "%s",
+              "payload": {
+                "sessionId": "%s"
+              }
+            }
+            """.formatted(requestId, sessionId);
+    }
+
+    // ---------------- SessionLogin (v2) ----------------
+    // Подпись SessionLogin по-прежнему делается sessionPrivKey:
+    // preimage = "SESSION_LOGIN:" + sessionId + ":" + timeMs + ":" + nonce
+
+    public static String sessionLogin(String sessionId, String nonce, byte[] sessionPrivKey) {
+        long timeMs = System.currentTimeMillis();
+        String sigB64 = signSessionLogin(sessionId, timeMs, nonce, sessionPrivKey);
+
+        String requestId = TestIds.next("slogin");
+        return """
+            {
+              "op": "SessionLogin",
+              "requestId": "%s",
+              "payload": {
+                "sessionId": "%s",
+                "timeMs": %d,
+                "signatureB64": "%s",
+                "clientInfo": "%s"
+              }
+            }
+            """.formatted(requestId, sessionId, timeMs, sigB64, TestConfig.TEST_CLIENT_INFO);
+    }
+
+    // ---------------- ListSessions ----------------
+
+    public static String listSessions(long timeMs, String signatureB64) {
+        String requestId = TestIds.next("list");
+        if (signatureB64 == null) signatureB64 = "";
+        return """
+            {
+              "op": "ListSessions",
+              "requestId": "%s",
+              "payload": {
+              }
+            }
+            """.formatted(requestId, timeMs, signatureB64);
+    }
+
+    // ---------------- CloseActiveSession ----------------
+
+    public static String closeActiveSession(String sessionId, long timeMs, String signatureB64) {
+        String requestId = TestIds.next("close");
+        if (signatureB64 == null) signatureB64 = "";
+        return """
+            {
+              "op": "CloseActiveSession",
+              "requestId": "%s",
+              "payload": {
+                "sessionId": "%s"
+              }
+            }
+            """.formatted(requestId, sessionId, timeMs, signatureB64);
+    }
+
+    // ---------------- ListSubscribedChannels ----------------
+
+    public static String listSubscribedChannels(String login) {
+        String requestId = TestIds.next("subs");
+        return """
+        {
+          "op": "ListSubscribedChannels",
+          "requestId": "%s",
+          "payload": { "login": "%s" }
+        }
+        """.formatted(requestId, login);
+    }
+
+    /**
+     * Подпись CreateAuthSession(v2):
+     * preimage = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce
+     * подписываем devicePrivKey.
+     */
+    public static String signAuthCreateSession(String login, long timeMs, String authNonce, byte[] devicePrivKey) {
+        String preimageStr = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce;
+        byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
+        byte[] sig = Ed25519Util.sign(preimage, devicePrivKey);
+        return Base64.getEncoder().encodeToString(sig);
+    }
+
+    /**
+     * Подпись для SessionLogin(v2):
+     * preimage = "SESSION_LOGIN:" + sessionId + ":" + timeMs + ":" + nonce
+     * подписываем sessionPrivKey.
+     */
+    public static String signSessionLogin(String sessionId, long timeMs, String nonce, byte[] sessionPrivKey) {
+        String preimageStr = "SESSION_LOGIN:" + sessionId + ":" + timeMs + ":" + nonce;
+        byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
+        byte[] sig = Ed25519Util.sign(preimage, sessionPrivKey);
+        return Base64.getEncoder().encodeToString(sig);
+    }
+}
+package test.it.utils.json;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import java.util.ArrayList;
+import java.util.List;
+
+public final class JsonParsers {
+    private JsonParsers(){}
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    public static int status(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            return root.has("status") ? root.get("status").asInt() : -1;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    public static String authNonce(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload != null && payload.has("authNonce")) return payload.get("authNonce").asText();
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    /** nonce из SessionChallenge(v2) */
+    public static String sessionNonce(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload != null && payload.has("nonce")) return payload.get("nonce").asText();
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static String sessionId(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload != null && payload.has("sessionId")) return payload.get("sessionId").asText();
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    // оставляю для совместимости с другими тестами, но в IT_02(v2) больше не используется
+    public static String sessionPwd(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload != null && payload.has("sessionPwd")) return payload.get("sessionPwd").asText();
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static String storagePwd(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload != null && payload.has("storagePwd")) return payload.get("storagePwd").asText();
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static List<String> sessionIds(String json) {
+        List<String> res = new ArrayList<>();
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload == null) return res;
+            JsonNode arr = payload.get("sessions");
+            if (arr == null || !arr.isArray()) return res;
+
+            for (JsonNode s : arr) {
+                JsonNode id = s.get("sessionId");
+                if (id != null && !id.isNull()) res.add(id.asText());
+            }
+        } catch (Exception ignored) {}
+        return res;
+    }
+
+    public static String errorCode(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+
+            // поддержка старого формата (верхний уровень)
+            if (root.has("errorCode")) return root.get("errorCode").asText();
+            // поддержка нового формата (верхний уровень)
+            if (root.has("code")) return root.get("code").asText();
+
+            JsonNode payload = root.get("payload");
+            if (payload != null) {
+                // поддержка старого формата (внутри payload)
+                if (payload.has("errorCode")) return payload.get("errorCode").asText();
+                // поддержка нового формата (внутри payload)
+                if (payload.has("code")) return payload.get("code").asText();
+            }
+        } catch (Exception ignored) {}
+
+        return null;
+    }
+
+    // ---------------- GetUser helpers ----------------
+
+    public static Boolean exists(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload != null && payload.has("exists")) return payload.get("exists").asBoolean();
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static String userLogin(String json) {
+        return getPayloadText(json, "login");
+    }
+
+    public static String userBlockchainName(String json) {
+        return getPayloadText(json, "blockchainName");
+    }
+
+    public static String userSolanaKey(String json) {
+        return getPayloadText(json, "solanaKey");
+    }
+
+    public static String userBlockchainKey(String json) {
+        return getPayloadText(json, "blockchainKey");
+    }
+
+    public static String userDeviceKey(String json) {
+        return getPayloadText(json, "deviceKey");
+    }
+
+    // ---------------- SearchUsers helpers ----------------
+
+    public static List<String> searchLogins(String json) {
+        List<String> res = new ArrayList<>();
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload == null) return res;
+
+            JsonNode arr = payload.get("logins");
+            if (arr == null || !arr.isArray()) return res;
+
+            for (JsonNode x : arr) {
+                if (x != null && !x.isNull()) res.add(x.asText());
+            }
+        } catch (Exception ignored) {}
+        return res;
+    }
+
+    // ---------------- Friends helpers ----------------
+
+    /** payload.login (канонический) */
+    public static String friendsLogin(String json) {
+        return getPayloadText(json, "login");
+    }
+
+    public static List<String> friendsOut(String json) {
+        return getPayloadStringArray(json, "out_friends");
+    }
+
+    public static List<String> friendsIn(String json) {
+        return getPayloadStringArray(json, "in_friends");
+    }
+
+    public static List<String> friendsMutual(String json) {
+        return getPayloadStringArray(json, "mutual_friends");
+    }
+
+    private static List<String> getPayloadStringArray(String json, String field) {
+        List<String> res = new ArrayList<>();
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload == null) return res;
+
+            JsonNode arr = payload.get(field);
+            if (arr == null || !arr.isArray()) return res;
+
+            for (JsonNode x : arr) {
+                if (x != null && !x.isNull()) res.add(x.asText());
+            }
+        } catch (Exception ignored) {}
+        return res;
+    }
+
+    private static String getPayloadText(String json, String field) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload != null && payload.has(field) && !payload.get(field).isNull()) {
+                return payload.get(field).asText();
+            }
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+}
+package test.it.utils.log;
+
+import test.it.utils.TestConfig;
+
+/**
+ * TestLog — единое место для:
+ *  - ANSI цветов
+ *  - стандартных сообщений (title/step/send/recv)
+ *  - PASS/FAIL строк и окраски
+ *
+ * Режим:
+ *  - it.debug=false: печатаем минимум (без JSON)
+ *  - it.debug=true: печатаем JSON отправка/ответ + заголовки шагов
+ */
+public final class TestLog {
+    private TestLog() {}
+
+    public static final boolean DEBUG = TestConfig.DEBUG();
+
+    // ANSI COLORS (ТОЛЬКО ТУТ)
+    public static final String R   = "\u001B[0m";
+    public static final String G   = "\u001B[32m";
+    public static final String Y   = "\u001B[33m";
+    public static final String RED = "\u001B[31m";
+    public static final String C   = "\u001B[36m";
+
+    public static String green(String s) { return G + s + R; }
+    public static String red(String s)   { return RED + s + R; }
+    public static String cyan(String s)  { return C + s + R; }
+
+    /** Инфо (печатается только при DEBUG=true). */
+    public static void info(String s) {
+        if (DEBUG) System.out.println(s);
+    }
+
+    public static void line() {
+        if (!DEBUG) return;
+        System.out.println(C + "------------------------------------------------------------" + R);
+    }
+
+    public static void title(String s) {
+        if (!DEBUG) return;
+        System.out.println(C + "\n============================================================" + R);
+        System.out.println(C + s + R);
+        System.out.println(C + "============================================================\n" + R);
+    }
+
+    public static void titleBlock(String multiLineText) {
+        if (!DEBUG) return;
+        System.out.println(C + "\n============================================================" + R);
+        System.out.println(C + multiLineText + R);
+        System.out.println(C + "============================================================\n" + R);
+    }
+
+    public static void stepTitle(String s) {
+        if (!DEBUG) return;
+        System.out.println(C + "\n-------------------- " + s + " --------------------" + R);
+    }
+
+    /** OK (печатаем ВСЕГДА, чтобы было видно зелёное прохождение шагов). */
+    public static void ok(String s) {
+        System.out.println(G + "✅ " + s + R);
+    }
+
+    /** WARN (только DEBUG). */
+    public static void warn(String s) {
+        if (!DEBUG) return;
+        System.out.println(Y + "⚠️ " + s + R);
+    }
+
+    /** FAIL (печатаем ВСЕГДА). */
+    public static void boom(String s) {
+        System.out.println(RED + "****************************************************************" + R);
+        System.out.println(RED + "❌ " + s + R);
+        System.out.println(RED + "****************************************************************" + R);
+    }
+
+    public static void send(String op, String json) {
+        if (!DEBUG) return;
+        System.out.println("📤 [" + op + "] Request JSON:");
+        System.out.println(json);
+        line();
+    }
+
+    public static void recv(String op, String json) {
+        if (!DEBUG) return;
+        System.out.println("📥 [" + op + "] Response JSON:");
+        System.out.println(json);
+        line();
+    }
+}
+package test.it.utils.log;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * TestResult — накопитель результатов внутри одного теста:
+ *  - ok(...) печатает зелёным
+ *  - fail(...) печатает красным и добавляет в итоговую строку
+ *  - summaryLine() возвращает одну строку: PASS/FAIL + детали
+ */
+public final class TestResult {
+
+    private final String testName;
+    private final List<String> errors = new ArrayList<>();
+
+    public TestResult(String testName) {
+        this.testName = testName;
+    }
+
+    public void ok(String msg) {
+        TestLog.ok(msg);
+    }
+
+    public void fail(String msg) {
+        errors.add(msg);
+        TestLog.boom(msg);
+    }
+
+    public boolean isOk() {
+        return errors.isEmpty();
+    }
+
+    public String summaryLine() {
+        if (errors.isEmpty()) {
+            return TestLog.green("PASS: " + testName + " — OK");
+        }
+        StringBuilder sb = new StringBuilder();
+        sb.append(TestLog.red("FAIL: ")).append(testName).append(" — ").append(errors.size()).append(" ошибок: ");
+        for (int i = 0; i < errors.size(); i++) {
+            if (i > 0) sb.append(" | ");
+            sb.append(errors.get(i));
+        }
+        return sb.toString();
+    }
+}
+package test.it.utils;
+
+import utils.crypto.Ed25519Util;
+
+import java.util.Base64;
+import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
+
+/**
+ * TestConfig — конфиг IT тестов:
+ *  - 3 пользователя (TestUser1/2/3)
+ *  - ключи по login через map (device/solana/blockchain/session)
+ *  - blockchainName = login + "-" + "001"
+ *
+ * Важно:
+ *  - privateKey = Ed25519Util.generatePrivateKeyFromString(seed) (sha256(seed) => 32 bytes)
+ *  - publicKey  = Ed25519Util.derivePublicKey(privateKey)
+ *  - device/solana/blockchain ключи пока одинаковые (seed = login)
+ *  - session ключ отдельный (seed = "session:" + login) — чтобы SessionLogin был честнее.
+ */
+public final class TestConfig {
+
+    private TestConfig() {}
+
+    public static final String WS_URI_LOCAL = "ws://localhost:7070/ws";
+    public static final String WS_URI_Server = "wss://shineup.me/ws";
+
+    // по умолчанию LOCAL, но можно переопределить: -Dit.wsUri=...
+    public static final String WS_URI = System.getProperty("it.wsUri", WS_URI_LOCAL);
+
+    public static final long TEST_BCH_LIMIT = 50_000_000L;
+    public static final String TEST_CLIENT_INFO = "it-tests";
+
+    public static boolean DEBUG() {
+        return Boolean.parseBoolean(System.getProperty("it.debug", "true"));
+    }
+
+    // 3 users
+    public static final String DEFAULT_LOGIN1 = "TestUser1";
+    public static final String DEFAULT_LOGIN2 = "TestUser2";
+    public static final String DEFAULT_LOGIN3 = "TestUser3";
+    public static final String DEFAULT_BCH_SUFFIX_3 = "001";
+
+    public static String LOGIN()  { return System.getProperty("it.login1", DEFAULT_LOGIN1); }
+    public static String LOGIN2() { return System.getProperty("it.login2", DEFAULT_LOGIN2); }
+    public static String LOGIN3() { return System.getProperty("it.login3", DEFAULT_LOGIN3); }
+
+    public static String BCH_SUFFIX_3() {
+        return System.getProperty("it.bchSuffix", DEFAULT_BCH_SUFFIX_3);
+    }
+
+    public static String getBlockchainName(String login) {
+        if (login == null) throw new IllegalArgumentException("login is null");
+        return login + "-" + BCH_SUFFIX_3();
+    }
+
+    // ============ key maps ============
+    private static final Map<String, byte[]> devicePriv = new ConcurrentHashMap<>();
+    private static final Map<String, byte[]> devicePub  = new ConcurrentHashMap<>();
+
+    private static final Map<String, byte[]> solanaPriv = new ConcurrentHashMap<>();
+    private static final Map<String, byte[]> solanaPub  = new ConcurrentHashMap<>();
+
+    private static final Map<String, byte[]> bchPriv = new ConcurrentHashMap<>();
+    private static final Map<String, byte[]> bchPub  = new ConcurrentHashMap<>();
+
+    // NEW: session keys (для SessionLogin v2)
+    private static final Map<String, byte[]> sessionPriv = new ConcurrentHashMap<>();
+    private static final Map<String, byte[]> sessionPub  = new ConcurrentHashMap<>();
+
+    static {
+        initUserKeys(LOGIN());
+        initUserKeys(LOGIN2());
+        initUserKeys(LOGIN3());
+    }
+
+    private static void initUserKeys(String login) {
+        // seed = login
+        byte[] priv = Ed25519Util.generatePrivateKeyFromString(login); // sha256(login) => 32 bytes
+        byte[] pub  = Ed25519Util.derivePublicKey(priv);
+
+        // пока одинаковые
+        devicePriv.put(login, priv);
+        devicePub.put(login, pub);
+
+        solanaPriv.put(login, priv);
+        solanaPub.put(login, pub);
+
+        bchPriv.put(login, priv);
+        bchPub.put(login, pub);
+
+        // session seed = "session:" + login (отдельно!)
+        byte[] sPriv = Ed25519Util.generatePrivateKeyFromString("session:" + login);
+        byte[] sPub  = Ed25519Util.derivePublicKey(sPriv);
+
+        sessionPriv.put(login, sPriv);
+        sessionPub.put(login, sPub);
+    }
+
+    // ============ requested getters (with your names) ============
+
+    public static byte[] getDevicePrivatKey(String login) { return cloneOrThrow(devicePriv.get(login), "devicePriv", login); }
+    public static byte[] getDevicePublicKey(String login) { return cloneOrThrow(devicePub.get(login), "devicePub", login); }
+
+    public static byte[] getSolanaPrivatKey(String login) { return cloneOrThrow(solanaPriv.get(login), "solanaPriv", login); }
+    public static byte[] getSolanaPublicKey(String login) { return cloneOrThrow(solanaPub.get(login), "solanaPub", login); }
+
+    public static byte[] getBlockchainPrivatKey(String login) { return cloneOrThrow(bchPriv.get(login), "bchPriv", login); }
+    public static byte[] getBlockchainPublicKey(String login) { return cloneOrThrow(bchPub.get(login), "bchPub", login); }
+
+    // NEW: session getters
+    public static byte[] getSessionPrivatKey(String login) { return cloneOrThrow(sessionPriv.get(login), "sessionPriv", login); }
+    public static byte[] getSessionPublicKey(String login) { return cloneOrThrow(sessionPub.get(login), "sessionPub", login); }
+
+    // ============ base64 helpers ============
+    public static String devicePublicKeyB64(String login) { return Base64.getEncoder().encodeToString(getDevicePublicKey(login)); }
+    public static String solanaPublicKeyB64(String login) { return Base64.getEncoder().encodeToString(getSolanaPublicKey(login)); }
+    public static String blockchainPublicKeyB64(String login) { return Base64.getEncoder().encodeToString(getBlockchainPublicKey(login)); }
+
+    // NEW: session pub b64 helper
+    public static String sessionPublicKeyB64(String login) { return Base64.getEncoder().encodeToString(getSessionPublicKey(login)); }
+
+    // ============ backward-compatible helpers for "user1" ============
+    public static String BCH_NAME() { return getBlockchainName(LOGIN()); }
+    public static String BCH_NAME2() { return getBlockchainName(LOGIN2()); }
+    public static String BCH_NAME3() { return getBlockchainName(LOGIN3()); }
+
+    /** solanaKey для AddUser: публичный ключ Solana-пользователя */
+    public static String SOLANA_PUBKEY_B64() { return solanaPublicKeyB64(LOGIN()); }
+    public static String SOLANA2_PUBKEY_B64() { return solanaPublicKeyB64(LOGIN2()); }
+    public static String SOLANA3_PUBKEY_B64() { return solanaPublicKeyB64(LOGIN3()); }
+
+    /** blockchainKey для AddUser: публичный ключ блокчейна */
+    public static String BLOCKCHAIN_PUBKEY_B64() { return blockchainPublicKeyB64(LOGIN()); }
+    public static String BLOCKCHAIN2_PUBKEY_B64() { return blockchainPublicKeyB64(LOGIN2()); }
+    public static String BLOCKCHAIN3_PUBKEY_B64() { return blockchainPublicKeyB64(LOGIN3()); }
+
+    public static String DEVICE_PUBKEY_B64() { return devicePublicKeyB64(LOGIN()); }
+    public static String DEVICE2_PUBKEY_B64() { return devicePublicKeyB64(LOGIN2()); }
+    public static String DEVICE3_PUBKEY_B64() { return devicePublicKeyB64(LOGIN3()); }
+
+    // NEW: session pub b64 compat
+    public static String SESSION_PUBKEY_B64() { return sessionPublicKeyB64(LOGIN()); }
+    public static String SESSION2_PUBKEY_B64() { return sessionPublicKeyB64(LOGIN2()); }
+    public static String SESSION3_PUBKEY_B64() { return sessionPublicKeyB64(LOGIN3()); }
+
+    // ============ misc ============
+    public static String fakeStoragePwd() {
+        return "pwd-" + System.nanoTime();
+    }
+
+    private static byte[] cloneOrThrow(byte[] v, String mapName, String login) {
+        if (login == null) throw new IllegalArgumentException("login is null");
+        if (v == null) throw new IllegalStateException("No key in " + mapName + " for login=" + login);
+        return v.clone();
+    }
+}
+package test.it.utils;
+
+import java.util.concurrent.atomic.AtomicLong;
+
+/** Генератор уникальных requestId для IT тестов (в пределах одной JVM). */
+public final class TestIds {
+    private static final AtomicLong SEQ = new AtomicLong(0);
+
+    private TestIds() {}
+
+    public static String next(String prefix) {
+        long n = SEQ.incrementAndGet();
+        return "it-" + (prefix == null ? "req" : prefix) + "-" + n;
+    }
+}
+package test.it.utils.ws;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import test.it.utils.TestConfig;
+import test.it.utils.log.TestLog;
+
+import java.time.Duration;
+
+/**
+ * WsSession — одно WS соединение на много запросов.
+ *
+ * Использование в тесте:
+ * try (WsSession ws = WsSession.open()) {
+ *   String resp = ws.call("AuthChallenge", JsonBuilders.authChallenge(login), t);
+ * }
+ */
+public final class WsSession implements AutoCloseable {
+
+    private static final ObjectMapper M = new ObjectMapper();
+
+    private final WsTestClient client;
+
+    private WsSession(WsTestClient client) {
+        this.client = client;
+    }
+
+    public static WsSession open() {
+        return new WsSession(new WsTestClient(TestConfig.WS_URI));
+    }
+
+    /** Отправить JSON (в котором уже есть requestId) и получить JSON ответ строкой. */
+    public String call(String op, String requestJson, Duration timeout) {
+        String requestId = extractRequestId(requestJson);
+        if (requestId == null || requestId.isBlank()) throw new IllegalArgumentException("requestJson must contain requestId: " + requestJson);
+
+        if (TestConfig.DEBUG()) TestLog.send(op, requestJson);
+
+        String resp = client.request(requestId, requestJson, timeout);
+
+        if (TestConfig.DEBUG()) TestLog.recv(op, resp);
+
+        return resp;
+    }
+
+    private static String extractRequestId(String json) {
+        try {
+            JsonNode root = M.readTree(json);
+            JsonNode id = root.get("requestId");
+            return (id == null || id.isNull()) ? null : id.asText();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    @Override
+    public void close() {
+        client.close();
+    }
+}
+package test.it.utils.ws;
+
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.WebSocket;
+import java.time.Duration;
+import java.util.Map;
+import java.util.concurrent.*;
+
+public final class WsTestClient implements AutoCloseable {
+
+    private static final ObjectMapper MAPPER = new ObjectMapper();
+
+    private final WebSocket ws;
+    private final Map<String, CompletableFuture<String>> pending = new ConcurrentHashMap<>();
+
+    public WsTestClient(String wsUri) {
+        HttpClient client = HttpClient.newHttpClient();
+        this.ws = client.newWebSocketBuilder()
+                .connectTimeout(Duration.ofSeconds(5))
+                .buildAsync(URI.create(wsUri), new WebSocket.Listener() {
+                    @Override
+                    public CompletionStage<?> onText(WebSocket webSocket, CharSequence data, boolean last) {
+                        String msg = data.toString();
+                        String requestId = extractRequestId(msg);
+                        if (requestId != null) {
+                            CompletableFuture<String> f = pending.remove(requestId);
+                            if (f != null) f.complete(msg);
+                        }
+                        webSocket.request(1);
+                        return CompletableFuture.completedFuture(null);
+                    }
+
+                    @Override
+                    public void onError(WebSocket webSocket, Throwable error) {
+                        // Завалим все ожидания, чтобы тест корректно упал
+                        pending.forEach((k, f) -> f.completeExceptionally(error));
+                        pending.clear();
+                    }
+                }).join();
+
+        this.ws.request(1);
+    }
+
+    public String request(String requestId, String json, Duration timeout) {
+        CompletableFuture<String> fut = new CompletableFuture<>();
+        pending.put(requestId, fut);
+        ws.sendText(json, true);
+        try {
+            return fut.get(timeout.toMillis(), TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            pending.remove(requestId);
+            throw new RuntimeException("Timeout/Fail waiting response requestId=" + requestId, e);
+        }
+    }
+
+    private static String extractRequestId(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode id = root.get("requestId");
+            return id != null && !id.isNull() ? id.asText() : null;
+        } catch (Exception ignored) {
+            return null;
+        }
+    }
+
+    @Override
+    public void close() {
+        try {
+            ws.sendClose(WebSocket.NORMAL_CLOSURE, "bye").join();
+        } catch (Exception ignored) {}
+    }
+}

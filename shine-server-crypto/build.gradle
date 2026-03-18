@@ -1,0 +1,29 @@
+plugins {
+    id 'java'
+}
+
+group = 'shine'       // можешь поставить свой group
+version = '1.0.0'
+
+java {
+    toolchain {
+        languageVersion = JavaLanguageVersion.of(17)
+    }
+}
+
+repositories {
+    mavenCentral()
+}
+
+dependencies {
+    // BouncyCastle для Ed25519 и SHA-256
+    implementation 'org.bouncycastle:bcprov-jdk18on:1.78.1'
+
+    implementation "org.slf4j:slf4j-api:2.0.16"          // вызов логгера
+
+    testImplementation 'org.junit.jupiter:junit-jupiter:5.11.0'
+}
+
+test {
+    useJUnitPlatform()
+}

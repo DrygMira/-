@@ -1,0 +1,2832 @@
+package shine.db.dao;
+
+import shine.db.SqliteDbController;
+import shine.db.entities.ActiveSessionEntry;
+
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * DAO для таблицы active_sessions.
+ *
+ * Правило:
+ * - методы с Connection НЕ закрывают соединение
+ * - методы без Connection сами открывают и закрывают соединение
+ */
+public final class ActiveSessionsDAO {
+
+    private static volatile ActiveSessionsDAO instance;
+    private final SqliteDbController db = SqliteDbController.getInstance();
+
+    private ActiveSessionsDAO() { }
+
+    public static ActiveSessionsDAO getInstance() {
+        if (instance == null) {
+            synchronized (ActiveSessionsDAO.class) {
+                if (instance == null) instance = new ActiveSessionsDAO();
+            }
+        }
+        return instance;
+    }
+
+    // -------------------- INSERT --------------------
+
+    public void insert(Connection c, ActiveSessionEntry session) throws SQLException {
+        String sql = """
+            INSERT INTO active_sessions (
+                session_id,
+                login,
+                session_key,
+                storage_pwd,
+                session_created_at_ms,
+                last_authirificated_at_ms,
+                push_endpoint,
+                push_p256dh_key,
+                push_auth_key,
+                client_ip,
+                client_info_from_client,
+                client_info_from_request,
+                user_language
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1,  session.getSessionId());
+            ps.setString(2,  session.getLogin());
+            ps.setString(3,  session.getSessionKey());
+            ps.setString(4,  session.getStoragePwd());
+            ps.setLong(5,    session.getSessionCreatedAtMs());
+            ps.setLong(6,    session.getLastAuthirificatedAtMs());
+            ps.setString(7,  session.getPushEndpoint());
+            ps.setString(8,  session.getPushP256dhKey());
+            ps.setString(9,  session.getPushAuthKey());
+            ps.setString(10, session.getClientIp());
+            ps.setString(11, session.getClientInfoFromClient());
+            ps.setString(12, session.getClientInfoFromRequest());
+            ps.setString(13, session.getUserLanguage());
+            ps.executeUpdate();
+        }
+    }
+
+    public void insert(ActiveSessionEntry session) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            insert(c, session);
+        }
+    }
+
+    // -------------------- SELECT --------------------
+
+    public ActiveSessionEntry getBySessionId(Connection c, String sessionId) throws SQLException {
+        String sql = """
+            SELECT
+                session_id,
+                login,
+                session_key,
+                storage_pwd,
+                session_created_at_ms,
+                last_authirificated_at_ms,
+                push_endpoint,
+                push_p256dh_key,
+                push_auth_key,
+                client_ip,
+                client_info_from_client,
+                client_info_from_request,
+                user_language
+            FROM active_sessions
+            WHERE session_id = ?
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, sessionId);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                return mapRow(rs);
+            }
+        }
+    }
+
+    public ActiveSessionEntry getBySessionId(String sessionId) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return getBySessionId(c, sessionId);
+        }
+    }
+
+    public List<ActiveSessionEntry> getByLogin(Connection c, String login) throws SQLException {
+        String sql = """
+            SELECT
+                session_id,
+                login,
+                session_key,
+                storage_pwd,
+                session_created_at_ms,
+                last_authirificated_at_ms,
+                push_endpoint,
+                push_p256dh_key,
+                push_auth_key,
+                client_ip,
+                client_info_from_client,
+                client_info_from_request,
+                user_language
+            FROM active_sessions
+            WHERE login = ?
+            """;
+
+        List<ActiveSessionEntry> result = new ArrayList<>();
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, login);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) result.add(mapRow(rs));
+            }
+        }
+
+        return result;
+    }
+
+    public List<ActiveSessionEntry> getByLogin(String login) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return getByLogin(c, login);
+        }
+    }
+
+    // -------------------- UPDATE --------------------
+
+    public void updateLastAuthirificatedAtMs(Connection c, String sessionId, long lastAuthMs) throws SQLException {
+        String sql = """
+            UPDATE active_sessions
+            SET last_authirificated_at_ms = ?
+            WHERE session_id = ?
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, lastAuthMs);
+            ps.setString(2, sessionId);
+            ps.executeUpdate();
+        }
+    }
+
+    public void updateLastAuthirificatedAtMs(String sessionId, long lastAuthMs) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            updateLastAuthirificatedAtMs(c, sessionId, lastAuthMs);
+        }
+    }
+
+    public void updateOnRefresh(
+            Connection c,
+            String sessionId,
+            long lastAuthMs,
+            String clientIp,
+            String clientInfoFromClient,
+            String clientInfoFromRequest,
+            String userLanguage
+    ) throws SQLException {
+
+        String sql = """
+            UPDATE active_sessions
+            SET
+                last_authirificated_at_ms = ?,
+                client_ip                = ?,
+                client_info_from_client  = ?,
+                client_info_from_request = ?,
+                user_language            = ?
+            WHERE session_id = ?
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, lastAuthMs);
+            ps.setString(2, clientIp);
+            ps.setString(3, clientInfoFromClient);
+            ps.setString(4, clientInfoFromRequest);
+            ps.setString(5, userLanguage);
+            ps.setString(6, sessionId);
+            ps.executeUpdate();
+        }
+    }
+
+    public void updateOnRefresh(
+            String sessionId,
+            long lastAuthMs,
+            String clientIp,
+            String clientInfoFromClient,
+            String clientInfoFromRequest,
+            String userLanguage
+    ) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            updateOnRefresh(c, sessionId, lastAuthMs, clientIp, clientInfoFromClient, clientInfoFromRequest, userLanguage);
+        }
+    }
+
+    // -------------------- DELETE --------------------
+
+    public void deleteBySessionId(Connection c, String sessionId) throws SQLException {
+        String sql = "DELETE FROM active_sessions WHERE session_id = ?";
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, sessionId);
+            ps.executeUpdate();
+        }
+    }
+
+    public void deleteBySessionId(String sessionId) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            deleteBySessionId(c, sessionId);
+        }
+    }
+
+    // -------------------- MAPPER --------------------
+
+    private ActiveSessionEntry mapRow(ResultSet rs) throws SQLException {
+        String sessionId              = rs.getString("session_id");
+        String login                  = rs.getString("login");
+        String sessionKey             = rs.getString("session_key");
+        String storagePwd             = rs.getString("storage_pwd");
+        long   sessionCreatedAtMs     = rs.getLong("session_created_at_ms");
+        long   lastAuthirificatedAtMs = rs.getLong("last_authirificated_at_ms");
+        String pushEndpoint           = rs.getString("push_endpoint");
+        String pushP256dhKey          = rs.getString("push_p256dh_key");
+        String pushAuthKey            = rs.getString("push_auth_key");
+        String clientIp               = rs.getString("client_ip");
+        String clientInfoFromClient   = rs.getString("client_info_from_client");
+        String clientInfoFromRequest  = rs.getString("client_info_from_request");
+        String userLanguage           = rs.getString("user_language");
+
+        return new ActiveSessionEntry(
+                sessionId,
+                login,
+                sessionKey,
+                storagePwd,
+                sessionCreatedAtMs,
+                lastAuthirificatedAtMs,
+                pushEndpoint,
+                pushP256dhKey,
+                pushAuthKey,
+                clientIp,
+                clientInfoFromClient,
+                clientInfoFromRequest,
+                userLanguage
+        );
+    }
+}
+package shine.db.dao;
+
+import shine.db.SqliteDbController;
+import shine.db.entities.BlockchainStateEntry;
+
+import java.sql.*;
+
+public final class BlockchainStateDAO {
+
+    private static volatile BlockchainStateDAO instance;
+    private final SqliteDbController db = SqliteDbController.getInstance();
+
+    private BlockchainStateDAO() {}
+
+    public static BlockchainStateDAO getInstance() {
+        if (instance == null) {
+            synchronized (BlockchainStateDAO.class) {
+                if (instance == null) instance = new BlockchainStateDAO();
+            }
+        }
+        return instance;
+    }
+
+    /** Получить по blockchainName без внешнего соединения. Сам открывает/закрывает. */
+    public BlockchainStateEntry getByBlockchainName(String blockchainName) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return getByBlockchainName(c, blockchainName);
+        }
+    }
+
+    /** Получить по blockchainName с внешним соединением. Соединение НЕ закрывает. */
+    public BlockchainStateEntry getByBlockchainName(Connection c, String blockchainName) throws SQLException {
+        String sql = """
+            SELECT
+                blockchain_name,
+                login,
+                blockchain_key,
+                size_limit,
+                file_size_bytes,
+                last_block_number,
+                last_block_hash,
+                updated_at_ms
+            FROM blockchain_state
+            WHERE blockchain_name = ?
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, blockchainName);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                return mapRow(rs);
+            }
+        }
+    }
+
+    /** UPSERT без внешнего соединения. Сам открывает/закрывает. */
+    public void upsert(BlockchainStateEntry e) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            upsert(c, e);
+        }
+    }
+
+    /** UPSERT с внешним соединением. Соединение НЕ закрывает. */
+    public void upsert(Connection c, BlockchainStateEntry e) throws SQLException {
+        String sql = """
+            INSERT INTO blockchain_state (
+                blockchain_name,
+                login,
+                blockchain_key,
+                size_limit,
+                file_size_bytes,
+                last_block_number,
+                last_block_hash,
+                updated_at_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            ON CONFLICT(blockchain_name)
+            DO UPDATE SET
+                login            = excluded.login,
+                blockchain_key   = excluded.blockchain_key,
+                size_limit       = excluded.size_limit,
+                file_size_bytes  = excluded.file_size_bytes,
+                last_block_number= excluded.last_block_number,
+                last_block_hash  = excluded.last_block_hash,
+                updated_at_ms    = excluded.updated_at_ms
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            int i = 1;
+
+            ps.setString(i++, e.getBlockchainName());
+            ps.setString(i++, nn(e.getLogin()));
+            ps.setString(i++, nn(e.getBlockchainKey()));
+
+            ps.setLong(i++, e.getSizeLimit());
+            ps.setLong(i++, e.getFileSizeBytes());
+
+            ps.setInt(i++, e.getLastBlockNumber());
+            setBytesNullable(ps, i++, e.getLastBlockHash());
+
+            ps.setLong(i++, e.getUpdatedAtMs());
+
+            ps.executeUpdate();
+        }
+    }
+
+    /**
+     * Атомарно увеличить file_size_bytes на deltaBytes, но только если НЕ превысим size_limit.
+     */
+    public boolean tryIncreaseFileSizeWithinLimit(Connection c, String blockchainName, long deltaBytes, long nowMs) throws SQLException {
+        String sql = """
+            UPDATE blockchain_state
+            SET
+                file_size_bytes = file_size_bytes + ?,
+                updated_at_ms   = ?
+            WHERE
+                blockchain_name = ?
+                AND (file_size_bytes + ?) <= size_limit
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, deltaBytes);
+            ps.setLong(2, nowMs);
+            ps.setString(3, blockchainName);
+            ps.setLong(4, deltaBytes);
+            return ps.executeUpdate() > 0;
+        }
+    }
+
+    private BlockchainStateEntry mapRow(ResultSet rs) throws SQLException {
+        BlockchainStateEntry e = new BlockchainStateEntry();
+
+        e.setBlockchainName(rs.getString("blockchain_name"));
+        e.setLogin(rs.getString("login"));
+        e.setBlockchainKey(rs.getString("blockchain_key"));
+
+        e.setSizeLimit(rs.getLong("size_limit"));
+        e.setFileSizeBytes(rs.getLong("file_size_bytes"));
+
+        e.setLastBlockNumber(rs.getInt("last_block_number"));
+        e.setLastBlockHash(rs.getBytes("last_block_hash")); // nullable
+
+        e.setUpdatedAtMs(rs.getLong("updated_at_ms"));
+
+        return e;
+    }
+
+    private static void setBytesNullable(PreparedStatement ps, int index, byte[] b) throws SQLException {
+        if (b != null) ps.setBytes(index, b);
+        else ps.setNull(index, Types.BLOB);
+    }
+
+    private static String nn(String s) { return s == null ? "" : s; }
+}
+package shine.db.dao;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import shine.db.SqliteDbController;
+import shine.db.entities.BlockEntry;
+
+import java.sql.*;
+
+/**
+ * DAO для таблицы blocks (новый формат).
+ *
+ * Правило:
+ * - методы с Connection НЕ закрывают соединение
+ * - методы без Connection сами открывают и закрывают соединение
+ *
+ * Ключ:
+ * - (bch_name, block_number) — уникальная пара в рамках общей БД сервера.
+ */
+public final class BlocksDAO {
+
+    private static volatile BlocksDAO instance;
+    private final SqliteDbController db = SqliteDbController.getInstance();
+    private static final Logger log = LoggerFactory.getLogger(BlocksDAO.class);
+
+    private BlocksDAO() { }
+
+    public static BlocksDAO getInstance() {
+        if (instance == null) {
+            synchronized (BlocksDAO.class) {
+                if (instance == null) instance = new BlocksDAO();
+            }
+        }
+        return instance;
+    }
+
+    // -------------------- INSERT --------------------
+
+    /** Вставка с внешним соединением. Соединение НЕ закрывает. */
+    public void insert(Connection c, BlockEntry e) throws SQLException {
+        log.info("DBG BlockEntry: type={} sub={} lineCode={} prevLineNumber={} thisLineNumber={} prevLineHashLen={}",
+                e.getMsgType(), e.getMsgSubType(),
+                e.getLineCode(), e.getPrevLineNumber(), e.getThisLineNumber(),
+                e.getPrevLineHash() == null ? null : e.getPrevLineHash().length
+        );
+
+        String sql = """
+            INSERT INTO blocks (
+                login,
+                bch_name,
+                block_number,
+                msg_type,
+                msg_sub_type,
+                block_bytes,
+                to_login,
+                to_bch_name,
+                to_block_number,
+                to_block_hash,
+                block_hash,
+                block_signature,
+                edited_by_block_number,
+                line_code,
+                prev_line_number,
+                prev_line_hash,
+                this_line_number
+            ) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            int i = 1;
+
+            ps.setString(i++, e.getLogin());
+            ps.setString(i++, e.getBchName());
+            ps.setInt(i++, e.getBlockNumber());
+
+            ps.setInt(i++, e.getMsgType());
+            ps.setInt(i++, e.getMsgSubType());
+
+            ps.setBytes(i++, e.getBlockBytes());
+
+            if (e.getToLogin() != null) ps.setString(i++, e.getToLogin());
+            else ps.setNull(i++, Types.VARCHAR);
+
+            if (e.getToBchName() != null) ps.setString(i++, e.getToBchName());
+            else ps.setNull(i++, Types.VARCHAR);
+
+            if (e.getToBlockNumber() != null) ps.setInt(i++, e.getToBlockNumber());
+            else ps.setNull(i++, Types.INTEGER);
+
+            if (e.getToBlockHash() != null) ps.setBytes(i++, e.getToBlockHash());
+            else ps.setNull(i++, Types.BLOB);
+
+            ps.setBytes(i++, e.getBlockHash());
+            ps.setBytes(i++, e.getBlockSignature());
+
+            if (e.getEditedByBlockNumber() != null) ps.setInt(i++, e.getEditedByBlockNumber());
+            else ps.setNull(i++, Types.INTEGER);
+
+            // NEW: line_code
+            if (e.getLineCode() != null) ps.setInt(i++, e.getLineCode());
+            else ps.setNull(i++, Types.INTEGER);
+
+            if (e.getPrevLineNumber() != null) ps.setInt(i++, e.getPrevLineNumber());
+            else ps.setNull(i++, Types.INTEGER);
+
+            if (e.getPrevLineHash() != null) ps.setBytes(i++, e.getPrevLineHash());
+            else ps.setNull(i++, Types.BLOB);
+
+            if (e.getThisLineNumber() != null) ps.setInt(i++, e.getThisLineNumber());
+            else ps.setNull(i++, Types.INTEGER);
+
+            ps.executeUpdate();
+        }
+    }
+
+    /** Вставка без внешнего соединения. Сам открывает/закрывает. */
+    public void insert(BlockEntry e) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            insert(c, e);
+        }
+    }
+
+    // -------------------- SELECT: HASH BY NUMBER --------------------
+
+    /** Получить block_hash по (bch_name, block_number). Нужен для линейной проверки. */
+    public byte[] getHashByNumber(Connection c, String bchName, int blockNumber) throws SQLException {
+        String sql = """
+            SELECT block_hash
+            FROM blocks
+            WHERE bch_name = ? AND block_number = ?
+            LIMIT 1
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, bchName);
+            ps.setInt(2, blockNumber);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                return rs.getBytes("block_hash");
+            }
+        }
+    }
+
+    public byte[] getHashByNumber(String bchName, int blockNumber) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return getHashByNumber(c, bchName, blockNumber);
+        }
+    }
+
+    // -------------------- SELECT: FULL ENTRY --------------------
+
+    public BlockEntry getByNumber(Connection c, String bchName, int blockNumber) throws SQLException {
+        String sql = """
+            SELECT
+                login,
+                bch_name,
+                block_number,
+                msg_type,
+                msg_sub_type,
+                block_bytes,
+                to_login,
+                to_bch_name,
+                to_block_number,
+                to_block_hash,
+                block_hash,
+                block_signature,
+                edited_by_block_number,
+                line_code,
+                prev_line_number,
+                prev_line_hash,
+                this_line_number
+            FROM blocks
+            WHERE bch_name = ? AND block_number = ?
+            LIMIT 1
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, bchName);
+            ps.setInt(2, blockNumber);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                return mapRow(rs);
+            }
+        }
+    }
+
+    public BlockEntry getByNumber(String bchName, int blockNumber) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return getByNumber(c, bchName, blockNumber);
+        }
+    }
+
+    // -------------------- INTERNAL --------------------
+
+    private BlockEntry mapRow(ResultSet rs) throws SQLException {
+        BlockEntry e = new BlockEntry();
+
+        e.setLogin(rs.getString("login"));
+        e.setBchName(rs.getString("bch_name"));
+        e.setBlockNumber(rs.getInt("block_number"));
+
+        e.setMsgType(rs.getInt("msg_type"));
+        e.setMsgSubType(rs.getInt("msg_sub_type"));
+
+        e.setBlockBytes(rs.getBytes("block_bytes"));
+
+        String toLogin = rs.getString("to_login");
+        if (rs.wasNull()) toLogin = null;
+        e.setToLogin(toLogin);
+
+        String toBchName = rs.getString("to_bch_name");
+        if (rs.wasNull()) toBchName = null;
+        e.setToBchName(toBchName);
+
+        Integer toBlockNumber = (Integer) rs.getObject("to_block_number");
+        e.setToBlockNumber(toBlockNumber);
+
+        byte[] toHash = rs.getBytes("to_block_hash");
+        if (rs.wasNull()) toHash = null;
+        e.setToBlockHash(toHash);
+
+        e.setBlockHash(rs.getBytes("block_hash"));
+        e.setBlockSignature(rs.getBytes("block_signature"));
+
+        Integer editedBy = (Integer) rs.getObject("edited_by_block_number");
+        e.setEditedByBlockNumber(editedBy);
+
+        // NEW: line_code
+        Integer lineCode = (Integer) rs.getObject("line_code");
+        e.setLineCode(lineCode);
+
+        Integer prevLn = (Integer) rs.getObject("prev_line_number");
+        e.setPrevLineNumber(prevLn);
+
+        byte[] prevLh = rs.getBytes("prev_line_hash");
+        if (rs.wasNull()) prevLh = null;
+        e.setPrevLineHash(prevLh);
+
+        Integer thisLn = (Integer) rs.getObject("this_line_number");
+        e.setThisLineNumber(thisLn);
+
+        return e;
+    }
+}
+package shine.db.dao;
+
+import shine.db.SqliteDbController;
+import shine.db.entities.IpGeoCacheEntry;
+
+import java.sql.*;
+
+/**
+ * DAO для таблицы ip_geo_cache.
+ *
+ * Таблица:
+ *  - ip            TEXT PRIMARY KEY
+ *  - geo           TEXT
+ *  - updated_at_ms INTEGER NOT NULL
+ *
+ * Правило:
+ * - методы с Connection НЕ закрывают соединение
+ * - методы без Connection сами открывают и закрывают соединение
+ */
+public final class IpGeoCacheDAO {
+
+    private static volatile IpGeoCacheDAO instance;
+    private final SqliteDbController db = SqliteDbController.getInstance();
+
+    private IpGeoCacheDAO() { }
+
+    public static IpGeoCacheDAO getInstance() {
+        if (instance == null) {
+            synchronized (IpGeoCacheDAO.class) {
+                if (instance == null) instance = new IpGeoCacheDAO();
+            }
+        }
+        return instance;
+    }
+
+    // -------------------- UPSERT --------------------
+
+    /** UPSERT с внешним соединением. Соединение НЕ закрывает. */
+    public void upsert(Connection c, IpGeoCacheEntry entry) throws SQLException {
+        String sql = """
+            INSERT INTO ip_geo_cache (ip, geo, updated_at_ms)
+            VALUES (?, ?, ?)
+            ON CONFLICT(ip)
+            DO UPDATE SET
+                geo           = excluded.geo,
+                updated_at_ms = excluded.updated_at_ms
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, entry.getIp());
+            ps.setString(2, entry.getGeo());
+            ps.setLong(3, entry.getUpdatedAtMs());
+            ps.executeUpdate();
+        }
+    }
+
+    /** UPSERT без внешнего соединения. Сам открывает/закрывает. */
+    public void upsert(IpGeoCacheEntry entry) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            upsert(c, entry);
+        }
+    }
+
+    // -------------------- SELECT --------------------
+
+    /** Получить по IP с внешним соединением. Соединение НЕ закрывает. */
+    public IpGeoCacheEntry getByIp(Connection c, String ip) throws SQLException {
+        String sql = """
+            SELECT ip, geo, updated_at_ms
+            FROM ip_geo_cache
+            WHERE ip = ?
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, ip);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                return mapRow(rs);
+            }
+        }
+    }
+
+    /** Получить по IP без внешнего соединения. Сам открывает/закрывает. */
+    public IpGeoCacheEntry getByIp(String ip) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return getByIp(c, ip);
+        }
+    }
+
+    // -------------------- DELETE --------------------
+
+    /** Удалить старые записи с внешним соединением. Соединение НЕ закрывает. */
+    public int deleteOlderThan(Connection c, long thresholdMs) throws SQLException {
+        String sql = "DELETE FROM ip_geo_cache WHERE updated_at_ms < ?";
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setLong(1, thresholdMs);
+            return ps.executeUpdate();
+        }
+    }
+
+    /** Удалить старые записи без внешнего соединения. Сам открывает/закрывает. */
+    public int deleteOlderThan(long thresholdMs) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return deleteOlderThan(c, thresholdMs);
+        }
+    }
+
+    // -------------------- MAPPER --------------------
+
+    private IpGeoCacheEntry mapRow(ResultSet rs) throws SQLException {
+        String ip = rs.getString("ip");
+        String geo = rs.getString("geo");
+        long updatedAtMs = rs.getLong("updated_at_ms");
+        return new IpGeoCacheEntry(ip, geo, updatedAtMs);
+    }
+}
+package shine.db.dao;
+
+import shine.db.SqliteDbController;
+import shine.db.entities.SolanaUserEntry;
+
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * SolanaUsersDAO — локальная таблица пользователей из Solana.
+ *
+ * Таблица: solana_users
+ *
+ * Колонки:
+ *  - login           TEXT PRIMARY KEY (COLLATE NOCASE)
+ *  - blockchain_name TEXT NOT NULL
+ *  - solana_key      TEXT NOT NULL
+ *  - blockchain_key  TEXT NOT NULL
+ *  - device_key      TEXT NOT NULL
+ *
+ * Правило работы с соединениями:
+ *  - методы с Connection НЕ закрывают соединение
+ *  - методы без Connection сами открывают и закрывают соединение
+ */
+public final class SolanaUsersDAO {
+
+    private static volatile SolanaUsersDAO instance;
+    private final SqliteDbController db = SqliteDbController.getInstance();
+
+    private SolanaUsersDAO() {}
+
+    public static SolanaUsersDAO getInstance() {
+        if (instance == null) {
+            synchronized (SolanaUsersDAO.class) {
+                if (instance == null) instance = new SolanaUsersDAO();
+            }
+        }
+        return instance;
+    }
+
+    // -------------------- INSERT --------------------
+
+    /** Вставка с внешним соединением. Соединение НЕ закрывает. */
+    public void insert(Connection c, SolanaUserEntry user) throws SQLException {
+        String sql = """
+            INSERT INTO solana_users (
+                login, blockchain_name, solana_key, blockchain_key, device_key
+            ) VALUES (?, ?, ?, ?, ?)
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, user.getLogin());
+            ps.setString(2, user.getBlockchainName());
+            ps.setString(3, user.getSolanaKey());
+            ps.setString(4, user.getBlockchainKey());
+            ps.setString(5, user.getDeviceKey());
+            ps.executeUpdate();
+        }
+    }
+
+    /** Вставка без внешнего соединения. Сам открывает/закрывает. */
+    public void insert(SolanaUserEntry user) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            insert(c, user);
+        }
+    }
+
+    // -------------------- EXISTS --------------------
+
+    /** Проверка существования по login (case-insensitive) с внешним соединением. Соединение НЕ закрывает. */
+    public boolean existsByLogin(Connection c, String login) throws SQLException {
+        String sql = """
+            SELECT 1
+            FROM solana_users
+            WHERE LOWER(login) = LOWER(?)
+            LIMIT 1
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, login);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    /** Проверка существования по login (case-insensitive) без внешнего соединения. Сам открывает/закрывает. */
+    public boolean existsByLogin(String login) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return existsByLogin(c, login);
+        }
+    }
+
+    /** Проверка существования по blockchain_name (case-sensitive, как в БД) с внешним соединением. */
+    public boolean existsByBlockchainName(Connection c, String blockchainName) throws SQLException {
+        String sql = """
+            SELECT 1
+            FROM solana_users
+            WHERE blockchain_name = ?
+            LIMIT 1
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, blockchainName);
+            try (ResultSet rs = ps.executeQuery()) {
+                return rs.next();
+            }
+        }
+    }
+
+    /** Проверка существования по blockchain_name без внешнего соединения. */
+    public boolean existsByBlockchainName(String blockchainName) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return existsByBlockchainName(c, blockchainName);
+        }
+    }
+
+    // -------------------- SELECT --------------------
+
+    /** Получить по login (case-insensitive) с внешним соединением. Соединение НЕ закрывает. */
+    public SolanaUserEntry getByLogin(Connection c, String login) throws SQLException {
+        String sql = """
+            SELECT
+                login,
+                blockchain_name,
+                solana_key,
+                blockchain_key,
+                device_key
+            FROM solana_users
+            WHERE LOWER(login) = LOWER(?)
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, login);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                return mapRow(rs);
+            }
+        }
+    }
+
+    /** Получить по login (case-insensitive) без внешнего соединения. Сам открывает/закрывает. */
+    public SolanaUserEntry getByLogin(String login) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return getByLogin(c, login);
+        }
+    }
+
+    /** Получить по blockchain_name (case-sensitive) с внешним соединением. Соединение НЕ закрывает. */
+    public SolanaUserEntry getByBlockchainName(Connection c, String blockchainName) throws SQLException {
+        String sql = """
+            SELECT
+                login,
+                blockchain_name,
+                solana_key,
+                blockchain_key,
+                device_key
+            FROM solana_users
+            WHERE blockchain_name = ?
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, blockchainName);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                return mapRow(rs);
+            }
+        }
+    }
+
+    /** Получить по blockchain_name без внешнего соединения. */
+    public SolanaUserEntry getByBlockchainName(String blockchainName) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return getByBlockchainName(c, blockchainName);
+        }
+    }
+
+    /** Поиск по префиксу с внешним соединением. Соединение НЕ закрывает. */
+    public List<SolanaUserEntry> searchByLoginPrefix(Connection c, String prefix) throws SQLException {
+        String sql = """
+            SELECT
+                login,
+                blockchain_name,
+                solana_key,
+                blockchain_key,
+                device_key
+            FROM solana_users
+            WHERE LOWER(login) LIKE ?
+            ORDER BY login
+            LIMIT 5
+            """;
+
+        List<SolanaUserEntry> result = new ArrayList<>();
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, prefix.toLowerCase() + "%");
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) result.add(mapRow(rs));
+            }
+        }
+
+        return result;
+    }
+
+    /** Поиск по префиксу без внешнего соединения. Сам открывает/закрывает. */
+    public List<SolanaUserEntry> searchByLoginPrefix(String prefix) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return searchByLoginPrefix(c, prefix);
+        }
+    }
+
+    // -------------------- MAPPER --------------------
+
+    private SolanaUserEntry mapRow(ResultSet rs) throws SQLException {
+        SolanaUserEntry e = new SolanaUserEntry();
+
+        e.setLogin(rs.getString("login"));
+        e.setBlockchainName(rs.getString("blockchain_name"));
+        e.setSolanaKey(rs.getString("solana_key"));
+        e.setBlockchainKey(rs.getString("blockchain_key"));
+        e.setDeviceKey(rs.getString("device_key"));
+
+        return e;
+    }
+}
+package shine.db.dao;
+
+import shine.db.MsgSubType;
+import shine.db.SqliteDbController;
+
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * SubscriptionsDAO — агрегатный DAO для "каналов" (подписок).
+ *
+ * Возвращает по каждой активной подписке (FOLLOW) + "сам на себя":
+ *  - login цели (channelLogin)
+ *  - blockchainName цели (channelBchName)
+ *  - count публикаций (TEXT_NEW)
+ *  - last publication: bytes оригинального блока (для timestamp)
+ *  - last publication: bytes актуального блока (edit или orig) — для текста превью
+ *
+ * Важно:
+ * - это НЕ таблица => сущность результата хранится вложенным классом.
+ * - методы с Connection НЕ закрывают соединение
+ * - методы без Connection сами открывают и закрывают соединение
+ */
+public final class SubscriptionsDAO {
+
+    private static volatile SubscriptionsDAO instance;
+    private final SqliteDbController db = SqliteDbController.getInstance();
+
+    private SubscriptionsDAO() {}
+
+    public static SubscriptionsDAO getInstance() {
+        if (instance == null) {
+            synchronized (SubscriptionsDAO.class) {
+                if (instance == null) instance = new SubscriptionsDAO();
+            }
+        }
+        return instance;
+    }
+
+    /** Результат одной строки ("канал") для подписок. */
+    public static final class ChannelRow {
+
+        private final String channelLogin;
+        private final String channelBchName;
+
+        private final int publicationsCount;
+
+        /** Последняя публикация: global number (nullable если публикаций нет). */
+        private final Integer lastPublicationGlobalNumber;
+
+        /** Байты оригинальной публикации (FULL bytes блока) — для timestamp (nullable). */
+        private final byte[] lastPublicationBlockBytes;
+
+        /** Если публикация редактировалась: global number edit-блока (nullable). */
+        private final Integer lastEditGlobalNumber;
+
+        /** Байты edit-блока (FULL bytes блока) (nullable). */
+        private final byte[] lastEditBlockBytes;
+
+        public ChannelRow(String channelLogin,
+                          String channelBchName,
+                          int publicationsCount,
+                          Integer lastPublicationGlobalNumber,
+                          byte[] lastPublicationBlockBytes,
+                          Integer lastEditGlobalNumber,
+                          byte[] lastEditBlockBytes) {
+
+            this.channelLogin = channelLogin;
+            this.channelBchName = channelBchName;
+            this.publicationsCount = publicationsCount;
+            this.lastPublicationGlobalNumber = lastPublicationGlobalNumber;
+            this.lastPublicationBlockBytes = lastPublicationBlockBytes;
+            this.lastEditGlobalNumber = lastEditGlobalNumber;
+            this.lastEditBlockBytes = lastEditBlockBytes;
+        }
+
+        public String getChannelLogin() { return channelLogin; }
+        public String getChannelBchName() { return channelBchName; }
+
+        public int getPublicationsCount() { return publicationsCount; }
+
+        public Integer getLastPublicationGlobalNumber() { return lastPublicationGlobalNumber; }
+        public byte[] getLastPublicationBlockBytes() { return lastPublicationBlockBytes; }
+
+        public Integer getLastEditGlobalNumber() { return lastEditGlobalNumber; }
+        public byte[] getLastEditBlockBytes() { return lastEditBlockBytes; }
+    }
+
+    // В проекте msg_type=1 означает TEXT (у тебя это уже зафиксировано).
+    private static final int MSG_TYPE_TEXT = 1;
+
+    /**
+     * Получить список подписок (активные FOLLOW) + "сам на себя" и по каждой:
+     * - count публикаций (TEXT_NEW)
+     * - последнюю публикацию (orig bytes) + её edit (если есть)
+     *
+     * Поведение при 0 публикаций:
+     * - publications_count = 0
+     * - last_pub_* = NULL
+     * - last_edit_* = NULL
+     */
+    public List<ChannelRow> getSubscribedChannels(Connection c, String requesterLogin) throws SQLException {
+
+        String sql = """
+            WITH subs AS (
+                -- 1) FOLLOW-каналы
+                SELECT
+                    cs.to_login  AS channel_login,
+                    cs.to_bch_name AS channel_bch_name
+                FROM connections_state cs
+                WHERE cs.login = ?
+                  AND cs.rel_type = ?
+
+                UNION
+
+                -- 2) self: все блокчейны пользователя (если их несколько)
+                SELECT
+                    bs.login            AS channel_login,
+                    bs.blockchain_name  AS channel_bch_name
+                FROM blockchain_state bs
+                WHERE bs.login = ?
+            ),
+            pub_counts AS (
+                SELECT
+                    b.login AS channel_login,
+                    b.bch_name AS channel_bch_name,
+                    COUNT(*) AS publications_count
+                FROM blocks b
+                JOIN subs s
+                  ON s.channel_login = b.login
+                 AND s.channel_bch_name = b.bch_name
+                WHERE b.msg_type = ?
+                  AND b.msg_sub_type = ?
+                GROUP BY b.login, b.bch_name
+            ),
+            last_pub AS (
+                SELECT
+                    b.login AS channel_login,
+                    b.bch_name AS channel_bch_name,
+                    MAX(b.block_global_number) AS last_pub_global_number
+                FROM blocks b
+                JOIN subs s
+                  ON s.channel_login = b.login
+                 AND s.channel_bch_name = b.bch_name
+                WHERE b.msg_type = ?
+                  AND b.msg_sub_type = ?
+                GROUP BY b.login, b.bch_name
+            ),
+            last_pub_block AS (
+                SELECT
+                    b.login AS channel_login,
+                    b.bch_name AS channel_bch_name,
+                    b.block_global_number AS last_pub_global_number,
+                    b.block_byte AS last_pub_block_bytes,
+                    b.edited_by_block_global_number AS last_edit_global_number
+                FROM blocks b
+                JOIN last_pub lp
+                  ON lp.channel_login = b.login
+                 AND lp.channel_bch_name = b.bch_name
+                 AND lp.last_pub_global_number = b.block_global_number
+            ),
+            last_edit_block AS (
+                SELECT
+                    e.login AS channel_login,
+                    e.bch_name AS channel_bch_name,
+                    e.block_global_number AS last_edit_global_number,
+                    e.block_byte AS last_edit_block_bytes
+                FROM blocks e
+                JOIN last_pub_block p
+                  ON p.channel_login = e.login
+                 AND p.channel_bch_name = e.bch_name
+                 AND p.last_edit_global_number = e.block_global_number
+            )
+            SELECT
+                s.channel_login,
+                s.channel_bch_name,
+                COALESCE(pc.publications_count, 0) AS publications_count,
+                p.last_pub_global_number,
+                p.last_pub_block_bytes,
+                p.last_edit_global_number,
+                e.last_edit_block_bytes
+            FROM subs s
+            LEFT JOIN pub_counts pc
+              ON pc.channel_login = s.channel_login
+             AND pc.channel_bch_name = s.channel_bch_name
+            LEFT JOIN last_pub_block p
+              ON p.channel_login = s.channel_login
+             AND p.channel_bch_name = s.channel_bch_name
+            LEFT JOIN last_edit_block e
+              ON e.channel_login = s.channel_login
+             AND e.channel_bch_name = s.channel_bch_name
+            ORDER BY s.channel_login, s.channel_bch_name
+            """;
+
+        List<ChannelRow> out = new ArrayList<>();
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            int i = 1;
+
+            // FOLLOW
+            ps.setString(i++, requesterLogin);
+            ps.setInt(i++, (int) MsgSubType.CONNECTION_FOLLOW);
+
+            // self
+            ps.setString(i++, requesterLogin);
+
+            // pub_counts
+            ps.setInt(i++, MSG_TYPE_TEXT);
+            ps.setInt(i++, (int) MsgSubType.TEXT_NEW);
+
+            // last_pub
+            ps.setInt(i++, MSG_TYPE_TEXT);
+            ps.setInt(i++, (int) MsgSubType.TEXT_NEW);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    String channelLogin = rs.getString("channel_login");
+                    String channelBchName = rs.getString("channel_bch_name");
+
+                    int publicationsCount = rs.getInt("publications_count");
+
+                    Integer lastPubGn = (Integer) rs.getObject("last_pub_global_number");
+                    byte[] lastPubBytes = rs.getBytes("last_pub_block_bytes");
+
+                    Integer lastEditGn = (Integer) rs.getObject("last_edit_global_number");
+                    byte[] lastEditBytes = rs.getBytes("last_edit_block_bytes");
+
+                    out.add(new ChannelRow(
+                            channelLogin,
+                            channelBchName,
+                            publicationsCount,
+                            lastPubGn,
+                            lastPubBytes,
+                            lastEditGn,
+                            lastEditBytes
+                    ));
+                }
+            }
+        }
+
+        return out;
+    }
+
+    /** Вариант без внешнего соединения. Сам открывает/закрывает. */
+    public List<ChannelRow> getSubscribedChannels(String requesterLogin) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return getSubscribedChannels(c, requesterLogin);
+        }
+    }
+}
+package shine.db.dao;
+
+import shine.db.SqliteDbController;
+import shine.db.entities.SolanaUserEntry;
+
+import java.sql.*;
+
+/**
+ * UserCreateDAO — атомарное добавление пользователя:
+ *  - solana_users (login, blockchain_name, solana_key, blockchain_key, device_key)
+ *  - blockchain_state (blockchain_name, login, blockchain_key, size_limit, ... last_block_number=-1 ...)
+ *
+ * ВАЖНО:
+ *  - только INSERT (без перезаписи существующих записей)
+ *  - если login или blockchainName заняты — возвращаем false (пользователь уже есть/занято)
+ */
+public final class UserCreateDAO {
+
+    private static volatile UserCreateDAO instance;
+    private final SqliteDbController db = SqliteDbController.getInstance();
+    private final SolanaUsersDAO usersDao = SolanaUsersDAO.getInstance();
+
+    private UserCreateDAO() {}
+
+    public static UserCreateDAO getInstance() {
+        if (instance == null) {
+            synchronized (UserCreateDAO.class) {
+                if (instance == null) instance = new UserCreateDAO();
+            }
+        }
+        return instance;
+    }
+
+    /**
+     * @return true если добавили; false если занято (login уже есть или blockchainName уже существует).
+     */
+    public boolean insertUserWithBlockchain(
+            String login,
+            String blockchainName,
+            String solanaKey,
+            String blockchainKey,
+            String deviceKey,
+            long sizeLimit,
+            long nowMs
+    ) throws SQLException {
+
+        try (Connection c = db.getConnection()) {
+            boolean oldAuto = c.getAutoCommit();
+            c.setAutoCommit(false);
+
+            // BEGIN IMMEDIATE — чтобы сразу взять write-lock и не ловить гонки
+            try (Statement st = c.createStatement()) {
+                st.execute("BEGIN IMMEDIATE");
+            }
+
+            try {
+                // 1) solana_users
+                SolanaUserEntry u = new SolanaUserEntry();
+                u.setLogin(login);
+                u.setBlockchainName(blockchainName);
+                u.setSolanaKey(solanaKey);
+                u.setBlockchainKey(blockchainKey);
+                u.setDeviceKey(deviceKey);
+
+                usersDao.insert(c, u); // если login занят (NOCASE) или blockchainName (unique) -> constraint
+
+                // 2) blockchain_state — строго INSERT, без UPSERT (иначе можно перезаписать существующую цепочку)
+                insertBlockchainStateStrict(
+                        c,
+                        blockchainName,
+                        login,
+                        blockchainKey,
+                        sizeLimit,
+                        nowMs
+                );
+
+                c.commit();
+                return true;
+
+            } catch (SQLException e) {
+                c.rollback();
+
+                String msg = e.getMessage() == null ? "" : e.getMessage().toLowerCase();
+                if (msg.contains("constraint")) {
+                    return false;
+                }
+                throw e;
+
+            } finally {
+                c.setAutoCommit(oldAuto);
+            }
+        }
+    }
+
+    private static void insertBlockchainStateStrict(
+            Connection c,
+            String blockchainName,
+            String login,
+            String blockchainKey,
+            long sizeLimit,
+            long nowMs
+    ) throws SQLException {
+
+        String sql = """
+            INSERT INTO blockchain_state (
+                blockchain_name,
+                login,
+                blockchain_key,
+                size_limit,
+                file_size_bytes,
+                last_block_number,
+                last_block_hash,
+                updated_at_ms
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            int i = 1;
+            ps.setString(i++, blockchainName);
+            ps.setString(i++, login);
+            ps.setString(i++, blockchainKey);
+
+            ps.setLong(i++, sizeLimit);
+            ps.setLong(i++, 0L);
+
+            ps.setInt(i++, -1);
+            ps.setNull(i++, Types.BLOB); // старт: блоков ещё нет
+            ps.setLong(i++, nowMs);
+
+            ps.executeUpdate(); // если blockchainName занят -> constraint (PK)
+        }
+    }
+}
+package shine.db.dao;
+
+import shine.db.SqliteDbController;
+import shine.db.entities.UserParamEntry;
+
+import java.sql.*;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * UserParamsDAO — хранение сохранённых параметров пользователя.
+ *
+ * Правило:
+ * - методы с Connection НЕ закрывают соединение
+ * - методы без Connection сами открывают и закрывают соединение
+ *
+ * ЛОГИКА time_ms:
+ * - БД принимает запись только если она "новее" (time_ms строго больше текущего).
+ * - Реализовано атомарно одним SQL: UPSERT + WHERE users_params.time_ms < excluded.time_ms
+ */
+public final class UserParamsDAO {
+
+    private static volatile UserParamsDAO instance;
+    private final SqliteDbController db = SqliteDbController.getInstance();
+
+    private UserParamsDAO() { }
+
+    public static UserParamsDAO getInstance() {
+        if (instance == null) {
+            synchronized (UserParamsDAO.class) {
+                if (instance == null) instance = new UserParamsDAO();
+            }
+        }
+        return instance;
+    }
+
+    // -------------------- UPSERT (IF NEWER) --------------------
+
+    public int upsertIfNewer(Connection c, UserParamEntry e) throws SQLException {
+        String sql = """
+            INSERT INTO users_params (
+                login,
+                param,
+                time_ms,
+                value,
+                device_key,
+                signature
+            ) VALUES (?, ?, ?, ?, ?, ?)
+            ON CONFLICT(login, param)
+            DO UPDATE SET
+                time_ms    = excluded.time_ms,
+                value      = excluded.value,
+                device_key = excluded.device_key,
+                signature  = excluded.signature
+            WHERE users_params.time_ms < excluded.time_ms
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, e.getLogin());
+            ps.setString(2, e.getParam());
+            ps.setLong(3, e.getTimeMs());
+            ps.setString(4, e.getValue());
+
+            if (e.getDeviceKey() != null) ps.setString(5, e.getDeviceKey());
+            else ps.setNull(5, Types.VARCHAR);
+
+            if (e.getSignature() != null) ps.setString(6, e.getSignature());
+            else ps.setNull(6, Types.VARCHAR);
+
+            return ps.executeUpdate();
+        }
+    }
+
+    public int upsertIfNewer(UserParamEntry e) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return upsertIfNewer(c, e);
+        }
+    }
+
+    // -------------------- SELECT --------------------
+
+    public UserParamEntry getByLoginAndParam(Connection c, String login, String param) throws SQLException {
+        String sql = """
+            SELECT
+                login,
+                param,
+                time_ms,
+                value,
+                device_key,
+                signature
+            FROM users_params
+            WHERE login = ? AND param = ?
+            LIMIT 1
+            """;
+
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, login);
+            ps.setString(2, param);
+
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                return mapRow(rs);
+            }
+        }
+    }
+
+    public UserParamEntry getByLoginAndParam(String login, String param) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return getByLoginAndParam(c, login, param);
+        }
+    }
+
+    public List<UserParamEntry> getByLogin(Connection c, String login) throws SQLException {
+        String sql = """
+            SELECT
+                login,
+                param,
+                time_ms,
+                value,
+                device_key,
+                signature
+            FROM users_params
+            WHERE login = ?
+            ORDER BY time_ms DESC
+            """;
+
+        List<UserParamEntry> list = new ArrayList<>();
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, login);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) list.add(mapRow(rs));
+            }
+        }
+        return list;
+    }
+
+    public List<UserParamEntry> getByLogin(String login) throws SQLException {
+        try (Connection c = db.getConnection()) {
+            return getByLogin(c, login);
+        }
+    }
+
+    // -------------------- MAPPER --------------------
+
+    private static UserParamEntry mapRow(ResultSet rs) throws SQLException {
+        UserParamEntry e = new UserParamEntry();
+        e.setLogin(rs.getString("login"));
+        e.setParam(rs.getString("param"));
+        e.setTimeMs(rs.getLong("time_ms"));
+        e.setValue(rs.getString("value"));
+
+        String dk = rs.getString("device_key");
+        if (rs.wasNull()) dk = null;
+        e.setDeviceKey(dk);
+
+        String sig = rs.getString("signature");
+        if (rs.wasNull()) sig = null;
+        e.setSignature(sig);
+
+        return e;
+    }
+}
+package shine.db;
+
+import utils.config.AppConfig;
+
+import java.io.BufferedReader;
+import java.io.IOException;
+import java.io.InputStreamReader;
+import java.nio.file.*;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+/**
+ * DatabaseInitializer — создание новой SQLite-БД по схеме SHiNE.
+ *
+ * В этой версии:
+ *  - создаём ТОЛЬКО таблицы/индексы
+ *  - в конце вызываем DatabaseTriggersInstaller.createAllTriggers(st)
+ *
+ * v2 (sessions):
+ *  - active_sessions.session_pwd удалён
+ *  - active_sessions.session_key хранит публичный ключ сессии (sessionPubKeyB64)
+ */
+public final class DatabaseInitializer {
+
+    private DatabaseInitializer() {}
+
+    /* ===================== TEXT (msg_type=1) ===================== */
+
+    public static final short TEXT_NEW = 1;
+    public static final short TEXT_REPLY = 2;
+    public static final short TEXT_REPOST = 3;
+    public static final short TEXT_EDIT = 10;
+
+    /* ===================== REACTION (msg_type=2) ===================== */
+
+    public static final short REACTION_LIKE = 1;
+
+    /* ===================== CONNECTION (msg_type=3) ===================== */
+    public static final short CONNECTION_FRIEND     = 10;
+    public static final short CONNECTION_UNFRIEND   = 11;
+
+    public static final short CONNECTION_CONTACT    = 20;
+    public static final short CONNECTION_UNCONTACT  = 21;
+
+    public static final short CONNECTION_FOLLOW     = 30;
+    public static final short CONNECTION_UNFOLLOW   = 31;
+
+    public static void createNewDB(String[] args) {
+        AppConfig config = AppConfig.getInstance();
+        String dbPath = config.getParam("db.path");
+
+        if (dbPath == null || dbPath.isBlank()) {
+            System.err.println("Параметр db.path не задан в application.properties");
+            return;
+        }
+
+        Path dbFile = Paths.get(dbPath);
+        try {
+            Path parent = dbFile.getParent();
+            if (parent != null && !Files.exists(parent)) {
+                Files.createDirectories(parent);
+            }
+
+            if (Files.exists(dbFile)) {
+                System.out.println("Файл базы данных уже существует: " + dbFile.toAbsolutePath());
+                System.out.print("Пересоздать БД (СТАРАЯ БУДЕТ УДАЛЕНА)? [y/N]: ");
+
+                BufferedReader reader = new BufferedReader(new InputStreamReader(System.in));
+                String answer = reader.readLine();
+                if (!"y".equalsIgnoreCase(answer) && !"yes".equalsIgnoreCase(answer)) {
+                    System.out.println("Операция отменена. БД не изменена.");
+                    return;
+                }
+
+                Files.delete(dbFile);
+                System.out.println("Старый файл БД удалён.");
+            }
+
+            createSchema("jdbc:sqlite:" + dbPath);
+            System.out.println("Новая БД успешно создана по пути: " + dbFile.toAbsolutePath());
+
+        } catch (IOException e) {
+            System.err.println("Ошибка работы с файлом БД: " + e.getMessage());
+        } catch (SQLException e) {
+            System.err.println("Ошибка создания схемы БД: " + e.getMessage());
+        }
+    }
+
+    private static void createSchema(String jdbcUrl) throws SQLException {
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException("SQLite JDBC driver not found", e);
+        }
+
+        try (Connection conn = DriverManager.getConnection(jdbcUrl);
+             Statement st = conn.createStatement()) {
+
+            st.execute("PRAGMA foreign_keys = ON");
+
+            // 1. solana_users
+            // ВАЖНО:
+            // - Все требуемые поля теперь лежат в solana_users:
+            //   login, blockchain_name, solana_key, blockchain_key, device_key
+            // - Поиск по login в DAO сделан case-insensitive.
+            // - Для защиты от дублей "Anya" и "anya" добавляем COLLATE NOCASE на PRIMARY KEY.
+            st.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS solana_users (
+                    login           TEXT    NOT NULL PRIMARY KEY COLLATE NOCASE,
+                    blockchain_name TEXT    NOT NULL,
+                    solana_key      TEXT    NOT NULL,
+                    blockchain_key  TEXT    NOT NULL,
+                    device_key      TEXT    NOT NULL
+                );
+                """);
+
+            st.executeUpdate("""
+                CREATE UNIQUE INDEX IF NOT EXISTS uq_solana_users_blockchain_name
+                ON solana_users (blockchain_name);
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_solana_users_login
+                ON solana_users (login);
+                """);
+
+            // 2. active_sessions (v2)
+            st.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS active_sessions (
+                    session_id                 TEXT    NOT NULL PRIMARY KEY,
+                    login                      TEXT    NOT NULL,
+                    session_key                TEXT    NOT NULL,
+                    storage_pwd                TEXT    NOT NULL,
+                    session_created_at_ms      INTEGER NOT NULL,
+                    last_authirificated_at_ms  INTEGER NOT NULL,
+                    push_endpoint              TEXT,
+                    push_p256dh_key            TEXT,
+                    push_auth_key              TEXT,
+                    client_ip                  TEXT,
+                    client_info_from_client    TEXT,
+                    client_info_from_request   TEXT,
+                    user_language              TEXT,
+                    FOREIGN KEY (login) REFERENCES solana_users(login)
+                );
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_active_sessions_login
+                ON active_sessions (login);
+                """);
+
+            // 3. users_params
+            st.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS users_params (
+                    login          TEXT    NOT NULL,
+                    param          TEXT    NOT NULL,
+                    time_ms        INTEGER NOT NULL,
+                    value          TEXT    NOT NULL,
+                    device_key     TEXT,
+                    signature      TEXT,
+                    FOREIGN KEY (login) REFERENCES solana_users(login),
+                    UNIQUE (login, param)
+                );
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_users_params_login
+                ON users_params (login);
+                """);
+
+            // 4. ip_geo_cache
+            st.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS ip_geo_cache (
+                    ip             TEXT    NOT NULL PRIMARY KEY,
+                    geo            TEXT,
+                    updated_at_ms  INTEGER NOT NULL
+                );
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_ip_geo_cache_updated_at
+                ON ip_geo_cache (updated_at_ms);
+                """);
+
+            // 5. blockchain_state
+            st.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS blockchain_state (
+                    blockchain_name   TEXT    NOT NULL PRIMARY KEY,
+                    login             TEXT    NOT NULL,
+                    blockchain_key    TEXT    NOT NULL,
+
+                    size_limit        INTEGER NOT NULL,
+                    file_size_bytes   INTEGER NOT NULL,
+
+                    last_block_number INTEGER NOT NULL,
+                    last_block_hash   BLOB,
+
+                    updated_at_ms     INTEGER NOT NULL,
+
+                    FOREIGN KEY (login) REFERENCES solana_users(login)
+                );
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_blockchain_state_login
+                ON blockchain_state (login);
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_blockchain_state_updated_at
+                ON blockchain_state (updated_at_ms);
+                """);
+
+            // 6. blocks (+ line_code)
+            st.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS blocks (
+                    login                TEXT    NOT NULL,
+                    bch_name             TEXT    NOT NULL,
+                    block_number         INTEGER NOT NULL CHECK(block_number >= 0),
+
+                    msg_type             INTEGER NOT NULL,
+                    msg_sub_type         INTEGER NOT NULL,
+
+                    block_bytes          BLOB    NOT NULL,
+
+                    -- target (reply/like/edit и т.д.)
+                    to_login             TEXT,
+                    to_bch_name          TEXT,
+                    to_block_number      INTEGER CHECK(to_block_number IS NULL OR to_block_number >= 0),
+                    to_block_hash        BLOB,
+
+                    -- собственные данные
+                    block_hash           BLOB    NOT NULL,
+                    block_signature      BLOB    NOT NULL,
+
+                    -- если этот блок был изменён последним edit'ом
+                    edited_by_block_number INTEGER CHECK(edited_by_block_number IS NULL OR edited_by_block_number >= 0),
+
+                    -- линейность (опционально)
+                    line_code           INTEGER CHECK(line_code IS NULL OR line_code >= 0),
+                    prev_line_number    INTEGER CHECK(prev_line_number IS NULL OR prev_line_number >= 0),
+                    prev_line_hash      BLOB,
+                    this_line_number    INTEGER CHECK(this_line_number IS NULL OR this_line_number >= 0),
+
+                    FOREIGN KEY (login) REFERENCES solana_users(login),
+                    FOREIGN KEY (bch_name) REFERENCES blockchain_state(blockchain_name),
+
+                    UNIQUE (bch_name, block_number)
+                );
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_blocks_by_chain_number
+                ON blocks (bch_name, block_number);
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_blocks_to_target
+                ON blocks (to_login, to_bch_name, to_block_number);
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_blocks_by_line
+                ON blocks (bch_name, line_code, this_line_number);
+                """);
+
+            // 7) connections_state
+            st.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS connections_state (
+                    login           TEXT    NOT NULL,
+                    rel_type        INTEGER NOT NULL,
+                    to_login        TEXT    NOT NULL,
+                    to_bch_name     TEXT    NOT NULL,
+                    to_block_number INTEGER,
+                    to_block_hash   BLOB,
+
+                    FOREIGN KEY (login) REFERENCES solana_users(login),
+
+                    UNIQUE (login, rel_type, to_login)
+                );
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_connections_state_login
+                ON connections_state (login);
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_connections_state_to_login
+                ON connections_state (to_login);
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_connections_state_pair
+                ON connections_state (login, to_login);
+                """);
+
+            // 8) message_stats
+            st.executeUpdate("""
+                CREATE TABLE IF NOT EXISTS message_stats (
+                    to_login          TEXT    NOT NULL,
+                    to_bch_name       TEXT    NOT NULL,
+                    to_block_number   INTEGER NOT NULL,
+                    to_block_hash     BLOB    NOT NULL,
+
+                    likes_count       INTEGER NOT NULL DEFAULT 0,
+                    replies_count     INTEGER NOT NULL DEFAULT 0,
+                    edits_count       INTEGER NOT NULL DEFAULT 0,
+
+                    UNIQUE (
+                        to_login,
+                        to_bch_name,
+                        to_block_number,
+                        to_block_hash
+                    )
+                );
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_message_stats_target
+                ON message_stats (to_bch_name, to_block_number, to_block_hash);
+                """);
+
+            st.executeUpdate("""
+                CREATE INDEX IF NOT EXISTS idx_message_stats_login
+                ON message_stats (to_login);
+                """);
+
+            DatabaseTriggersInstaller.createAllTriggers(st);
+        }
+    }
+}
+package shine.db;
+
+import java.sql.SQLException;
+import java.sql.Statement;
+
+/**
+ * DatabaseTriggersInstaller — устанавливает триггеры, которые поддерживают бизнес-логику БД.
+ *
+ * Мы специально сделали триггеры максимально "совместимыми":
+ *  - НЕТ динамических сообщений в RAISE(...): только фиксированные строки.
+ *    (Некоторые SQLite-сборки / просмотрщики падают на "||" внутри RAISE.)
+ *  - НЕТ UPSERT "ON CONFLICT DO UPDATE" — вместо него:
+ *      INSERT OR IGNORE + UPDATE
+ *    (Старые SQLite не знают UPSERT.)
+ *
+ * =============================================================================
+ * ОПИСАНИЕ ТРИГГЕРОВ
+ * =============================================================================
+ *
+ * [1] trg_blocks_line_integrity_bi  (BEFORE INSERT ON blocks)
+ *     Контроль целостности "линий" (line_code / prev_line_number / prev_line_hash / this_line_number).
+ *
+ *     Зачем это нужно:
+ *       - В каналах/ветках/действиях ты хочешь иметь "линейную" последовательность,
+ *         где каждый следующий блок явно ссылается на предыдущий блок линии
+ *         и подтверждает, что ссылка не подменена.
+ *
+ *     Когда срабатывает:
+ *       - ТОЛЬКО если при вставке передано ХОТЯ БЫ ОДНО из line-полей.
+ *       - Если line-поля не переданы — триггер вообще не работает (это важно).
+ *
+ *     Что проверяет:
+ *       A) line-поля допускаются только для msg_type:
+ *          0 (TECH), 1 (TEXT), 3 (CONNECTION), 4 (USER_PARAM)
+ *       B) Если пришло хоть одно line-поле — обязаны прийти ВСЕ 4 (никаких "частичных")
+ *       C) prev-блок линии существует в той же цепочке bch_name
+ *       D) prev_hash совпадает с block_hash найденного prev-блока
+ *       E) line_code корректный:
+ *          - либо первый шаг после root: prev_line_number == line_code
+ *          - либо prev уже принадлежит этой линии: p.line_code == NEW.line_code
+ *       F) this_line_number:
+ *          - первый шаг после root:
+ *              TEXT: this_line_number = 0
+ *              TECH/CONNECTION/USER_PARAM: this_line_number = 1
+ *          - обычный шаг:
+ *              TEXT: допускаем same или +1 (чтобы "edit" мог не двигать шаг)
+ *              TECH/CONNECTION/USER_PARAM: строго prev.this + 1
+ *
+ *     Какие ошибки кидает:
+ *       - LINE_ERR_UNSUPPORTED_TYPE_WITH_LINE
+ *       - LINE_ERR_PARTIAL_FIELDS
+ *       - LINE_ERR_NO_PREV
+ *       - LINE_ERR_PREV_HASH_MISMATCH
+ *       - LINE_ERR_LINE_CODE_MISMATCH
+ *       - LINE_ERR_FIRST_STEP_BAD_THIS
+ *       - LINE_ERR_THIS_LINE_BAD_STEP
+ *
+ * [2] trg_blocks_connection_state_ai  (AFTER INSERT ON blocks WHEN msg_type=3)
+ *     Поддерживает таблицу connections_state как "текущее состояние" отношений:
+ *       - FRIEND/CONTACT/FOLLOW  -> добавить/обновить состояние
+ *       - UNFRIEND/UNCONTACT/UNFOLLOW -> удалить соответствующее "позитивное" состояние
+ *
+ * [3] trg_blocks_message_stats_like_ai (AFTER INSERT ON blocks WHEN msg_type=2 AND sub_type=LIKE)
+ *     Поддерживает likes_count в message_stats для цели (to_*).
+ *
+ * [4] trg_blocks_message_stats_reply_ai (AFTER INSERT ON blocks WHEN msg_type=1 AND sub_type=REPLY)
+ *     Поддерживает replies_count в message_stats.
+ *
+ * [5] trg_blocks_edit_apply_ai (AFTER INSERT ON blocks WHEN msg_type=1 AND sub_type=EDIT)
+ *     Логика edit:
+ *       - помечает исходный блок edited_by_block_number = NEW.block_number
+ *       - увеличивает edits_count в message_stats
+ */
+public final class DatabaseTriggersInstaller {
+
+    private DatabaseTriggersInstaller() {}
+
+    public static void createAllTriggers(Statement st) throws SQLException {
+        // На всякий случай убираем старые "криво названные" триггеры,
+        // если они когда-то попадали в БД.
+        st.executeUpdate("DROP TRIGGER IF EXISTS trg_block_lini_integriti_by;");
+        st.executeUpdate("DROP TRIGGER IF EXISTS trg_blocks_line_integrity_bi;");
+
+        st.executeUpdate("DROP TRIGGER IF EXISTS trg_blocks_connection_state_ai;");
+        st.executeUpdate("DROP TRIGGER IF EXISTS trg_blocks_message_stats_like_ai;");
+        st.executeUpdate("DROP TRIGGER IF EXISTS trg_blocks_message_stats_reply_ai;");
+        st.executeUpdate("DROP TRIGGER IF EXISTS trg_blocks_edit_apply_ai;");
+
+        createLineIntegrityTrigger(st);
+        createConnectionStateTrigger(st);
+        createMessageStatsLikeTrigger(st);
+        createMessageStatsReplyTrigger(st);
+        createEditApplyTrigger(st);
+    }
+
+    private static void createLineIntegrityTrigger(Statement st) throws SQLException {
+        st.executeUpdate("""
+            CREATE TRIGGER IF NOT EXISTS trg_blocks_line_integrity_bi
+            BEFORE INSERT ON blocks
+            WHEN
+                NEW.line_code IS NOT NULL
+                OR NEW.prev_line_number IS NOT NULL
+                OR NEW.prev_line_hash IS NOT NULL
+                OR NEW.this_line_number IS NOT NULL
+            BEGIN
+                SELECT RAISE(ABORT, 'LINE_ERR_UNSUPPORTED_TYPE_WITH_LINE')
+                WHERE NOT (NEW.msg_type IN (0, 1, 3, 4));
+
+                SELECT RAISE(ABORT, 'LINE_ERR_PARTIAL_FIELDS')
+                WHERE NEW.line_code IS NULL
+                   OR NEW.prev_line_number IS NULL
+                   OR NEW.prev_line_hash IS NULL
+                   OR NEW.this_line_number IS NULL;
+
+                SELECT RAISE(ABORT, 'LINE_ERR_NO_PREV')
+                WHERE NOT EXISTS(
+                    SELECT 1
+                    FROM blocks p
+                    WHERE p.bch_name = NEW.bch_name
+                      AND p.block_number = NEW.prev_line_number
+                    LIMIT 1
+                );
+
+                SELECT RAISE(ABORT, 'LINE_ERR_PREV_HASH_MISMATCH')
+                WHERE NOT EXISTS(
+                    SELECT 1
+                    FROM blocks p
+                    WHERE p.bch_name = NEW.bch_name
+                      AND p.block_number = NEW.prev_line_number
+                      AND p.block_hash = NEW.prev_line_hash
+                    LIMIT 1
+                );
+
+                SELECT RAISE(ABORT, 'LINE_ERR_LINE_CODE_MISMATCH')
+                WHERE NEW.prev_line_number <> NEW.line_code
+                  AND NOT EXISTS(
+                    SELECT 1
+                    FROM blocks p
+                    WHERE p.bch_name = NEW.bch_name
+                      AND p.block_number = NEW.prev_line_number
+                      AND p.line_code = NEW.line_code
+                    LIMIT 1
+                  );
+
+                SELECT RAISE(ABORT, 'LINE_ERR_FIRST_STEP_BAD_THIS')
+                WHERE NEW.prev_line_number = NEW.line_code
+                  AND NEW.this_line_number <> (CASE WHEN NEW.msg_type = 1 THEN 0 ELSE 1 END);
+
+                SELECT RAISE(ABORT, 'LINE_ERR_THIS_LINE_BAD_STEP')
+                WHERE NEW.prev_line_number <> NEW.line_code
+                  AND NOT EXISTS(
+                    SELECT 1
+                    FROM blocks p
+                    WHERE p.bch_name = NEW.bch_name
+                      AND p.block_number = NEW.prev_line_number
+                      AND p.this_line_number IS NOT NULL
+                      AND (
+                            (NEW.msg_type = 1 AND
+                                (NEW.this_line_number = p.this_line_number OR NEW.this_line_number = p.this_line_number + 1)
+                            )
+                            OR
+                            (NEW.msg_type IN (0,3,4) AND NEW.this_line_number = p.this_line_number + 1)
+                          )
+                    LIMIT 1
+                  );
+            END;
+            """);
+    }
+
+    private static void createConnectionStateTrigger(Statement st) throws SQLException {
+        int FRIEND     = (int) DatabaseInitializer.CONNECTION_FRIEND;
+        int CONTACT    = (int) DatabaseInitializer.CONNECTION_CONTACT;
+        int FOLLOW     = (int) DatabaseInitializer.CONNECTION_FOLLOW;
+
+        int UNFRIEND   = (int) DatabaseInitializer.CONNECTION_UNFRIEND;
+        int UNCONTACT  = (int) DatabaseInitializer.CONNECTION_UNCONTACT;
+        int UNFOLLOW   = (int) DatabaseInitializer.CONNECTION_UNFOLLOW;
+
+        st.executeUpdate("""
+            CREATE TRIGGER IF NOT EXISTS trg_blocks_connection_state_ai
+            AFTER INSERT ON blocks
+            WHEN NEW.msg_type = 3
+            BEGIN
+                -- FRIEND/CONTACT/FOLLOW:
+                -- 1) если записи нет — создаём
+                INSERT OR IGNORE INTO connections_state (
+                    login, rel_type, to_login, to_bch_name, to_block_number, to_block_hash
+                )
+                SELECT
+                    NEW.login,
+                    NEW.msg_sub_type,
+                    NEW.to_login,
+                    NEW.to_bch_name,
+                    NEW.to_block_number,
+                    NEW.to_block_hash
+                WHERE NEW.msg_sub_type IN (%d, %d, %d)
+                  AND NEW.to_login IS NOT NULL
+                  AND NEW.to_bch_name IS NOT NULL;
+
+                -- 2) если запись есть — обновляем актуальные to_*
+                UPDATE connections_state
+                SET
+                    to_bch_name     = NEW.to_bch_name,
+                    to_block_number = NEW.to_block_number,
+                    to_block_hash   = NEW.to_block_hash
+                WHERE login = NEW.login
+                  AND rel_type = NEW.msg_sub_type
+                  AND to_login = NEW.to_login
+                  AND NEW.msg_sub_type IN (%d, %d, %d)
+                  AND NEW.to_login IS NOT NULL
+                  AND NEW.to_bch_name IS NOT NULL;
+
+                -- UNFRIEND/UNCONTACT/UNFOLLOW:
+                -- удаляем соответствующее "позитивное" состояние
+                DELETE FROM connections_state
+                WHERE login = NEW.login
+                  AND to_login = NEW.to_login
+                  AND rel_type = CASE NEW.msg_sub_type
+                      WHEN %d THEN %d
+                      WHEN %d THEN %d
+                      WHEN %d THEN %d
+                      ELSE rel_type
+                  END
+                  AND NEW.msg_sub_type IN (%d, %d, %d);
+            END;
+            """.formatted(
+                FRIEND, CONTACT, FOLLOW,
+                FRIEND, CONTACT, FOLLOW,
+
+                UNFRIEND,  FRIEND,
+                UNCONTACT, CONTACT,
+                UNFOLLOW,  FOLLOW,
+
+                UNFRIEND, UNCONTACT, UNFOLLOW
+            ));
+    }
+
+    private static void createMessageStatsLikeTrigger(Statement st) throws SQLException {
+        int LIKE = (int) DatabaseInitializer.REACTION_LIKE;
+
+        st.executeUpdate("""
+            CREATE TRIGGER IF NOT EXISTS trg_blocks_message_stats_like_ai
+            AFTER INSERT ON blocks
+            WHEN NEW.msg_type = 2 AND NEW.msg_sub_type = %d
+            BEGIN
+                -- создаём строку, если её не было
+                INSERT OR IGNORE INTO message_stats (
+                    to_login, to_bch_name, to_block_number, to_block_hash,
+                    likes_count, replies_count, edits_count
+                )
+                SELECT
+                    NEW.to_login, NEW.to_bch_name, NEW.to_block_number, NEW.to_block_hash,
+                    0, 0, 0
+                WHERE NEW.to_login IS NOT NULL
+                  AND NEW.to_bch_name IS NOT NULL
+                  AND NEW.to_block_number IS NOT NULL
+                  AND NEW.to_block_hash IS NOT NULL;
+
+                -- +1 like
+                UPDATE message_stats
+                SET likes_count = likes_count + 1
+                WHERE to_login = NEW.to_login
+                  AND to_bch_name = NEW.to_bch_name
+                  AND to_block_number = NEW.to_block_number
+                  AND to_block_hash = NEW.to_block_hash
+                  AND NEW.to_login IS NOT NULL
+                  AND NEW.to_bch_name IS NOT NULL
+                  AND NEW.to_block_number IS NOT NULL
+                  AND NEW.to_block_hash IS NOT NULL;
+            END;
+            """.formatted(LIKE));
+    }
+
+    private static void createMessageStatsReplyTrigger(Statement st) throws SQLException {
+        int REPLY = (int) DatabaseInitializer.TEXT_REPLY;
+
+        st.executeUpdate("""
+            CREATE TRIGGER IF NOT EXISTS trg_blocks_message_stats_reply_ai
+            AFTER INSERT ON blocks
+            WHEN NEW.msg_type = 1 AND NEW.msg_sub_type = %d
+            BEGIN
+                INSERT OR IGNORE INTO message_stats (
+                    to_login, to_bch_name, to_block_number, to_block_hash,
+                    likes_count, replies_count, edits_count
+                )
+                SELECT
+                    NEW.to_login, NEW.to_bch_name, NEW.to_block_number, NEW.to_block_hash,
+                    0, 0, 0
+                WHERE NEW.to_login IS NOT NULL
+                  AND NEW.to_bch_name IS NOT NULL
+                  AND NEW.to_block_number IS NOT NULL
+                  AND NEW.to_block_hash IS NOT NULL;
+
+                UPDATE message_stats
+                SET replies_count = replies_count + 1
+                WHERE to_login = NEW.to_login
+                  AND to_bch_name = NEW.to_bch_name
+                  AND to_block_number = NEW.to_block_number
+                  AND to_block_hash = NEW.to_block_hash
+                  AND NEW.to_login IS NOT NULL
+                  AND NEW.to_bch_name IS NOT NULL
+                  AND NEW.to_block_number IS NOT NULL
+                  AND NEW.to_block_hash IS NOT NULL;
+            END;
+            """.formatted(REPLY));
+    }
+
+    private static void createEditApplyTrigger(Statement st) throws SQLException {
+        int EDIT = (int) DatabaseInitializer.TEXT_EDIT;
+
+        st.executeUpdate("""
+            CREATE TRIGGER IF NOT EXISTS trg_blocks_edit_apply_ai
+            AFTER INSERT ON blocks
+            WHEN NEW.msg_type = 1 AND NEW.msg_sub_type = %d
+            BEGIN
+                -- 1) помечаем исходный блок, что его "перекрыл" этот edit
+                UPDATE blocks
+                SET edited_by_block_number = NEW.block_number
+                WHERE login = NEW.login
+                  AND bch_name = NEW.bch_name
+                  AND block_number = NEW.to_block_number
+                  AND NEW.to_block_number IS NOT NULL;
+
+                -- 2) создаём stats-строку если её не было
+                INSERT OR IGNORE INTO message_stats (
+                    to_login, to_bch_name, to_block_number, to_block_hash,
+                    likes_count, replies_count, edits_count
+                )
+                SELECT
+                    NEW.to_login, NEW.to_bch_name, NEW.to_block_number, NEW.to_block_hash,
+                    0, 0, 0
+                WHERE NEW.to_login IS NOT NULL
+                  AND NEW.to_bch_name IS NOT NULL
+                  AND NEW.to_block_number IS NOT NULL
+                  AND NEW.to_block_hash IS NOT NULL;
+
+                -- 3) +1 edit
+                UPDATE message_stats
+                SET edits_count = edits_count + 1
+                WHERE to_login = NEW.to_login
+                  AND to_bch_name = NEW.to_bch_name
+                  AND to_block_number = NEW.to_block_number
+                  AND to_block_hash = NEW.to_block_hash
+                  AND NEW.to_login IS NOT NULL
+                  AND NEW.to_bch_name IS NOT NULL
+                  AND NEW.to_block_number IS NOT NULL
+                  AND NEW.to_block_hash IS NOT NULL;
+            END;
+            """.formatted(EDIT));
+    }
+}
+package shine.db.entities;
+
+/**
+ * Модель активной сессии (таблица active_sessions).
+ */
+public class ActiveSessionEntry {
+
+    private String sessionId;
+    private String login;
+
+    /** session_key: публичный ключ сессии (base64 от 32 байт). */
+    private String sessionKey;
+
+    private String storagePwd;
+    private long   sessionCreatedAtMs;
+    private long   lastAuthirificatedAtMs;
+
+    private String pushEndpoint;
+    private String pushP256dhKey;
+    private String pushAuthKey;
+
+    private String clientIp;
+    private String clientInfoFromClient;
+    private String clientInfoFromRequest;
+    private String userLanguage;
+
+    public ActiveSessionEntry() { }
+
+    public ActiveSessionEntry(String sessionId,
+                              String login,
+                              String sessionKey,
+                              String storagePwd,
+                              long sessionCreatedAtMs,
+                              long lastAuthirificatedAtMs,
+                              String pushEndpoint,
+                              String pushP256dhKey,
+                              String pushAuthKey,
+                              String clientIp,
+                              String clientInfoFromClient,
+                              String clientInfoFromRequest,
+                              String userLanguage) {
+        this.sessionId = sessionId;
+        this.login = login;
+        this.sessionKey = sessionKey;
+        this.storagePwd = storagePwd;
+        this.sessionCreatedAtMs = sessionCreatedAtMs;
+        this.lastAuthirificatedAtMs = lastAuthirificatedAtMs;
+        this.pushEndpoint = pushEndpoint;
+        this.pushP256dhKey = pushP256dhKey;
+        this.pushAuthKey = pushAuthKey;
+        this.clientIp = clientIp;
+        this.clientInfoFromClient = clientInfoFromClient;
+        this.clientInfoFromRequest = clientInfoFromRequest;
+        this.userLanguage = userLanguage;
+    }
+
+    public String getSessionId() { return sessionId; }
+    public void setSessionId(String sessionId) { this.sessionId = sessionId; }
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+
+    public String getSessionKey() { return sessionKey; }
+    public void setSessionKey(String sessionKey) { this.sessionKey = sessionKey; }
+
+    public String getStoragePwd() { return storagePwd; }
+    public void setStoragePwd(String storagePwd) { this.storagePwd = storagePwd; }
+
+    public long getSessionCreatedAtMs() { return sessionCreatedAtMs; }
+    public void setSessionCreatedAtMs(long sessionCreatedAtMs) { this.sessionCreatedAtMs = sessionCreatedAtMs; }
+
+    public long getLastAuthirificatedAtMs() { return lastAuthirificatedAtMs; }
+    public void setLastAuthirificatedAtMs(long lastAuthirificatedAtMs) { this.lastAuthirificatedAtMs = lastAuthirificatedAtMs; }
+
+    public String getPushEndpoint() { return pushEndpoint; }
+    public void setPushEndpoint(String pushEndpoint) { this.pushEndpoint = pushEndpoint; }
+
+    public String getPushP256dhKey() { return pushP256dhKey; }
+    public void setPushP256dhKey(String pushP256dhKey) { this.pushP256dhKey = pushP256dhKey; }
+
+    public String getPushAuthKey() { return pushAuthKey; }
+    public void setPushAuthKey(String pushAuthKey) { this.pushAuthKey = pushAuthKey; }
+
+    public String getClientIp() { return clientIp; }
+    public void setClientIp(String clientIp) { this.clientIp = clientIp; }
+
+    public String getClientInfoFromClient() { return clientInfoFromClient; }
+    public void setClientInfoFromClient(String clientInfoFromClient) { this.clientInfoFromClient = clientInfoFromClient; }
+
+    public String getClientInfoFromRequest() { return clientInfoFromRequest; }
+    public void setClientInfoFromRequest(String clientInfoFromRequest) { this.clientInfoFromRequest = clientInfoFromRequest; }
+
+    public String getUserLanguage() { return userLanguage; }
+    public void setUserLanguage(String userLanguage) { this.userLanguage = userLanguage; }
+}
+package shine.db.entities;
+
+import java.util.Base64;
+
+/**
+ * Агрегатная сущность текущего состояния блокчейна.
+ *
+ * ВАЖНО:
+ * - Убраны все поля линий line0..7 (они больше не нужны).
+ * - Оставляем:
+ *    last_block_number
+ *    last_block_hash
+ *
+ * Остальные поля (login, blockchain_key, лимиты) оставлены как в проекте,
+ * потому что серверу они реально нужны (ключ подписи/лимит файла).
+ */
+public final class BlockchainStateEntry {
+
+    private String blockchainName;
+    private String login;
+
+    private String blockchainKey; // Base64(32)
+
+    private long sizeLimit;
+    private long fileSizeBytes;
+
+    private int lastBlockNumber;     // было last_global_number
+    private byte[] lastBlockHash;    // было last_global_hash (nullable)
+
+    private long updatedAtMs;
+
+    public BlockchainStateEntry() {}
+
+    public String getBlockchainName() { return blockchainName; }
+    public void setBlockchainName(String blockchainName) { this.blockchainName = blockchainName; }
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+
+    public String getBlockchainKey() { return blockchainKey; }
+    public void setBlockchainKey(String blockchainKey) { this.blockchainKey = blockchainKey; }
+
+    public byte[] getBlockchainKeyBytes() {
+        if (blockchainKey == null) return null;
+        String s = blockchainKey.trim();
+        if (s.isEmpty()) return null;
+        try {
+            byte[] b = Base64.getDecoder().decode(s);
+            return (b != null && b.length == 32) ? b : null;
+        } catch (IllegalArgumentException e) {
+            return null;
+        }
+    }
+
+    public long getSizeLimit() { return sizeLimit; }
+    public void setSizeLimit(long sizeLimit) { this.sizeLimit = sizeLimit; }
+
+    public long getFileSizeBytes() { return fileSizeBytes; }
+    public void setFileSizeBytes(long fileSizeBytes) { this.fileSizeBytes = fileSizeBytes; }
+
+    public int getLastBlockNumber() { return lastBlockNumber; }
+    public void setLastBlockNumber(int lastBlockNumber) { this.lastBlockNumber = lastBlockNumber; }
+
+    public byte[] getLastBlockHash() { return lastBlockHash; }
+    public void setLastBlockHash(byte[] lastBlockHash) { this.lastBlockHash = lastBlockHash; }
+
+    public long getUpdatedAtMs() { return updatedAtMs; }
+    public void setUpdatedAtMs(long updatedAtMs) { this.updatedAtMs = updatedAtMs; }
+}
+package shine.db.entities;
+
+/**
+ * Запись блока (таблица blocks) — обновлённая модель под новый формат.
+ *
+ * Храним:
+ *  - login, bch_name (как было в проекте, чтобы не ломать общую БД)
+ *  - block_number (глобальный номер в этой цепочке)
+ *  - block_bytes (полный блок: preimage + signature)
+ *  - block_hash (32 байта вычисленный SHA-256(preimage))
+ *  - block_signature (64 байта)
+ *
+ * Опционально:
+ *  - line_code / prev_line_number / prev_line_hash / this_line_number
+ *
+ * Плюс поля индексации:
+ *  - msg_type / msg_sub_type
+ *  - to_* (если есть target)
+ *  - edited_by_block_number (для TEXT_EDIT)
+ */
+public class BlockEntry {
+
+    private String login;
+    private String bchName;
+
+    private int blockNumber;
+
+    private int msgType;
+    private int msgSubType;
+
+    private byte[] blockBytes;
+
+    private String toLogin;
+    private String toBchName;
+    private Integer toBlockNumber;
+    private byte[] toBlockHash;
+
+    private byte[] blockHash;
+    private byte[] blockSignature;
+
+    private Integer editedByBlockNumber;
+
+    // NEW:
+    private Integer lineCode;
+
+    private Integer prevLineNumber;
+    private byte[] prevLineHash;
+    private Integer thisLineNumber;
+
+    public BlockEntry() {}
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+
+    public String getBchName() { return bchName; }
+    public void setBchName(String bchName) { this.bchName = bchName; }
+
+    public int getBlockNumber() { return blockNumber; }
+    public void setBlockNumber(int blockNumber) { this.blockNumber = blockNumber; }
+
+    public int getMsgType() { return msgType; }
+    public void setMsgType(int msgType) { this.msgType = msgType; }
+
+    public int getMsgSubType() { return msgSubType; }
+    public void setMsgSubType(int msgSubType) { this.msgSubType = msgSubType; }
+
+    public byte[] getBlockBytes() { return blockBytes; }
+    public void setBlockBytes(byte[] blockBytes) { this.blockBytes = blockBytes; }
+
+    public String getToLogin() { return toLogin; }
+    public void setToLogin(String toLogin) { this.toLogin = toLogin; }
+
+    public String getToBchName() { return toBchName; }
+    public void setToBchName(String toBchName) { this.toBchName = toBchName; }
+
+    public Integer getToBlockNumber() { return toBlockNumber; }
+    public void setToBlockNumber(Integer toBlockNumber) { this.toBlockNumber = toBlockNumber; }
+
+    public byte[] getToBlockHash() { return toBlockHash; }
+    public void setToBlockHash(byte[] toBlockHash) { this.toBlockHash = toBlockHash; }
+
+    public byte[] getBlockHash() { return blockHash; }
+    public void setBlockHash(byte[] blockHash) { this.blockHash = blockHash; }
+
+    public byte[] getBlockSignature() { return blockSignature; }
+    public void setBlockSignature(byte[] blockSignature) { this.blockSignature = blockSignature; }
+
+    public Integer getEditedByBlockNumber() { return editedByBlockNumber; }
+    public void setEditedByBlockNumber(Integer editedByBlockNumber) { this.editedByBlockNumber = editedByBlockNumber; }
+
+    // NEW:
+    public Integer getLineCode() { return lineCode; }
+    public void setLineCode(Integer lineCode) { this.lineCode = lineCode; }
+
+    public Integer getPrevLineNumber() { return prevLineNumber; }
+    public void setPrevLineNumber(Integer prevLineNumber) { this.prevLineNumber = prevLineNumber; }
+
+    public byte[] getPrevLineHash() { return prevLineHash; }
+    public void setPrevLineHash(byte[] prevLineHash) { this.prevLineHash = prevLineHash; }
+
+    public Integer getThisLineNumber() { return thisLineNumber; }
+    public void setThisLineNumber(Integer thisLineNumber) { this.thisLineNumber = thisLineNumber; }
+}
+package shine.db.entities;
+
+/**
+ * Запись в таблице ip_geo_cache.
+ */
+public class IpGeoCacheEntry {
+
+    private String ip;
+    private String geo;
+    private long updatedAtMs;
+
+    public IpGeoCacheEntry() {
+    }
+
+    public IpGeoCacheEntry(String ip, String geo, long updatedAtMs) {
+        this.ip = ip;
+        this.geo = geo;
+        this.updatedAtMs = updatedAtMs;
+    }
+
+    public String getIp() {
+        return ip;
+    }
+
+    public void setIp(String ip) {
+        this.ip = ip;
+    }
+
+    public String getGeo() {
+        return geo;
+    }
+
+    public void setGeo(String geo) {
+        this.geo = geo;
+    }
+
+    public long getUpdatedAtMs() {
+        return updatedAtMs;
+    }
+
+    public void setUpdatedAtMs(long updatedAtMs) {
+        this.updatedAtMs = updatedAtMs;
+    }
+}
+package shine.db.entities;
+
+import java.util.Base64;
+
+/**
+ * SolanaUserEntry — локальная запись пользователя из Solana.
+ *
+ * Таблица: solana_users
+ *
+ * Поля:
+ *  - login           — PRIMARY KEY (TEXT) (case-insensitive на уровне COLLATE NOCASE)
+ *  - blockchain_name — TEXT NOT NULL
+ *  - solana_key      — TEXT NOT NULL
+ *  - blockchain_key  — TEXT NOT NULL
+ *  - device_key      — TEXT NOT NULL
+ */
+public class SolanaUserEntry {
+
+    private String login;
+
+    private String blockchainName;
+
+    /** Ключ пользователя Solana (публичный ключ логина) */
+    private String solanaKey;
+
+    /** Ключ блокчейна (публичный ключ блокчейна) */
+    private String blockchainKey;
+
+    /** Ключ устройства (публичный ключ устройства) */
+    private String deviceKey;
+
+    public SolanaUserEntry() {}
+
+    public SolanaUserEntry(String login,
+                           String blockchainName,
+                           String solanaKey,
+                           String blockchainKey,
+                           String deviceKey) {
+        this.login = login;
+        this.blockchainName = blockchainName;
+        this.solanaKey = solanaKey;
+        this.blockchainKey = blockchainKey;
+        this.deviceKey = deviceKey;
+    }
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+
+    public String getBlockchainName() { return blockchainName; }
+    public void setBlockchainName(String blockchainName) { this.blockchainName = blockchainName; }
+
+    public String getSolanaKey() { return solanaKey; }
+    public void setSolanaKey(String solanaKey) { this.solanaKey = solanaKey; }
+
+    public String getBlockchainKey() { return blockchainKey; }
+    public void setBlockchainKey(String blockchainKey) { this.blockchainKey = blockchainKey; }
+
+    public String getDeviceKey() { return deviceKey; }
+    public void setDeviceKey(String deviceKey) { this.deviceKey = deviceKey; }
+
+    // оставляю этот метод как утилиту (иногда удобно), но он работает только для deviceKey:
+    public byte[] getDeviceKeyByte() {
+        if (deviceKey == null) return null;
+        String s = deviceKey.trim();
+        if (s.isEmpty()) return null;
+
+        try {
+            byte[] b = Base64.getDecoder().decode(s);
+            if (b != null && b.length == 32) return b;
+        } catch (IllegalArgumentException ignore) {}
+
+        if (s.length() == 64 && s.matches("^[0-9a-fA-F]+$")) {
+            byte[] out = new byte[32];
+            for (int i = 0; i < 32; i++) {
+                int hi = Character.digit(s.charAt(i * 2), 16);
+                int lo = Character.digit(s.charAt(i * 2 + 1), 16);
+                out[i] = (byte) ((hi << 4) | lo);
+            }
+            return out;
+        }
+
+        return null;
+    }
+}
+package shine.db.entities;
+
+/**
+ * UserParamEntry — сохранённый параметр пользователя.
+ *
+ * Таблица: users_params
+ *  - login      TEXT    NOT NULL
+ *  - param      TEXT    NOT NULL
+ *  - time_ms    INTEGER NOT NULL
+ *  - value      TEXT    NOT NULL
+ *  - device_key TEXT    NULL
+ *  - signature  TEXT    NULL
+ */
+public class UserParamEntry {
+
+    private String login;
+    private String param;
+    private long timeMs;
+    private String value;
+
+    private String deviceKey;
+    private String signature;
+
+    public UserParamEntry() {}
+
+    public UserParamEntry(String login, String param, long timeMs, String value, String deviceKey, String signature) {
+        this.login = login;
+        this.param = param;
+        this.timeMs = timeMs;
+        this.value = value;
+        this.deviceKey = deviceKey;
+        this.signature = signature;
+    }
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+
+    public String getParam() { return param; }
+    public void setParam(String param) { this.param = param; }
+
+    public long getTimeMs() { return timeMs; }
+    public void setTimeMs(long timeMs) { this.timeMs = timeMs; }
+
+    public String getValue() { return value; }
+    public void setValue(String value) { this.value = value; }
+
+    public String getDeviceKey() { return deviceKey; }
+    public void setDeviceKey(String deviceKey) { this.deviceKey = deviceKey; }
+
+    public String getSignature() { return signature; }
+    public void setSignature(String signature) { this.signature = signature; }
+}
+package shine.db;
+
+/**
+ * MsgSubType — единое место для ВСЕХ subType сообщений (msg_sub_type).
+ *
+ * ВАЖНО:
+ * - Значения должны совпадать с body-классами (TextBody/ReactionBody/ConnectionBody/UserParamBody/HeaderBody).
+ * - После релиза менять числа нельзя (иначе ломается совместимость данных).
+ */
+public final class MsgSubType {
+
+    private MsgSubType() {}
+
+    /* ===================== HEADER (msg_type=0) ===================== */
+
+    /** HeaderBody: subType всегда 0 (compat). */
+    public static final short HEADER_COMPAT = 0;
+
+    /* ===================== TEXT (msg_type=1) ===================== */
+
+    /** Новая публикация. */
+    public static final short TEXT_NEW = 1;
+
+    /** Ответ (reply). */
+    public static final short TEXT_REPLY = 2;
+
+    /** Репост (repost). */
+    public static final short TEXT_REPOST = 3;
+
+    /** Редактирование (edit). */
+    public static final short TEXT_EDIT = 10;
+
+    /* ===================== REACTION (msg_type=2) ===================== */
+
+    /** Лайк (LIKE). */
+    public static final short REACTION_LIKE = 1;
+
+    /* ===================== CONNECTION (msg_type=3) ===================== */
+    /**
+     * Совпадает с ConnectionBody:
+     * SET:   FRIEND=10, CONTACT=20, FOLLOW=30
+     * UNSET: UNFRIEND=11, UNCONTACT=21, UNFOLLOW=31
+     */
+
+    /** Добавить в друзья. */
+    public static final short CONNECTION_FRIEND = 10;
+
+    /** Удалить из друзей. */
+    public static final short CONNECTION_UNFRIEND = 11;
+
+    /** Добавить в контакты. */
+    public static final short CONNECTION_CONTACT = 20;
+
+    /** Удалить из контактов. */
+    public static final short CONNECTION_UNCONTACT = 21;
+
+    /** Подписаться (follow). */
+    public static final short CONNECTION_FOLLOW = 30;
+
+    /** Отписаться (unfollow). */
+    public static final short CONNECTION_UNFOLLOW = 31;
+
+    /* ===================== USER_PARAM (msg_type=4) ===================== */
+
+    /** Параметр профиля key/value (обе строки). */
+    public static final short USER_PARAM_TEXT_TEXT = 1;
+
+    /* ===================== РЕЗЕРВ НА БУДУЩЕЕ ===================== */
+    // Если позже захочешь BLOCK/UNBLOCK — лучше добавить НОВЫЕ значения,
+    // не трогая 10/20/30 и 11/21/31 (например, 40/41).
+    // public static final short CONNECTION_BLOCK = 40;
+    // public static final short CONNECTION_UNBLOCK = 41;
+}
+package shine.db;
+
+import utils.config.AppConfig;
+
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.Paths;
+import java.sql.Connection;
+import java.sql.DriverManager;
+import java.sql.SQLException;
+import java.sql.Statement;
+
+public final class SqliteDbController {
+
+    private static volatile SqliteDbController instance;
+
+    private final String jdbcUrl;
+
+    private SqliteDbController() {
+        try {
+            Class.forName("org.sqlite.JDBC");
+        } catch (ClassNotFoundException e) {
+            throw new RuntimeException("SQLite JDBC driver not found", e);
+        }
+
+        String dbPath = AppConfig.getInstance().getParam("db.path");
+        if (dbPath == null || dbPath.isBlank()) {
+            throw new RuntimeException("Config param 'db.path' is not set in application.properties");
+        }
+
+        Path dbFile = Paths.get(dbPath);
+
+        if (!Files.exists(dbFile)) {
+            System.out.println("[DB] Файл БД не найден: " + dbFile.toAbsolutePath());
+            System.out.println("[DB] Создаём новую БД с помощью DatabaseInitializer...");
+            DatabaseInitializer.createNewDB(new String[0]);
+        }
+
+        this.jdbcUrl = "jdbc:sqlite:" + dbPath;
+    }
+
+    public static SqliteDbController getInstance() {
+        if (instance == null) {
+            synchronized (SqliteDbController.class) {
+                if (instance == null) {
+                    instance = new SqliteDbController();
+                }
+            }
+        }
+        return instance;
+    }
+
+    public Connection getConnection() throws SQLException {
+        Connection conn = DriverManager.getConnection(jdbcUrl);
+        conn.setAutoCommit(true);
+
+        try (Statement st = conn.createStatement()) {
+            st.execute("PRAGMA foreign_keys = ON");
+            st.execute("PRAGMA journal_mode = WAL");
+            st.execute("PRAGMA synchronous = NORMAL");
+            st.execute("PRAGMA busy_timeout = 5000");
+        }
+
+        return conn;
+    }
+
+    public void close() {
+        // no-op
+    }
+}

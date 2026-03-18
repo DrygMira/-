@@ -1,0 +1,3475 @@
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Шаг 1 авторизации: запрос выдачи одноразового nonce (authNonce).
+ *
+ * Клиент по логину просит сервер сгенерировать случайный authNonce,
+ * который будет использован на втором шаге при подписи.
+ *
+ * Формат входящего JSON:
+ * {
+ *   "op": "AuthChallenge",
+ *   "requestId": "...",
+ *   "payload": {
+ *     "login": "someLogin"
+ *   }
+ * }
+ *
+ * Формат успешного ответа:
+ * {
+ *   "op": "AuthChallenge",
+ *   "requestId": "...",
+ *   "status": 200,
+ *   "payload": {
+ *     "authNonce": "base64-строка-от-32-байт"
+ *   }
+ * }
+ */
+public class Net_AuthChallenge_Request extends Net_Request {
+
+    /**
+     * Логин пользователя, для которого запускается авторизация.
+     */
+    private String login;
+
+    public String getLogin() {
+        return login;
+    }
+    public void setLogin(String login) {
+        this.login = login;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Ответ на AuthChallenge.
+ *
+ * При успехе сервер возвращает одноразовый nonce для подписи (authNonce),
+ * который клиент обязан использовать на втором шаге при формировании строки
+ * для цифровой подписи.
+ *
+ * JSON:
+ * {
+ *   "op": "AuthChallenge",
+ *   "requestId": "...",
+ *   "status": 200,
+ *   "payload": {
+ *     "authNonce": "base64-строка-от-32-байт"
+ *   }
+ * }
+ */
+public class Net_AuthChallenge_Response extends Net_Response {
+
+    /**
+     * Одноразовый nonce для авторификации.
+     * Строка — это base64-представление 32 случайных байт.
+     */
+    private String authNonce;
+
+    public String getAuthNonce() {
+        return authNonce;
+    }
+
+    public void setAuthNonce(String authNonce) {
+        this.authNonce = authNonce;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Запрос CloseActiveSession — закрытие активной сессии пользователя.
+ *
+ * Новая логика (v2):
+ * - Доступно ТОЛЬКО после успешного входа в сессию (AUTH_STATUS_USER).
+ * - Никаких подписей и "AUTH_IN_PROGRESS" здесь больше нет.
+ *
+ * payload:
+ * {
+ *   "sessionId": "..." // опционально; если пусто — закрываем текущую
+ * }
+ */
+public class Net_CloseActiveSession_Request extends Net_Request {
+
+    /** Идентификатор сессии, которую нужно закрыть. Может быть пустым. */
+    private String sessionId;
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Ответ на CloseActiveSession.
+ *
+ * При успехе:
+ *  - status = 200;
+ *  - payload = {}.
+ *
+ * Закрытие WebSocket-соединения может быть выполнено сразу (для другой сессии)
+ * или чуть позже (для текущей сессии) после отправки ответа.
+ */
+public class Net_CloseActiveSession_Response extends Net_Response {
+    // Дополнительных полей пока не требуется.
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Шаг 2 (v2): создание новой сессии ТОЛЬКО через deviceKey.
+ *
+ * Шаги:
+ *  1) AuthChallenge(login) -> authNonce
+ *  2) CreateAuthSession(storagePwd, sessionPubKeyB64, timeMs, signatureB64, clientInfo)
+ *
+ * Подпись deviceKey делается над строкой (UTF-8):
+ *   AUTH_CREATE_SESSION:{login}:{timeMs}:{authNonce}:{sessionPubKeyB64}:{storagePwd}
+ *
+ * Важно:
+ * - sessionKey генерируется на клиенте, на сервер отправляется ТОЛЬКО sessionPubKeyB64 (32 bytes base64).
+ * - В БД active_sessions.session_key хранится sessionPubKeyB64.
+ */
+public class Net_CreateAuthSession_Request extends Net_Request {
+
+    /** Клиентский пароль для хранения данных (base64 от 32 байт). */
+    private String storagePwd;
+
+    /** Публичный ключ сессии (sessionPubKey), base64 от 32 байт. */
+    private String sessionPubKeyB64;
+
+    /** Время на стороне клиента (мс с 1970-01-01). */
+    private long timeMs;
+
+    /** Подпись Ed25519(deviceKey) над строкой AUTH_CREATE_SESSION:... (base64). */
+    private String signatureB64;
+
+    /** Краткая строка от клиента (до 50 символов) с описанием устройства/клиента. */
+    private String clientInfo;
+
+    public String getStoragePwd() {
+        return storagePwd;
+    }
+
+    public void setStoragePwd(String storagePwd) {
+        this.storagePwd = storagePwd;
+    }
+
+    public String getSessionPubKeyB64() {
+        return sessionPubKeyB64;
+    }
+
+    public void setSessionPubKeyB64(String sessionPubKeyB64) {
+        this.sessionPubKeyB64 = sessionPubKeyB64;
+    }
+
+    public long getTimeMs() {
+        return timeMs;
+    }
+
+    public void setTimeMs(long timeMs) {
+        this.timeMs = timeMs;
+    }
+
+    public String getSignatureB64() {
+        return signatureB64;
+    }
+
+    public void setSignatureB64(String signatureB64) {
+        this.signatureB64 = signatureB64;
+    }
+
+    public String getClientInfo() {
+        return clientInfo;
+    }
+
+    public void setClientInfo(String clientInfo) {
+        this.clientInfo = clientInfo;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Ответ на CreateAuthSession (v2).
+ *
+ * При успехе сервер создаёт запись в active_sessions
+ * и возвращает идентификатор сессии sessionId.
+ *
+ * JSON:
+ * {
+ *   "op": "CreateAuthSession",
+ *   "requestId": "...",
+ *   "status": 200,
+ *   "payload": {
+ *     "sessionId": "base64(32)"
+ *   }
+ * }
+ */
+public class Net_CreateAuthSession_Response extends Net_Response {
+
+    /** Идентификатор сессии, base64 от 32 байт. */
+    private String sessionId;
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Запрос ListSessions — список активных сессий пользователя.
+ *
+ * Новая логика (v2):
+ * - Доступно ТОЛЬКО после успешного входа в сессию (AUTH_STATUS_USER).
+ * - Пустой payload.
+ */
+public class Net_ListSessions_Request extends Net_Request {
+    // пусто
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+import java.util.List;
+
+/**
+ * Ответ на ListSessions.
+ *
+ * При успехе:
+ *  - status = 200;
+ *  - payload:
+ *    {
+ *      "sessions": [
+ *        {
+ *          "sessionId": "...",
+ *          "clientInfoFromClient": "...",
+ *          "clientInfoFromRequest": "...",
+ *          "geo": "Country, City" | "unknown",
+ *          "lastAuthirificatedAtMs": 1733310000000
+ *        },
+ *        ...
+ *      ]
+ *    }
+ */
+public class Net_ListSessions_Response extends Net_Response {
+
+    /**
+     * Список активных сессий для текущего пользователя.
+     */
+    private List<SessionInfo> sessions;
+
+    public List<SessionInfo> getSessions() {
+        return sessions;
+    }
+
+    public void setSessions(List<SessionInfo> sessions) {
+        this.sessions = sessions;
+    }
+
+    /**
+     * Описание одной активной сессии.
+     */
+    public static class SessionInfo {
+
+        /** Идентификатор сессии, base64 от 32 байт. */
+        private String sessionId;
+
+        /** Что прислал клиент в CreateAuthSession/RefreshSession (clientInfo). */
+        private String clientInfoFromClient;
+
+        /** Краткая строка, собранная сервером из HTTP-запроса (UA, платформа и т.п.). */
+        private String clientInfoFromRequest;
+
+        /** Строка геолокации вида "Country, City" или "unknown". */
+        private String geo;
+
+        /** Время последней успешной авторизации/refresh (мс с 1970-01-01). */
+        private long lastAuthirificatedAtMs;
+
+        // --- getters / setters ---
+
+        public String getSessionId() {
+            return sessionId;
+        }
+
+        public void setSessionId(String sessionId) {
+            this.sessionId = sessionId;
+        }
+
+        public String getClientInfoFromClient() {
+            return clientInfoFromClient;
+        }
+
+        public void setClientInfoFromClient(String clientInfoFromClient) {
+            this.clientInfoFromClient = clientInfoFromClient;
+        }
+
+        public String getClientInfoFromRequest() {
+            return clientInfoFromRequest;
+        }
+
+        public void setClientInfoFromRequest(String clientInfoFromRequest) {
+            this.clientInfoFromRequest = clientInfoFromRequest;
+        }
+
+        public String getGeo() {
+            return geo;
+        }
+
+        public void setGeo(String geo) {
+            this.geo = geo;
+        }
+
+        public long getLastAuthirificatedAtMs() {
+            return lastAuthirificatedAtMs;
+        }
+
+        public void setLastAuthirificatedAtMs(long lastAuthirificatedAtMs) {
+            this.lastAuthirificatedAtMs = lastAuthirificatedAtMs;
+        }
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Шаг 1 входа в существующую сессию (v2):
+ * SessionChallenge(sessionId) -> nonce
+ */
+public class Net_SessionChallenge_Request extends Net_Request {
+
+    private String sessionId;
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Ответ на SessionChallenge (v2).
+ * payload: { "nonce": "base64(32)" }
+ */
+public class Net_SessionChallenge_Response extends Net_Response {
+
+    private String nonce;
+
+    public String getNonce() {
+        return nonce;
+    }
+
+    public void setNonce(String nonce) {
+        this.nonce = nonce;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Шаг 2 входа в существующую сессию (v2):
+ * SessionLogin(sessionId, timeMs, signatureB64) -> storagePwd, AUTH_STATUS_USER
+ *
+ * Подпись делается sessionKey (приватный ключ на устройстве) над строкой (UTF-8):
+ *   SESSION_LOGIN:{sessionId}:{timeMs}:{nonce}
+ *
+ * nonce берётся из SessionChallenge и хранится в ctx (одноразовый, TTL).
+ */
+public class Net_SessionLogin_Request extends Net_Request {
+
+    private String sessionId;
+    private long timeMs;
+    private String signatureB64;
+
+    /** Краткая строка от клиента (до 50 символов) с описанием устройства/клиента. */
+    private String clientInfo;
+
+    public String getSessionId() {
+        return sessionId;
+    }
+
+    public void setSessionId(String sessionId) {
+        this.sessionId = sessionId;
+    }
+
+    public long getTimeMs() {
+        return timeMs;
+    }
+
+    public void setTimeMs(long timeMs) {
+        this.timeMs = timeMs;
+    }
+
+    public String getSignatureB64() {
+        return signatureB64;
+    }
+
+    public void setSignatureB64(String signatureB64) {
+        this.signatureB64 = signatureB64;
+    }
+
+    public String getClientInfo() {
+        return clientInfo;
+    }
+
+    public void setClientInfo(String clientInfo) {
+        this.clientInfo = clientInfo;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Ответ на SessionLogin (v2).
+ * payload: { "storagePwd": "base64(32)" }
+ */
+public class Net_SessionLogin_Response extends Net_Response {
+
+    private String storagePwd;
+
+    public String getStoragePwd() {
+        return storagePwd;
+    }
+
+    public void setStoragePwd(String storagePwd) {
+        this.storagePwd = storagePwd;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth;
+
+import server.logic.ws_protocol.Base64Ws;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_AuthChallenge_Request;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_AuthChallenge_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.dao.SolanaUsersDAO;
+import shine.db.entities.SolanaUserEntry;
+
+import java.security.SecureRandom;
+
+/**
+ * AuthChallenge (v2) — шаг 1 создания новой сессии.
+ *
+ * Логика авторизации (v2):
+ * - Создание новой сессии возможно ТОЛЬКО через deviceKey пользователя.
+ * - Этот handler выдаёт одноразовый authNonce, который клиент использует во втором шаге:
+ *   CreateAuthSession(..., signature(deviceKey, AUTH_CREATE_SESSION:...))
+ *
+ * Что делает:
+ * 1) Проверяет login.
+ * 2) Находит пользователя (solana_users).
+ * 3) Пишет solanaUser в ctx, ставит AUTH_STATUS_AUTH_IN_PROGRESS.
+ * 4) Генерирует authNonce (base64url(32)) и сохраняет в ctx.authNonce.
+ */
+public class Net_AuthChallenge_Handler implements JsonMessageHandler {
+
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    @Override
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
+
+        Net_AuthChallenge_Request req = (Net_AuthChallenge_Request) baseReq;
+
+        String login = req.getLogin();
+        if (login == null || login.isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_LOGIN",
+                    "Пустой логин"
+            );
+        }
+
+        // Если по этому соединению уже есть залогиненный пользователь — не даём повторную авторификацию
+        if (ctx.getLogin() != null) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "ALREADY_AUTHED",
+                    "Попытка повторной авторификации для уже заданного login=" + ctx.getLogin()
+            );
+        }
+
+        SolanaUserEntry solanaUserEntry = SolanaUsersDAO.getInstance().getByLogin(login);
+        if (solanaUserEntry == null) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "UNKNOWN_USER",
+                    "Пользователь с таким логином не найден"
+            );
+        }
+
+        ctx.setSolanaUser(solanaUserEntry);
+        ctx.setAuthenticationStatus(ConnectionContext.AUTH_STATUS_AUTH_IN_PROGRESS);
+
+        byte[] buf = new byte[32];
+        RANDOM.nextBytes(buf);
+        String authNonce = Base64Ws.encode(buf);
+
+        ctx.setAuthNonce(authNonce);
+
+        Net_AuthChallenge_Response resp = new Net_AuthChallenge_Response();
+        resp.setOp(req.getOp());
+        resp.setRequestId(req.getRequestId());
+        resp.setStatus(WireCodes.Status.OK);
+        resp.setAuthNonce(authNonce);
+
+        return resp;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_CloseActiveSession_Request;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_CloseActiveSession_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import server.ws.WsConnectionUtils;
+import shine.db.dao.ActiveSessionsDAO;
+import shine.db.entities.ActiveSessionEntry;
+import shine.db.entities.SolanaUserEntry;
+
+import java.sql.SQLException;
+
+/**
+ * CloseActiveSession (v2) — закрытие текущей или другой сессии.
+ *
+ * Логика авторизации (v2):
+ * - Доступно ТОЛЬКО после успешного входа в сессию (AUTH_STATUS_USER).
+ * - Никаких подписей и AUTH_IN_PROGRESS здесь больше нет.
+ *
+ * Закрытие:
+ * - удаляем запись из БД
+ * - если по sessionId есть активный WS — закрываем его
+ */
+public class Net_CloseActiveSession_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_CloseActiveSession_Handler.class);
+
+    @Override
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
+        Net_CloseActiveSession_Request req = (Net_CloseActiveSession_Request) baseReq;
+
+        if (ctx == null || ctx.getSolanaUser() == null || ctx.getAuthenticationStatus() != ConnectionContext.AUTH_STATUS_USER) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "NOT_AUTHENTICATED",
+                    "Операция доступна только для авторизованных пользователей"
+            );
+        }
+
+        SolanaUserEntry user = ctx.getSolanaUser();
+        String currentLogin = user.getLogin();
+
+        String targetSessionId = req.getSessionId();
+        if (targetSessionId == null || targetSessionId.isBlank()) {
+            if (ctx.getSessionId() != null && !ctx.getSessionId().isBlank()) {
+                targetSessionId = ctx.getSessionId();
+            } else if (ctx.getActiveSession() != null && ctx.getActiveSession().getSessionId() != null) {
+                targetSessionId = ctx.getActiveSession().getSessionId();
+            } else {
+                return NetExceptionResponseFactory.error(
+                        req,
+                        WireCodes.Status.BAD_REQUEST,
+                        "NO_SESSION_TO_CLOSE",
+                        "Не удалось определить, какую сессию нужно закрыть"
+                );
+            }
+        }
+
+        ActiveSessionEntry targetSession;
+        try {
+            targetSession = ActiveSessionsDAO.getInstance().getBySessionId(targetSessionId);
+        } catch (SQLException e) {
+            log.error("Ошибка БД при поиске сессии для CloseActiveSession sessionId={}", targetSessionId, e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR",
+                    "Ошибка доступа к базе данных при поиске сессии"
+            );
+        }
+
+        if (targetSession == null) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "SESSION_NOT_FOUND",
+                    "Сессия для закрытия не найдена"
+            );
+        }
+
+        if (currentLogin == null || !currentLogin.equals(targetSession.getLogin())) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "SESSION_OF_ANOTHER_USER",
+                    "Нельзя закрывать сессию другого пользователя"
+            );
+        }
+
+        boolean isCurrentSession = targetSessionId.equals(ctx.getSessionId());
+
+        closeActiveSession(targetSessionId, ctx, isCurrentSession);
+
+        Net_CloseActiveSession_Response resp = new Net_CloseActiveSession_Response();
+        resp.setOp(req.getOp());
+        resp.setRequestId(req.getRequestId());
+        resp.setStatus(WireCodes.Status.OK);
+        return resp;
+    }
+
+    private void closeActiveSession(String targetSessionId,
+                                    ConnectionContext currentCtx,
+                                    boolean isCurrentSession) {
+
+        try {
+            ActiveSessionsDAO.getInstance().deleteBySessionId(targetSessionId);
+        } catch (SQLException e) {
+            log.error("Ошибка БД при удалении сессии sessionId={}", targetSessionId, e);
+        }
+
+        ConnectionContext ctxToClose =
+                ActiveConnectionsRegistry.getInstance().getBySessionId(targetSessionId);
+
+        if (ctxToClose == null) return;
+
+        if (isCurrentSession && ctxToClose == currentCtx) {
+            new Thread(() -> {
+                try { Thread.sleep(50); } catch (InterruptedException ignored) {}
+                WsConnectionUtils.closeConnection(
+                        ctxToClose,
+                        4000,
+                        "Session closed by client via CloseActiveSession"
+                );
+            }, "CloseSession-" + targetSessionId).start();
+        } else {
+            WsConnectionUtils.closeConnection(
+                    ctxToClose,
+                    4000,
+                    "Session closed by client via CloseActiveSession"
+            );
+        }
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.Base64Ws;
+import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_CreateAuthSession_Request;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_CreateAuthSession_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import server.ws.WsConnectionUtils;
+import shine.db.dao.ActiveSessionsDAO;
+import shine.db.entities.ActiveSessionEntry;
+import shine.db.entities.SolanaUserEntry;
+import shine.geo.ClientInfoService;
+import shine.geo.GeoLookupService;
+import utils.crypto.Ed25519Util;
+
+import org.eclipse.jetty.websocket.api.Session;
+
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.sql.SQLException;
+
+/**
+ * CreateAuthSession (v2) — шаг 2 создания новой сессии (ТОЛЬКО deviceKey).
+ *
+ * Логика авторизации (v2):
+ *  - Создание сессии: AuthChallenge(login) -> authNonce -> CreateAuthSession(...)
+ *  - Клиент генерирует sessionKey (Ed25519), хранит приватный ключ у себя,
+ *    отправляет на сервер ТОЛЬКО sessionPubKeyB64.
+ *  - Сервер сохраняет sessionPubKeyB64 в active_sessions.session_key.
+ *
+ * Подпись deviceKey (Ed25519) проверяется над строкой (UTF-8):
+ *   AUTH_CREATE_SESSION:{login}:{timeMs}:{authNonce}
+ *
+ * На выходе:
+ *  - создаётся запись active_sessions
+ *  - ctx становится AUTH_STATUS_USER (вход выполнен как "текущая сессия")
+ *  - ответ: sessionId
+ */
+public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_CreateAuthSession__Handler.class);
+    private static final SecureRandom RANDOM = new SecureRandom();
+
+    public static final long ALLOWED_SKEW_MS = 30_000L;
+
+    @Override
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
+
+        Net_CreateAuthSession_Request req = (Net_CreateAuthSession_Request) baseReq;
+
+        if (ctx == null
+                || ctx.getSolanaUser() == null
+                || ctx.getAuthNonce() == null
+                || ctx.getAuthenticationStatus() != ConnectionContext.AUTH_STATUS_AUTH_IN_PROGRESS) {
+
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "NO_STEP1_CONTEXT",
+                    "Шаг 1 авторизации не был корректно выполнен для данного соединения"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: no step1 context or bad auth state");
+            return err;
+        }
+
+        SolanaUserEntry user = ctx.getSolanaUser();
+        String login = user.getLogin();
+        if (login == null || login.isBlank()) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "NO_LOGIN",
+                    "Для пользователя не задан login в БД"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: no login");
+            return err;
+        }
+
+        String storagePwd = req.getStoragePwd();
+        if (storagePwd == null || storagePwd.isBlank()) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_STORAGE_PWD",
+                    "Пустой storagePwd"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty storagePwd");
+            return err;
+        }
+
+        String sessionPubKeyB64 = req.getSessionPubKeyB64();
+        if (sessionPubKeyB64 == null || sessionPubKeyB64.isBlank()) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_SESSION_PUBKEY",
+                    "Пустой sessionPubKeyB64"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty session pubkey");
+            return err;
+        }
+
+        // Проверим, что sessionPubKeyB64 декодируется в 32 байта
+        byte[] sessionPubKey32;
+        try {
+            sessionPubKey32 = Base64Ws.decode(sessionPubKeyB64);
+        } catch (IllegalArgumentException e) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_BASE64",
+                    "Некорректный base64 в sessionPubKeyB64"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad session pubkey base64");
+            return err;
+        }
+        if (sessionPubKey32.length != 32) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_SESSION_PUBKEY_LEN",
+                    "sessionPubKey должен быть 32 байта"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad session pubkey length");
+            return err;
+        }
+
+        String signatureB64 = req.getSignatureB64();
+        if (signatureB64 == null || signatureB64.isBlank()) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_SIGNATURE",
+                    "Пустая цифровая подпись"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty signature");
+            return err;
+        }
+
+        long timeMs = req.getTimeMs();
+        long nowMs = System.currentTimeMillis();
+        long diff = Math.abs(nowMs - timeMs);
+        if (diff > ALLOWED_SKEW_MS) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "TIME_SKEW",
+                    "Время клиента отличается от сервера более чем на 30 секунд"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: time skew");
+            return err;
+        }
+
+        String clientInfoFromClient = req.getClientInfo();
+        if (clientInfoFromClient != null && clientInfoFromClient.length() > 50) {
+            clientInfoFromClient = clientInfoFromClient.substring(0, 50);
+        }
+
+        String devicePubKeyB64 = user.getDeviceKey();
+        if (devicePubKeyB64 == null || devicePubKeyB64.isBlank()) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "NO_DEVICE_KEY",
+                    "Отсутствует deviceKey у пользователя"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: no deviceKey");
+            return err;
+        }
+
+        String authNonce = ctx.getAuthNonce();
+
+        boolean sigOk;
+        try {
+            sigOk = verifyCreateSessionSignature(
+                    user,
+                    login,
+                    authNonce,
+                    timeMs,
+                    signatureB64
+            );
+        } catch (IllegalArgumentException ex) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_BASE64",
+                    "Некорректный формат Base64 для ключа или подписи"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad base64");
+            return err;
+        }
+
+        if (!sigOk) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "BAD_SIGNATURE",
+                    "Подпись не прошла проверку"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad signature");
+            return err;
+        }
+
+        // --- генерируем sessionId ---
+        String sessionId = generateRandom32B64Url();
+        long now = System.currentTimeMillis();
+
+        // --- Сбор данных о клиенте (IP, UA, язык) ---
+        Session wsSession = ctx.getWsSession();
+        String clientInfoFromRequest = ClientInfoService.buildClientInfoString(wsSession);
+        String userLanguage = ClientInfoService.extractPreferredLanguageTag(wsSession);
+
+        String clientIp = "";
+        if (wsSession != null) {
+            String ip = ClientInfoService.extractClientIp(wsSession);
+            if (ip != null) clientIp = ip;
+
+            if (!clientIp.isBlank()) {
+                try {
+                    GeoLookupService.resolveCountryCityOrIpWithCache(clientIp);
+                } catch (Exception e) {
+                    log.debug("Geo lookup failed for ip={}", clientIp, e);
+                }
+            }
+        }
+
+        // --- создаём запись ActiveSession и сохраняем в БД ---
+        ActiveSessionsDAO dao = ActiveSessionsDAO.getInstance();
+        ActiveSessionEntry activeSessionEntry;
+
+        try {
+            activeSessionEntry = new ActiveSessionEntry(
+                    sessionId,
+                    login,
+                    sessionPubKeyB64,         // session_key (pubkey)
+                    storagePwd,
+                    now,
+                    now,
+                    null,                    // pushEndpoint
+                    null,                    // pushP256dhKey
+                    null,                    // pushAuthKey
+                    clientIp,
+                    clientInfoFromClient,
+                    clientInfoFromRequest,
+                    userLanguage
+            );
+
+            dao.insert(activeSessionEntry);
+        } catch (SQLException e) {
+            log.error("Ошибка БД при создании новой сессии для login={}", login, e);
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR_SESSION_CREATE",
+                    "Ошибка БД при создании сессии"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: db error");
+            return err;
+        }
+
+        // --- обновляем контекст ---
+        ctx.setActiveSession(activeSessionEntry);
+        ctx.setSessionId(sessionId);
+        ctx.setAuthNonce(null);
+        ctx.setAuthenticationStatus(ConnectionContext.AUTH_STATUS_USER);
+
+        ActiveConnectionsRegistry.getInstance().register(ctx);
+
+        // --- формируем ответ ---
+        Net_CreateAuthSession_Response resp = new Net_CreateAuthSession_Response();
+        resp.setOp(req.getOp());
+        resp.setRequestId(req.getRequestId());
+        resp.setStatus(WireCodes.Status.OK);
+        resp.setSessionId(sessionId);
+        return resp;
+    }
+
+    private static boolean verifyCreateSessionSignature(
+            SolanaUserEntry user,
+            String login,
+            String authNonce,
+            long timeMs,
+            String signatureB64
+    ) throws IllegalArgumentException {
+
+        // deviceKey (pub, 32)
+        byte[] publicKey32 = Ed25519Util.keyFromBase64(user.getDeviceKey());
+        byte[] signature64 = Base64Ws.decode(signatureB64);
+
+        String preimageStr = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce;
+        byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
+
+        return Ed25519Util.verify(preimage, signature64, publicKey32);
+    }
+
+    private static String generateRandom32B64Url() {
+        byte[] buf = new byte[32];
+        RANDOM.nextBytes(buf);
+        return Base64Ws.encode(buf);
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_ListSessions_Request;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_ListSessions_Response;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_ListSessions_Response.SessionInfo;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.dao.ActiveSessionsDAO;
+import shine.db.entities.ActiveSessionEntry;
+import shine.db.entities.SolanaUserEntry;
+import shine.geo.GeoLookupService;
+
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * ListSessions (v2) — список активных сессий.
+ *
+ * Логика авторизации (v2):
+ * - Доступно ТОЛЬКО после успешного входа в сессию (AUTH_STATUS_USER).
+ * - Никаких подписей здесь больше нет.
+ */
+public class Net_ListSessions_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_ListSessions_Handler.class);
+
+    @Override
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
+        Net_ListSessions_Request req = (Net_ListSessions_Request) baseReq;
+
+        if (ctx == null || ctx.getSolanaUser() == null || ctx.getAuthenticationStatus() != ConnectionContext.AUTH_STATUS_USER) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "NOT_AUTHENTICATED",
+                    "Операция доступна только для авторизованных пользователей"
+            );
+        }
+
+        SolanaUserEntry user = ctx.getSolanaUser();
+        String currentLogin = user.getLogin();
+
+        List<ActiveSessionEntry> sessions;
+        try {
+            sessions = ActiveSessionsDAO.getInstance().getByLogin(currentLogin);
+        } catch (SQLException e) {
+            log.error("Ошибка БД при получении списка сессий для login={}", currentLogin, e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR_LIST_SESSIONS",
+                    "Ошибка доступа к базе данных при получении списка сессий"
+            );
+        }
+
+        List<SessionInfo> resultList = new ArrayList<>();
+        for (ActiveSessionEntry s : sessions) {
+            SessionInfo info = new SessionInfo();
+            info.setSessionId(s.getSessionId());
+            info.setClientInfoFromClient(s.getClientInfoFromClient());
+            info.setClientInfoFromRequest(s.getClientInfoFromRequest());
+            info.setLastAuthirificatedAtMs(s.getLastAuthirificatedAtMs());
+
+            String ip = s.getClientIp();
+            String geo = GeoLookupService.resolveCountryCityOrIpWithCache(ip);
+            info.setGeo(geo);
+
+            resultList.add(info);
+        }
+
+        Net_ListSessions_Response resp = new Net_ListSessions_Response();
+        resp.setOp(req.getOp());
+        resp.setRequestId(req.getRequestId());
+        resp.setStatus(WireCodes.Status.OK);
+        resp.setSessions(resultList);
+
+        return resp;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth;
+
+import server.logic.ws_protocol.Base64Ws;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_SessionChallenge_Request;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_SessionChallenge_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.dao.ActiveSessionsDAO;
+import shine.db.entities.ActiveSessionEntry;
+
+import java.security.SecureRandom;
+import java.sql.SQLException;
+
+/**
+ * SessionChallenge (v2) — шаг 1 входа в существующую сессию.
+ *
+ * Логика авторизации (v2):
+ * - Вход в существующую сессию ВСЕГДА в 2 шага:
+ *   1) SessionChallenge(sessionId) -> nonce
+ *   2) SessionLogin(sessionId, timeMs, signature(sessionKey, SESSION_LOGIN:...))
+ *
+ * Что делает:
+ * - Проверяет, что sessionId существует в БД.
+ * - Генерирует одноразовый nonce (base64url(32)), сохраняет его в ctx:
+ *   ctx.sessionLoginNonce, ctx.sessionLoginSessionId, ctx.sessionLoginNonceExpiresAtMs.
+ */
+public class Net_SessionChallenge_Handler implements JsonMessageHandler {
+
+    private static final SecureRandom RANDOM = new SecureRandom();
+    private static final long NONCE_TTL_MS = 60_000L;
+
+    @Override
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
+        Net_SessionChallenge_Request req = (Net_SessionChallenge_Request) baseReq;
+
+        String sessionId = req.getSessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_SESSION_ID",
+                    "Пустой sessionId"
+            );
+        }
+
+        ActiveSessionEntry session;
+        try {
+            session = ActiveSessionsDAO.getInstance().getBySessionId(sessionId);
+        } catch (SQLException e) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR",
+                    "Ошибка доступа к базе данных"
+            );
+        }
+
+        if (session == null) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "SESSION_NOT_FOUND",
+                    "Сессия не найдена"
+            );
+        }
+
+        byte[] buf = new byte[32];
+        RANDOM.nextBytes(buf);
+        String nonce = Base64Ws.encode(buf);
+
+        long now = System.currentTimeMillis();
+        ctx.setSessionLoginNonce(nonce);
+        ctx.setSessionLoginSessionId(sessionId);
+        ctx.setSessionLoginNonceExpiresAtMs(now + NONCE_TTL_MS);
+
+        Net_SessionChallenge_Response resp = new Net_SessionChallenge_Response();
+        resp.setOp(req.getOp());
+        resp.setRequestId(req.getRequestId());
+        resp.setStatus(WireCodes.Status.OK);
+        resp.setNonce(nonce);
+        return resp;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.auth;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.Base64Ws;
+import server.logic.ws_protocol.JSON.ActiveConnectionsRegistry;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_SessionLogin_Request;
+import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_SessionLogin_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.dao.ActiveSessionsDAO;
+import shine.db.dao.SolanaUsersDAO;
+import shine.db.entities.ActiveSessionEntry;
+import shine.db.entities.SolanaUserEntry;
+import shine.geo.ClientInfoService;
+import shine.geo.GeoLookupService;
+import utils.crypto.Ed25519Util;
+
+import java.nio.charset.StandardCharsets;
+import java.sql.SQLException;
+
+/**
+ * SessionLogin (v2) — шаг 2 входа в существующую сессию (по sessionKey).
+ *
+ * Логика авторизации (v2):
+ * - SessionChallenge(sessionId) выдаёт nonce (одноразовый, TTL).
+ * - SessionLogin проверяет подпись sessionKey над строкой:
+ *     SESSION_LOGIN:{sessionId}:{timeMs}:{nonce}
+ * - sessionPubKey берём из БД: active_sessions.session_key (base64 32 bytes).
+ *
+ * При успехе:
+ * - ctx становится AUTH_STATUS_USER
+ * - обновляем метаданные сессии (lastAuth + clientIp + clientInfo + lang)
+ * - возвращаем storagePwd
+ */
+public class Net_SessionLogin_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_SessionLogin_Handler.class);
+
+    private static final long ALLOWED_SKEW_MS = 30_000L;
+
+    @Override
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) throws Exception {
+        Net_SessionLogin_Request req = (Net_SessionLogin_Request) baseReq;
+
+        String sessionId = req.getSessionId();
+        if (sessionId == null || sessionId.isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_SESSION_ID",
+                    "Пустой sessionId"
+            );
+        }
+
+        // проверка челленджа
+        if (ctx.getSessionLoginNonce() == null
+                || ctx.getSessionLoginSessionId() == null
+                || System.currentTimeMillis() > ctx.getSessionLoginNonceExpiresAtMs()) {
+
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "NO_CHALLENGE",
+                    "Нет активного SessionChallenge или nonce истёк"
+            );
+        }
+
+        if (!sessionId.equals(ctx.getSessionLoginSessionId())) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "SESSION_ID_MISMATCH",
+                    "nonce был выдан для другого sessionId"
+            );
+        }
+
+        long timeMs = req.getTimeMs();
+        long nowMs = System.currentTimeMillis();
+        if (Math.abs(nowMs - timeMs) > ALLOWED_SKEW_MS) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "TIME_SKEW",
+                    "Время клиента отличается от сервера более чем на 30 секунд"
+            );
+        }
+
+        String signatureB64 = req.getSignatureB64();
+        if (signatureB64 == null || signatureB64.isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_SIGNATURE",
+                    "Пустая подпись"
+            );
+        }
+
+        ActiveSessionEntry session;
+        try {
+            session = ActiveSessionsDAO.getInstance().getBySessionId(sessionId);
+        } catch (SQLException e) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR",
+                    "Ошибка доступа к базе данных"
+            );
+        }
+
+        if (session == null) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "SESSION_NOT_FOUND",
+                    "Сессия не найдена"
+            );
+        }
+
+        String sessionPubKeyB64 = session.getSessionKey(); // это pubKey (Base64(32))
+        if (sessionPubKeyB64 == null || sessionPubKeyB64.isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "NO_SESSION_KEY",
+                    "В сессии не задан session_key"
+            );
+        }
+
+        String nonce = ctx.getSessionLoginNonce();
+
+        boolean sigOk;
+        try {
+            sigOk = verifySessionLoginSignature(sessionPubKeyB64, sessionId, timeMs, nonce, signatureB64);
+        } catch (IllegalArgumentException e) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_BASE64",
+                    "Некорректный Base64 для ключа/подписи"
+            );
+        }
+
+        if (!sigOk) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "BAD_SIGNATURE",
+                    "Подпись не прошла проверку"
+            );
+        }
+
+        // сжигаем nonce
+        ctx.setSessionLoginNonce(null);
+        ctx.setSessionLoginSessionId(null);
+        ctx.setSessionLoginNonceExpiresAtMs(0);
+
+        // подтягиваем пользователя
+        SolanaUserEntry user;
+        try {
+            user = SolanaUsersDAO.getInstance().getByLogin(session.getLogin());
+        } catch (SQLException e) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR_USER_LOOKUP",
+                    "Ошибка доступа к базе данных при получении пользователя"
+            );
+        }
+
+        if (user == null) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "USER_NOT_FOUND_FOR_SESSION",
+                    "Пользователь для данной сессии не найден"
+            );
+        }
+
+        // обновление метаданных
+        String clientInfoFromClient = req.getClientInfo();
+        if (clientInfoFromClient != null && clientInfoFromClient.length() > 50) {
+            clientInfoFromClient = clientInfoFromClient.substring(0, 50);
+        }
+
+        String clientIp = null;
+        String clientInfoFromRequest = null;
+        String userLanguage = null;
+
+        if (ctx.getWsSession() != null) {
+            clientIp = ClientInfoService.extractClientIp(ctx.getWsSession());
+            clientInfoFromRequest = ClientInfoService.buildClientInfoString(ctx.getWsSession());
+            userLanguage = ClientInfoService.extractPreferredLanguageTag(ctx.getWsSession());
+
+            if (clientIp != null && !clientIp.isBlank()) {
+                try {
+                    GeoLookupService.resolveCountryCityOrIpWithCache(clientIp);
+                } catch (Exception e) {
+                    log.debug("Geo lookup failed for ip={}", clientIp, e);
+                }
+            }
+        }
+
+        long now = System.currentTimeMillis();
+        try {
+            ActiveSessionsDAO.getInstance().updateOnRefresh(
+                    sessionId,
+                    now,
+                    clientIp,
+                    clientInfoFromClient,
+                    clientInfoFromRequest,
+                    userLanguage
+            );
+        } catch (SQLException e) {
+            log.error("Ошибка БД при updateOnRefresh sessionId={}", sessionId, e);
+        }
+
+        session.setLastAuthirificatedAtMs(now);
+        session.setClientIp(clientIp);
+        session.setClientInfoFromClient(clientInfoFromClient);
+        session.setClientInfoFromRequest(clientInfoFromRequest);
+        session.setUserLanguage(userLanguage);
+
+        // ctx
+        ctx.setActiveSession(session);
+        ctx.setSolanaUser(user);
+        ctx.setSessionId(sessionId);
+        ctx.setAuthenticationStatus(ConnectionContext.AUTH_STATUS_USER);
+
+        ActiveConnectionsRegistry.getInstance().register(ctx);
+
+        // ответ
+        Net_SessionLogin_Response resp = new Net_SessionLogin_Response();
+        resp.setOp(req.getOp());
+        resp.setRequestId(req.getRequestId());
+        resp.setStatus(WireCodes.Status.OK);
+        resp.setStoragePwd(session.getStoragePwd());
+        return resp;
+    }
+
+    private static boolean verifySessionLoginSignature(
+            String sessionPubKeyB64,
+            String sessionId,
+            long timeMs,
+            String nonce,
+            String signatureB64
+    ) throws IllegalArgumentException {
+
+        // pubKey: Base64(32). (Ed25519Util.keyFromBase64 должен использовать стандартный Base64)
+        byte[] publicKey32 = Ed25519Util.keyFromBase64(sessionPubKeyB64);
+
+        // signature: Base64(64) через единую утилиту WS-протокола
+        byte[] signature64 = Base64Ws.decodeLen(signatureB64, 64, "signatureB64");
+
+        String preimageStr = "SESSION_LOGIN:" + sessionId + ":" + timeMs + ":" + nonce;
+        byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
+
+        return Ed25519Util.verify(preimage, signature64, publicKey32);
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.blockchain.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+public final class Net_AddBlock_Request extends Net_Request {
+
+    private String blockchainName;   // обязателен
+    private int blockNumber;         // обязателен
+    private String prevBlockHash;    // HEX(64) или "" для нулевого
+    private String blockBytesB64;    // байты FULL-блока (raw+sig+hash) в Base64
+
+    public String getBlockchainName() { return blockchainName; }
+    public void setBlockchainName(String blockchainName) { this.blockchainName = blockchainName; }
+
+    public int getBlockNumber() { return blockNumber; }
+    public void setBlockNumber(int blockNumber) { this.blockNumber = blockNumber; }
+
+    public String getPrevBlockHash() { return prevBlockHash; }
+    public void setPrevBlockHash(String prevBlockHash) { this.prevBlockHash = prevBlockHash; }
+
+    public String getBlockBytesB64() { return blockBytesB64; }
+    public void setBlockBytesB64(String blockBytesB64) { this.blockBytesB64 = blockBytesB64; }
+}
+package server.logic.ws_protocol.JSON.handlers.blockchain.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Ответ:
+ * - reasonCode (null если ok)
+ * - serverLastGlobalNumber / serverLastGlobalHash
+ */
+public final class Net_AddBlock_Response extends Net_Response {
+
+    /** null если ok, иначе строка причины (bad_block_base64, user_not_found, и т.п.) */
+    private String reasonCode;
+
+    /** что сервер считает последним по глобальной цепочке */
+    private int serverLastGlobalNumber;
+    private String serverLastGlobalHash;
+
+    public String getReasonCode() { return reasonCode; }
+    public void setReasonCode(String reasonCode) { this.reasonCode = reasonCode; }
+
+    public int getServerLastGlobalNumber() { return serverLastGlobalNumber; }
+    public void setServerLastGlobalNumber(int v) { this.serverLastGlobalNumber = v; }
+
+    public String getServerLastGlobalHash() { return serverLastGlobalHash; }
+    public void setServerLastGlobalHash(String v) { this.serverLastGlobalHash = v; }
+}
+package server.logic.ws_protocol.JSON.handlers.blockchain;
+
+import blockchain.BchBlockEntry;
+import blockchain.BchCryptoVerifier;
+import blockchain.MsgSubType;
+import blockchain.body.BodyHasLine;
+import blockchain.body.BodyHasTarget;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.Base64Ws;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Exception_Response;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.blockchain.Net_AddBlock_Handler_utils.BlockchainLocks;
+import server.logic.ws_protocol.JSON.handlers.blockchain.Net_AddBlock_Handler_utils.BlockchainWriter;
+import server.logic.ws_protocol.JSON.handlers.blockchain.entyties.Net_AddBlock_Request;
+import server.logic.ws_protocol.JSON.handlers.blockchain.entyties.Net_AddBlock_Response;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.dao.BlockchainStateDAO;
+import shine.db.dao.BlocksDAO;
+import shine.db.entities.BlockchainStateEntry;
+import shine.db.entities.BlockEntry;
+import utils.blockchain.BlockchainNameUtil;
+
+import java.util.Arrays;
+import java.util.concurrent.locks.ReentrantLock;
+
+/**
+ * Net_AddBlock_Handler — единый хэндлер добавления блока (JSON).
+ *
+ * Изменение (v3):
+ * - ВСЕ ошибки теперь возвращаются в стандартном формате Net_Exception_Response:
+ *   status != 200, payload: { code, message, serverLastGlobalNumber, serverLastGlobalHash }
+ * - Успех — как и раньше Net_AddBlock_Response (status=200).
+ */
+public final class Net_AddBlock_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_AddBlock_Handler.class);
+
+    private final BlocksDAO blocksDAO = BlocksDAO.getInstance();
+    private final BlockchainStateDAO stateDAO = BlockchainStateDAO.getInstance();
+
+    private final BlockchainWriter dbWriter = new BlockchainWriter(blocksDAO, stateDAO);
+
+    @Override
+    public Net_Response handle(Net_Request baseReq, ConnectionContext ctx) {
+
+        Net_AddBlock_Request req = (Net_AddBlock_Request) baseReq;
+
+        String blockchainName = req.getBlockchainName();
+        ReentrantLock lock = BlockchainLocks.lockFor(blockchainName);
+        lock.lock();
+        try {
+            AddBlockResult r = addBlock(
+                    blockchainName,
+                    req.getBlockNumber(),        // старое поле, пока оставляем
+                    req.getPrevBlockHash(),      // старое поле, пока оставляем
+                    req.getBlockBytesB64()
+            );
+
+            // ✅ УСПЕХ: как раньше
+            if (r.isOk()) {
+                Net_AddBlock_Response resp = new Net_AddBlock_Response();
+                resp.setOp(req.getOp());
+                resp.setRequestId(req.getRequestId());
+                resp.setStatus(WireCodes.Status.OK);
+
+                resp.setReasonCode(null);
+                resp.setServerLastGlobalNumber(r.serverLastBlockNumber);
+                resp.setServerLastGlobalHash(r.serverLastBlockHashHex);
+
+                return resp;
+            }
+
+            // ✅ ОШИБКА: стандартный формат (code + message) + доп.поля для ресинка
+            return error(req, r.httpStatus, r.reasonCode, r.serverLastBlockNumber, r.serverLastBlockHashHex);
+
+        } finally {
+            lock.unlock();
+        }
+    }
+
+    private Net_Response error(Net_AddBlock_Request req,
+                               int status,
+                               String reasonCode,
+                               int serverLastNum,
+                               String serverLastHashHex) {
+
+        AddBlockExceptionResponse resp = new AddBlockExceptionResponse();
+        resp.setOp(req.getOp());
+        resp.setRequestId(req.getRequestId());
+        resp.setStatus(status);
+
+        // code — машинный
+        resp.setCode(reasonCode != null ? reasonCode : "add_block_error");
+        // message — человеческий (можешь улучшать тексты как угодно)
+        resp.setMessage(humanMessage(reasonCode));
+
+        // полезно клиенту для ресинка
+        resp.setServerLastGlobalNumber(serverLastNum);
+        resp.setServerLastGlobalHash(serverLastHashHex);
+
+        return resp;
+    }
+
+    private static String humanMessage(String code) {
+        if (code == null) return "Ошибка добавления блока";
+
+        return switch (code) {
+            case "empty_blockchain_name" -> "Пустое имя блокчейна";
+            case "bad_blockchain_name" -> "Некорректное имя блокчейна";
+            case "db_error" -> "Ошибка базы данных";
+            case "blockchain_state_not_found" -> "Состояние блокчейна не найдено";
+            case "state_last_hash_invalid" -> "Повреждено состояние блокчейна: неверный last_block_hash";
+            case "bad_block_base64" -> "Некорректный base64 блока";
+            case "limit_exceeded" -> "Превышен лимит размера блокчейна";
+            case "limit_check_failed" -> "Ошибка проверки лимита размера";
+            case "bad_block_format" -> "Некорректный формат блока";
+            case "bad_block_body" -> "Некорректное тело блока";
+            case "bad_block_number" -> "Некорректный номер блока";
+            case "req_global_mismatch" -> "Номер блока в запросе не совпадает с номером в блоке";
+            case "bad_prev_hash" -> "Некорректный prevHash (цепочка не совпадает)";
+            case "bad_blockchain_key_len" -> "Некорректный ключ блокчейна в состоянии (ожидалось 32 байта)";
+            case "signature_verify_failed" -> "Ошибка проверки подписи блока";
+            case "bad_signature" -> "Некорректная подпись блока";
+            case "prev_line_block_not_found" -> "Не найден блок prevLineNumber для проверки линии";
+            case "bad_prev_line_hash" -> "Некорректный prevLineHash";
+            case "db_error_prev_line_check" -> "Ошибка БД при проверке prevLine";
+            case "internal_error" -> "Внутренняя ошибка сервера при записи блока";
+            default -> "Ошибка: " + code;
+        };
+    }
+
+    private AddBlockResult addBlock(
+            String blockchainName,
+            int globalNumberFromReq,
+            String prevGlobalHashHexFromReq,
+            String blockBytesB64
+    ) {
+        if (blockchainName == null || blockchainName.isBlank()) {
+            log.warn("AddBlock: пустой blockchainName (reqGlobalNumber={})", globalNumberFromReq);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "empty_blockchain_name", 0, "");
+        }
+
+        String login = BlockchainNameUtil.loginFromBlockchainName(blockchainName);
+        if (login == null || login.isBlank()) {
+            log.warn("AddBlock: плохой blockchainName='{}' => login не получился (reqGlobalNumber={})",
+                    blockchainName, globalNumberFromReq);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_blockchain_name", 0, "");
+        }
+
+        // 1) state обязателен
+        final BlockchainStateEntry st;
+        try {
+            st = stateDAO.getByBlockchainName(blockchainName);
+        } catch (Exception e) {
+            log.error("AddBlock: ошибка БД при чтении blockchain_state (login={}, blockchainName={}, reqGlobalNumber={})",
+                    login, blockchainName, globalNumberFromReq, e);
+            return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "db_error", 0, "");
+        }
+
+        if (st == null) {
+            log.warn("AddBlock: blockchain_state_not_found (login={}, blockchainName={}, reqGlobalNumber={})",
+                    login, blockchainName, globalNumberFromReq);
+            return new AddBlockResult(WireCodes.Status.NOT_FOUND, "blockchain_state_not_found", -1, "");
+        }
+
+        final int serverLastNum = st.getLastBlockNumber();
+
+        final byte[] serverLastHash32;
+        try {
+            serverLastHash32 = (serverLastNum < 0)
+                    ? new byte[32]
+                    : require32OrThrow(st.getLastBlockHash(), "state.last_block_hash is null/invalid");
+        } catch (Exception e) {
+            // ✅ Раньше тут мог вылететь неожиданный 500 через внешний try/catch.
+            log.error("AddBlock: state_last_hash_invalid (login={}, blockchainName={}, serverLastNum={})",
+                    login, blockchainName, serverLastNum, e);
+            return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "state_last_hash_invalid", serverLastNum, "");
+        }
+
+        final String serverLastHashHex = toHex(serverLastHash32);
+
+        // 2) decode block
+        final byte[] blockBytes;
+        try {
+            blockBytes = decodeBase64(blockBytesB64);
+        } catch (Exception e) {
+            log.warn("AddBlock: некорректный base64 блока (login={}, blockchainName={}, reqGlobalNumber={})",
+                    login, blockchainName, globalNumberFromReq, e);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_base64", serverLastNum, serverLastHashHex);
+        }
+
+        // 3) лимит (оставляем как было)
+        try {
+            long oldSize = st.getFileSizeBytes();
+            long limit = st.getSizeLimit();
+            long newSize = safeAdd(oldSize, blockBytes.length);
+
+            if (limit > 0 && newSize > limit) {
+                log.warn("AddBlock: limit_exceeded (login={}, blockchainName={}, oldSize={}, addLen={}, newSize={}, limit={})",
+                        login, blockchainName, oldSize, blockBytes.length, newSize, limit);
+                return new AddBlockResult(413, "limit_exceeded", serverLastNum, serverLastHashHex);
+            }
+        } catch (Exception e) {
+            log.error("AddBlock: limit_check_failed (login={}, blockchainName={})", login, blockchainName, e);
+            return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "limit_check_failed", serverLastNum, serverLastHashHex);
+        }
+
+        // 4) parse block
+        final BchBlockEntry block;
+        try {
+            block = new BchBlockEntry(blockBytes);
+        } catch (Exception e) {
+            log.warn("AddBlock: не удалось распарсить BchBlockEntry (login={}, blockchainName={}, bytesLen={})",
+                    login, blockchainName, blockBytes.length, e);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_format", serverLastNum, serverLastHashHex);
+        }
+
+        // body.check()
+        try {
+            block.body.check();
+        } catch (Exception e) {
+            log.warn("AddBlock: body.check() не прошёл (login={}, blockchainName={}, blockNumber={}, type={}, ver={})",
+                    login, blockchainName, block.blockNumber, (block.type & 0xFFFF), (block.version & 0xFFFF), e);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_body", serverLastNum, serverLastHashHex);
+        }
+
+        // 4.2) запрет дырок: blockNumber строго last+1
+        int expectedBlockNumber = serverLastNum + 1;
+        if (block.blockNumber != expectedBlockNumber) {
+            log.warn("AddBlock: bad_block_number (login={}, blockchainName={}, пришёл={}, ожидали={}, serverLastNum={})",
+                    login, blockchainName, block.blockNumber, expectedBlockNumber, serverLastNum);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_number", serverLastNum, serverLastHashHex);
+        }
+
+        // (временная совместимость) req.globalNumber должен совпасть с block.blockNumber
+        if (globalNumberFromReq != block.blockNumber) {
+            log.warn("AddBlock: req_global_mismatch (login={}, blockchainName={}, reqGlobal={}, blockNumber={})",
+                    login, blockchainName, globalNumberFromReq, block.blockNumber);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "req_global_mismatch", serverLastNum, serverLastHashHex);
+        }
+
+        // 4.3) проверка цепочки по prevHash32
+        if (!Arrays.equals(block.prevHash32, serverLastHash32)) {
+            log.warn("AddBlock: bad_prev_hash (login={}, blockchainName={}, blockNumber={}, clientPrev={}, serverPrev={})",
+                    login, blockchainName, block.blockNumber, toHex(block.prevHash32), serverLastHashHex);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_prev_hash", serverLastNum, serverLastHashHex);
+        }
+
+        // 5) pubKey
+        final byte[] pubKey32 = st.getBlockchainKeyBytes();
+        if (pubKey32 == null || pubKey32.length != 32) {
+            log.warn("AddBlock: bad_blockchain_key_len (login={}, blockchainName={}, blockNumber={}, keyLen={})",
+                    login, blockchainName, block.blockNumber, (pubKey32 == null ? -1 : pubKey32.length));
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_blockchain_key_len", serverLastNum, serverLastHashHex);
+        }
+
+        // 6) подпись по hash32(preimage)
+        boolean sigOk;
+        try {
+            sigOk = BchCryptoVerifier.verifyBlock(block, pubKey32);
+        } catch (Exception e) {
+            log.warn("AddBlock: signature_verify_failed (login={}, blockchainName={}, blockNumber={})",
+                    login, blockchainName, block.blockNumber, e);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "signature_verify_failed", serverLastNum, serverLastHashHex);
+        }
+
+        if (!sigOk) {
+            log.warn("AddBlock: bad_signature (login={}, blockchainName={}, blockNumber={})",
+                    login, blockchainName, block.blockNumber);
+            return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_signature", serverLastNum, serverLastHashHex);
+        }
+
+        // 7) line columns (only for BodyHasLine)
+        Integer lineCode = null;
+        Integer prevLineNumber = null;
+        byte[] prevLineHash32 = null;
+        Integer thisLineNumber = null;
+
+        if (block.body instanceof BodyHasLine bl) {
+            lineCode = bl.lineCode();
+            prevLineNumber = bl.prevLineBlockGlobalNumber();
+            prevLineHash32 = bl.prevLineBlockHash32();
+            thisLineNumber = bl.lineSeq();
+
+            // Нормализация: -1 не пишем в БД (для совместимости со старым TextBody)
+            if (prevLineNumber != null && prevLineNumber == -1) {
+                prevLineNumber = null;
+                prevLineHash32 = null;
+                thisLineNumber = null;
+            }
+
+            // Если prevLineNumber задан — проверяем его хэш
+            if (prevLineNumber != null) {
+                try {
+                    byte[] dbPrevHash = blocksDAO.getHashByNumber(blockchainName, prevLineNumber);
+                    if (dbPrevHash == null) {
+                        log.warn("AddBlock: prev_line_block_not_found (login={}, blockchainName={}, blockNumber={}, prevLineNumber={})",
+                                login, blockchainName, block.blockNumber, prevLineNumber);
+                        return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "prev_line_block_not_found", serverLastNum, serverLastHashHex);
+                    }
+                    if (!Arrays.equals(dbPrevHash, require32OrThrow(prevLineHash32, "prevLineHash32 invalid"))) {
+                        log.warn("AddBlock: bad_prev_line_hash (login={}, blockchainName={}, blockNumber={}, prevLineNumber={})",
+                                login, blockchainName, block.blockNumber, prevLineNumber);
+                        return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_prev_line_hash", serverLastNum, serverLastHashHex);
+                    }
+                } catch (Exception e) {
+                    log.error("AddBlock: db_error_prev_line_check (login={}, blockchainName={}, blockNumber={})",
+                            login, blockchainName, block.blockNumber, e);
+                    return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "db_error_prev_line_check", serverLastNum, serverLastHashHex);
+                }
+            }
+        }
+
+        // 8) сформировать запись и записать (DB + state + файл)
+        try {
+            BlockEntry be = new BlockEntry();
+            be.setLogin(login);
+            be.setBchName(blockchainName);
+
+            be.setBlockNumber(block.blockNumber);
+            be.setMsgType(block.type & 0xFFFF);
+            be.setMsgSubType(block.subType & 0xFFFF);
+
+            be.setBlockBytes(block.toBytes());
+            be.setBlockHash(block.getHash32());
+            be.setBlockSignature(block.getSignature64());
+
+            // line columns (optional)
+            be.setLineCode(lineCode);
+            be.setPrevLineNumber(prevLineNumber);
+            be.setPrevLineHash(prevLineHash32);
+            be.setThisLineNumber(thisLineNumber);
+
+            // target columns (optional)
+            if (block.body instanceof BodyHasTarget t) {
+                be.setToLogin(t.toLogin());
+                be.setToBchName(t.toBchName());
+                be.setToBlockNumber(t.toBlockGlobalNumber());
+                be.setToBlockHash(t.toBlockHashBytes());
+            }
+
+            // edit helper (optional): если TEXT_EDIT_* — это "редактирование блока цели"
+            int type = block.type & 0xFFFF;
+            int sub = block.subType & 0xFFFF;
+
+            if (type == 1
+                    && (sub == (MsgSubType.TEXT_EDIT_POST & 0xFFFF) || sub == (MsgSubType.TEXT_EDIT_REPLY & 0xFFFF))
+                    && be.getToBlockNumber() != null) {
+                be.setEditedByBlockNumber(be.getToBlockNumber());
+            }
+
+            dbWriter.appendBlockAndState(blockchainName, block, st, be);
+
+        } catch (Exception e) {
+            log.error("AddBlock: внутренняя ошибка при записи блока (login={}, blockchainName={}, blockNumber={})",
+                    login, blockchainName, block.blockNumber, e);
+            return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "internal_error", serverLastNum, serverLastHashHex);
+        }
+
+        String newHashHex = toHex(block.getHash32());
+
+        log.info("✅ AddBlock ok: login={}, blockchainName={}, blockNumber={}, newHash={}",
+                login, blockchainName, block.blockNumber, newHashHex);
+
+        return new AddBlockResult(WireCodes.Status.OK, null, block.blockNumber, newHashHex);
+    }
+
+    /* ===================================================================== */
+    /* ====================== Helpers ====================================== */
+    /* ===================================================================== */
+
+    private static byte[] decodeBase64(String b64) {
+        if (b64 == null) throw new IllegalArgumentException("blockBytesB64 == null");
+        return Base64Ws.decode(b64);
+    }
+
+    private static long safeAdd(long a, long b) {
+        long r = a + b;
+        if (((a ^ r) & (b ^ r)) < 0) throw new ArithmeticException("long overflow");
+        return r;
+    }
+
+    private static byte[] require32OrThrow(byte[] b, String msg) {
+        if (b == null || b.length != 32) throw new IllegalArgumentException(msg);
+        return b;
+    }
+
+    private static String toHex(byte[] bytes) {
+        if (bytes == null) return "null";
+        char[] HEX = "0123456789abcdef".toCharArray();
+        char[] out = new char[bytes.length * 2];
+        for (int i = 0; i < bytes.length; i++) {
+            int v = bytes[i] & 0xFF;
+            out[i * 2] = HEX[v >>> 4];
+            out[i * 2 + 1] = HEX[v & 0x0F];
+        }
+        return new String(out);
+    }
+
+    /**
+     * Спец-ответ ошибки AddBlock: стандартный code/message + поля для ресинка.
+     * В wire-формате это окажется внутри payload.
+     */
+    public static final class AddBlockExceptionResponse extends Net_Exception_Response {
+        private Integer serverLastGlobalNumber;
+        private String serverLastGlobalHash;
+
+        public Integer getServerLastGlobalNumber() {
+            return serverLastGlobalNumber;
+        }
+
+        public void setServerLastGlobalNumber(Integer serverLastGlobalNumber) {
+            this.serverLastGlobalNumber = serverLastGlobalNumber;
+        }
+
+        public String getServerLastGlobalHash() {
+            return serverLastGlobalHash;
+        }
+
+        public void setServerLastGlobalHash(String serverLastGlobalHash) {
+            this.serverLastGlobalHash = serverLastGlobalHash;
+        }
+    }
+
+    private static final class AddBlockResult {
+        final int httpStatus;
+        final String reasonCode;
+        final int serverLastBlockNumber;
+        final String serverLastBlockHashHex;
+
+        AddBlockResult(int httpStatus, String reasonCode, int serverLastBlockNumber, String serverLastBlockHashHex) {
+            this.httpStatus = httpStatus;
+            this.reasonCode = reasonCode;
+            this.serverLastBlockNumber = serverLastBlockNumber;
+            this.serverLastBlockHashHex = serverLastBlockHashHex;
+        }
+
+        boolean isOk() { return httpStatus == WireCodes.Status.OK; }
+    }
+}
+
+package server.logic.ws_protocol.JSON.handlers.blockchain.Net_AddBlock_Handler_utils;
+
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.locks.ReentrantLock;
+
+public final class BlockchainLocks {
+    private static final ConcurrentHashMap<String, ReentrantLock> MAP = new ConcurrentHashMap<>();
+
+    private BlockchainLocks() {}
+
+    public static ReentrantLock lockFor(String blockchainName) {
+        return MAP.computeIfAbsent(blockchainName, id -> new ReentrantLock(true)); // fair=true
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.blockchain.Net_AddBlock_Handler_utils;
+
+import blockchain.BchBlockEntry;
+import shine.db.dao.BlockchainStateDAO;
+import shine.db.dao.BlocksDAO;
+import shine.db.entities.BlockchainStateEntry;
+import shine.db.entities.BlockEntry;
+import utils.files.FileStoreUtil;
+
+import java.sql.Connection;
+import java.sql.SQLException;
+
+/**
+ * BlockchainWriter — запись блока в DB + обновление state + запись в файл.
+ *
+ * ВАЖНО:
+ * - Это минимальный рабочий вариант под новый формат.
+ * - Если у тебя уже есть "атомарность" сложнее (tmp_bch + commit/recovery) — можно усилить потом.
+ */
+public final class BlockchainWriter {
+
+    private final BlocksDAO blocksDAO;
+    private final BlockchainStateDAO stateDAO;
+    private final FileStoreUtil fs = FileStoreUtil.getInstance();
+
+    public BlockchainWriter(BlocksDAO blocksDAO, BlockchainStateDAO stateDAO) {
+        this.blocksDAO = blocksDAO;
+        this.stateDAO = stateDAO;
+    }
+
+    public void appendBlockAndState(String blockchainName,
+                                    BchBlockEntry block,
+                                    BlockchainStateEntry st,
+                                    BlockEntry be) throws SQLException {
+
+        long nowMs = System.currentTimeMillis();
+
+        try (Connection c = shine.db.SqliteDbController.getInstance().getConnection()) {
+            c.setAutoCommit(false);
+            try {
+                // 1) insert block
+                blocksDAO.insert(c, be);
+
+                // 2) update state
+                st.setLastBlockNumber(block.blockNumber);
+                st.setLastBlockHash(block.getHash32());
+                st.setFileSizeBytes(st.getFileSizeBytes() + block.toBytes().length);
+                st.setUpdatedAtMs(nowMs);
+
+                stateDAO.upsert(c, st);
+
+                c.commit();
+            } catch (Exception e) {
+                try { c.rollback(); } catch (Exception ignored) {}
+                if (e instanceof SQLException se) throw se;
+                throw new SQLException("appendBlockAndState failed", e);
+            } finally {
+                try { c.setAutoCommit(true); } catch (Exception ignored) {}
+            }
+        }
+
+        // 3) append to file (минимально: просто дописать)
+        // Если у тебя уже есть логика tmp_bch+atomicReplace — можно заменить тут.
+        String fileName = fs.buildBlockchainFileName(blockchainName);
+        fs.addDataToFile(fileName, block.toBytes());
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.connections.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Запрос GetFriendsLists — получить два списка "друзей" по connections_state.
+ *
+ * {
+ *   "op": "GetFriendsLists",
+ *   "requestId": "req-100",
+ *   "payload": {
+ *     "login": "anya"
+ *   }
+ * }
+ *
+ * Возвращает:
+ *  - out_friends: кому login поставил FRIEND
+ *  - in_friends: кто поставил FRIEND этому login
+ *
+ * ПРО ДОСТУП (на будущее):
+ * Сейчас (MVP) без ограничений. Позже можно ограничить видимость связей.
+ */
+public class Net_GetFriendsLists_Request extends Net_Request {
+
+    private String login;
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+}
+package server.logic.ws_protocol.JSON.handlers.connections.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Ответ GetFriendsLists.
+ *
+ * {
+ *   "op": "GetFriendsLists",
+ *   "requestId": "req-100",
+ *   "status": 200,
+ *   "payload": {
+ *     "login": "Anya",                  // канонический регистр из БД
+ *     "out_friends": ["Bob", "Kate"],   // кому login поставил FRIEND
+ *     "in_friends":  ["Alex", "Kate"]   // кто поставил FRIEND login
+ *   }
+ * }
+ */
+public class Net_GetFriendsLists_Response extends Net_Response {
+
+    private String login;
+
+    private List<String> out_friends = new ArrayList<>();
+    private List<String> in_friends  = new ArrayList<>();
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+
+    public List<String> getOut_friends() { return out_friends; }
+    public void setOut_friends(List<String> out_friends) { this.out_friends = out_friends; }
+
+    public List<String> getIn_friends() { return in_friends; }
+    public void setIn_friends(List<String> in_friends) { this.in_friends = in_friends; }
+}
+package server.logic.ws_protocol.JSON.handlers.connections;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.connections.entyties.Net_GetFriendsLists_Request;
+import server.logic.ws_protocol.JSON.handlers.connections.entyties.Net_GetFriendsLists_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.MsgSubType;
+import shine.db.SqliteDbController;
+import shine.db.dao.ConnectionsStateDAO;
+
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+import java.util.List;
+
+/**
+ * GetFriendsLists — получить 2 списка:
+ *  - out_friends: кому login поставил FRIEND
+ *  - in_friends: кто поставил FRIEND этому login
+ *
+ * ВАЖНО:
+ * - login в запросе может быть любым регистром
+ * - в ответе возвращаем канонический регистр (как в solana_users.login)
+ *
+ * ПРИМЕЧАНИЕ:
+ * Таблица пользователей тут названа "solana_users". Если у тебя иначе — поменяй SQL.
+ */
+public class Net_GetFriendsLists_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_GetFriendsLists_Handler.class);
+
+    @Override
+    public Net_Response handle(Net_Request baseRequest, ConnectionContext ctx) {
+        Net_GetFriendsLists_Request req = (Net_GetFriendsLists_Request) baseRequest;
+
+        if (req.getLogin() == null || req.getLogin().isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_FIELDS",
+                    "Некорректные поля: login"
+            );
+        }
+
+        final String loginAnyCase = req.getLogin().trim();
+
+        try {
+            SqliteDbController db = SqliteDbController.getInstance();
+            ConnectionsStateDAO dao = ConnectionsStateDAO.getInstance();
+
+            try (Connection c = db.getConnection()) {
+
+                // 1) Канонизируем login через solana_users (NOCASE)
+                String canonicalLogin = findCanonicalLogin(c, loginAnyCase);
+                if (canonicalLogin == null) {
+                    return NetExceptionResponseFactory.error(
+                            req,
+                            404,
+                            "USER_NOT_FOUND",
+                            "Пользователь не найден"
+                    );
+                }
+
+                int relType = (int) MsgSubType.CONNECTION_FRIEND;
+
+                // 2) Два списка (логины канонические)
+                List<String> outFriends = dao.listOutgoingByRelTypeCanonical(c, canonicalLogin, relType);
+                List<String> inFriends  = dao.listIncomingByRelTypeCanonical(c, canonicalLogin, relType);
+
+                Net_GetFriendsLists_Response resp = new Net_GetFriendsLists_Response();
+                resp.setOp(req.getOp());
+                resp.setRequestId(req.getRequestId());
+                resp.setStatus(WireCodes.Status.OK);
+
+                resp.setLogin(canonicalLogin);
+                resp.setOut_friends(outFriends);
+                resp.setIn_friends(inFriends);
+
+                return resp;
+            }
+
+        } catch (Exception e) {
+            log.error("❌ Internal error GetFriendsLists", e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.INTERNAL_ERROR,
+                    "INTERNAL_ERROR",
+                    "Внутренняя ошибка сервера"
+            );
+        }
+    }
+
+    private String findCanonicalLogin(Connection c, String loginAnyCase) throws Exception {
+        String sql = """
+            SELECT login
+            FROM solana_users
+            WHERE login = ? COLLATE NOCASE
+            LIMIT 1
+            """;
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, loginAnyCase);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return null;
+                return rs.getString("login");
+            }
+        }
+    }
+}
+package server.logic.ws_protocol.JSON.handlers;
+
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Общий интерфейс для всех JSON-хэндлеров.
+ */
+public interface JsonMessageHandler {
+
+    /**
+     * Обработать запрос и вернуть ответ.
+     *
+     * @param request распарсенный запрос
+     * @param ctx     контекст текущего WebSocket-соединения
+     */
+    Net_Response handle(Net_Request request, ConnectionContext ctx) throws Exception;
+}
+
+package server.logic.ws_protocol.JSON.handlers.system.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Ping:
+ * {
+ *   "op": "Ping",
+ *   "requestId": "req-1",
+ *   "payload": { "ts": 1700000000000 }
+ * }
+ *
+ * Сервер ничего не проверяет, поле ts можно слать любое.
+ */
+public class Net_Ping_Request extends Net_Request {
+
+    private long ts;
+
+    public long getTs() { return ts; }
+    public void setTs(long ts) { this.ts = ts; }
+}
+package server.logic.ws_protocol.JSON.handlers.system.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Pong-ответ:
+ * {
+ *   "op": "Ping",
+ *   "requestId": "req-1",
+ *   "status": 200,
+ *   "payload": { "ts": 1700000000123 }
+ * }
+ */
+public class Net_Ping_Response extends Net_Response {
+
+    private long ts;
+
+    public long getTs() { return ts; }
+    public void setTs(long ts) { this.ts = ts; }
+}
+package server.logic.ws_protocol.JSON.handlers.system;
+
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.system.entyties.Net_Ping_Request;
+import server.logic.ws_protocol.JSON.handlers.system.entyties.Net_Ping_Response;
+import server.logic.ws_protocol.WireCodes;
+
+/**
+ * Ping — keep-alive.
+ * В ответ кладём только ts (текущее время сервера в мс).
+ */
+public class Net_Ping_Handler implements JsonMessageHandler {
+
+    @Override
+    public Net_Response handle(Net_Request baseRequest, ConnectionContext ctx) {
+        Net_Ping_Request req = (Net_Ping_Request) baseRequest;
+
+        Net_Ping_Response resp = new Net_Ping_Response();
+        resp.setOp(req.getOp());            // "Ping"
+        resp.setRequestId(req.getRequestId());
+        resp.setStatus(WireCodes.Status.OK);
+
+        // ничего не проверяем, просто отдаём серверное время
+        resp.setTs(System.currentTimeMillis());
+
+        return resp;
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.tempToTest.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Запрос AddUser — временная/тестовая регистрация локального пользователя.
+ *
+ * Клиент отправляет:
+ *
+ * {
+ *   "op": "AddUser",
+ *   "requestId": "test-add-1",
+ *   "payload": {
+ *     "login": "anya",
+ *     "blockchainName": "anya-001",
+ *     "solanaKey": "base64-ed25519-public-key-login",
+ *     "blockchainKey": "base64-ed25519-public-key-blockchain",
+ *     "deviceKey": "base64-ed25519-public-key-device",
+ *     "bchLimit": 1000000
+ *   }
+ * }
+ *
+ * Все поля лежат внутри payload.
+ */
+public class Net_AddUser_Request extends Net_Request {
+
+    private String login;
+    private String blockchainName;
+
+    /** Ключ пользователя Solana (публичный ключ логина) */
+    private String solanaKey;
+
+    /** Ключ блокчейна (публичный ключ блокчейна) */
+    private String blockchainKey;
+
+    /** Ключ устройства (публичный ключ устройства) */
+    private String deviceKey;
+
+    private Integer bchLimit;
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+
+    public String getBlockchainName() { return blockchainName; }
+    public void setBlockchainName(String blockchainName) { this.blockchainName = blockchainName; }
+
+    public String getSolanaKey() { return solanaKey; }
+    public void setSolanaKey(String solanaKey) { this.solanaKey = solanaKey; }
+
+    public String getBlockchainKey() { return blockchainKey; }
+    public void setBlockchainKey(String blockchainKey) { this.blockchainKey = blockchainKey; }
+
+    public String getDeviceKey() { return deviceKey; }
+    public void setDeviceKey(String deviceKey) { this.deviceKey = deviceKey; }
+
+    public Integer getBchLimit() { return bchLimit; }
+    public void setBchLimit(Integer bchLimit) { this.bchLimit = bchLimit; }
+}
+// file: server/logic/ws_protocol/JSON/handlers/tempToTest/entyties/Net_AddUser_Response.java
+package server.logic.ws_protocol.JSON.handlers.tempToTest.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Успешный ответ на AddUser.
+ *
+ * Сейчас дополнительных полей нет — достаточно status=200.
+ *
+ * Пример:
+ * {
+ *   "op": "AddUser",
+ *   "requestId": "test-add-1",
+ *   "status": 200,
+ *   "payload": { }
+ * }
+ */
+public class Net_AddUser_Response extends Net_Response {
+    // При необходимости сюда можно добавить, например, флаг created/updated и т.п.
+}
+package server.logic.ws_protocol.JSON.handlers.tempToTest.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Запрос GetUser — проверка/получение пользователя по login.
+ *
+ * Клиент отправляет:
+ *
+ * {
+ *   "op": "GetUser",
+ *   "requestId": "u-1",
+ *   "payload": {
+ *     "login": "AnYa"
+ *   }
+ * }
+ *
+ * Поиск по login выполняется без учёта регистра.
+ * В ответе возвращаем login/blockchainName с тем регистром, как в БД.
+ */
+public class Net_GetUser_Request extends Net_Request {
+
+    private String login;
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+}
+package server.logic.ws_protocol.JSON.handlers.tempToTest.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Ответ GetUser.
+ *
+ * Всегда status=200.
+ *
+ * Пример (нет пользователя):
+ * {
+ *   "op": "GetUser",
+ *   "requestId": "u-1",
+ *   "status": 200,
+ *   "payload": { "exists": false }
+ * }
+ *
+ * Пример (есть пользователь):
+ * {
+ *   "op": "GetUser",
+ *   "requestId": "u-1",
+ *   "status": 200,
+ *   "payload": {
+ *     "exists": true,
+ *     "login": "Anya",
+ *     "blockchainName": "anya-001",
+ *     "solanaKey": "...",
+ *     "blockchainKey": "...",
+ *     "deviceKey": "..."
+ *   }
+ * }
+ */
+public class Net_GetUser_Response extends Net_Response {
+
+    private Boolean exists;
+
+    private String login;
+    private String blockchainName;
+    private String solanaKey;
+    private String blockchainKey;
+    private String deviceKey;
+
+    public Boolean getExists() { return exists; }
+    public void setExists(Boolean exists) { this.exists = exists; }
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+
+    public String getBlockchainName() { return blockchainName; }
+    public void setBlockchainName(String blockchainName) { this.blockchainName = blockchainName; }
+
+    public String getSolanaKey() { return solanaKey; }
+    public void setSolanaKey(String solanaKey) { this.solanaKey = solanaKey; }
+
+    public String getBlockchainKey() { return blockchainKey; }
+    public void setBlockchainKey(String blockchainKey) { this.blockchainKey = blockchainKey; }
+
+    public String getDeviceKey() { return deviceKey; }
+    public void setDeviceKey(String deviceKey) { this.deviceKey = deviceKey; }
+}
+package server.logic.ws_protocol.JSON.handlers.tempToTest.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Запрос SearchUsers — поиск логинов по префиксу.
+ *
+ * Клиент отправляет:
+ * {
+ *   "op": "SearchUsers",
+ *   "requestId": "su-1",
+ *   "payload": { "prefix": "any" }
+ * }
+ *
+ * Поиск по prefix выполняется без учёта регистра.
+ * В ответе возвращаем логины с тем регистром, как в БД.
+ */
+public class Net_SearchUsers_Request extends Net_Request {
+
+    private String prefix;
+
+    public String getPrefix() { return prefix; }
+    public void setPrefix(String prefix) { this.prefix = prefix; }
+}
+package server.logic.ws_protocol.JSON.handlers.tempToTest.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Ответ SearchUsers.
+ *
+ * Всегда status=200.
+ *
+ * Пример:
+ * {
+ *   "op": "SearchUsers",
+ *   "requestId": "su-1",
+ *   "status": 200,
+ *   "payload": {
+ *     "logins": ["Anya", "andrew", "Angel"]
+ *   }
+ * }
+ */
+public class Net_SearchUsers_Response extends Net_Response {
+
+    private List<String> logins = new ArrayList<>();
+
+    public List<String> getLogins() { return logins; }
+    public void setLogins(List<String> logins) { this.logins = logins; }
+}
+package server.logic.ws_protocol.JSON.handlers.tempToTest;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.Base64Ws;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.tempToTest.entyties.Net_AddUser_Request;
+import server.logic.ws_protocol.JSON.handlers.tempToTest.entyties.Net_AddUser_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.SqliteDbController;
+import shine.db.dao.BlockchainStateDAO;
+import shine.db.dao.SolanaUsersDAO;
+import shine.db.entities.BlockchainStateEntry;
+import shine.db.entities.SolanaUserEntry;
+import utils.blockchain.BlockchainNameUtil;
+
+import java.sql.Connection;
+import java.sql.SQLException;
+
+public class Net_AddUser_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_AddUser_Handler.class);
+
+    /** TEST ONLY */
+    private static final int TEST_BCH_LIMIT = 1_000_000;
+
+    @Override
+    public Net_Response handle(Net_Request baseRequest, ConnectionContext ctx) {
+        Net_AddUser_Request req = (Net_AddUser_Request) baseRequest;
+
+        if (req.getLogin() == null || req.getLogin().isBlank()
+                || req.getBlockchainName() == null || req.getBlockchainName().isBlank()
+                || req.getSolanaKey() == null || req.getSolanaKey().isBlank()
+                || req.getBlockchainKey() == null || req.getBlockchainKey().isBlank()
+                || req.getDeviceKey() == null || req.getDeviceKey().isBlank()) {
+
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_FIELDS",
+                    "Некорректные поля: login/blockchainName/solanaKey/blockchainKey/deviceKey"
+            );
+        }
+
+        // blockchainName должен быть вида: <login>-NNN
+        if (!BlockchainNameUtil.isBlockchainNameMatchesLogin(req.getBlockchainName(), req.getLogin())) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_BLOCKCHAIN_NAME",
+                    "blockchainName должен быть вида <login>-NNN (пример: anya-001)"
+            );
+        }
+
+        int limit = (req.getBchLimit() == null || req.getBchLimit() <= 0)
+                ? TEST_BCH_LIMIT
+                : req.getBchLimit();
+
+        try {
+            // базовая валидация форматов ключей: Base64(32 bytes)
+            byte[] solanaKey32;
+            byte[] blockchainKey32;
+            byte[] deviceKey32;
+
+            try {
+                solanaKey32 = Base64Ws.decodeLen(req.getSolanaKey(), 32, "solanaKey");
+                blockchainKey32 = Base64Ws.decodeLen(req.getBlockchainKey(), 32, "blockchainKey");
+                deviceKey32 = Base64Ws.decodeLen(req.getDeviceKey(), 32, "deviceKey");
+            } catch (IllegalArgumentException e) {
+                return NetExceptionResponseFactory.error(
+                        req,
+                        WireCodes.Status.BAD_REQUEST,
+                        "BAD_KEY_FORMAT",
+                        e.getMessage()
+                );
+            }
+
+            // (переменные не используются дальше, но оставляем для ясности проверки длины)
+            if (solanaKey32.length != 32 || blockchainKey32.length != 32 || deviceKey32.length != 32) {
+                return NetExceptionResponseFactory.error(
+                        req,
+                        WireCodes.Status.BAD_REQUEST,
+                        "BAD_KEY_FORMAT",
+                        "solanaKey/blockchainKey/deviceKey должны быть Base64(32 bytes)"
+                );
+            }
+
+            SolanaUsersDAO usersDAO = SolanaUsersDAO.getInstance();
+            BlockchainStateDAO stateDAO = BlockchainStateDAO.getInstance();
+
+            SqliteDbController db = SqliteDbController.getInstance();
+
+            try (Connection c = db.getConnection()) {
+                c.setAutoCommit(false);
+
+                // 1. Проверяем, что пользователя нет (case-insensitive)
+                if (usersDAO.getByLogin(c, req.getLogin()) != null) {
+                    return NetExceptionResponseFactory.error(
+                            req,
+                            409,
+                            "USER_ALREADY_EXISTS",
+                            "Пользователь с таким login уже существует"
+                    );
+                }
+
+                // 2. Проверяем, что blockchainName ещё нет (case-sensitive, как в БД)
+                if (usersDAO.existsByBlockchainName(c, req.getBlockchainName())) {
+                    return NetExceptionResponseFactory.error(
+                            req,
+                            409,
+                            "BLOCKCHAIN_ALREADY_EXISTS",
+                            "Пользователь с таким blockchainName уже существует"
+                    );
+                }
+
+                // 3. На всякий случай оставляем старую проверку blockchain_state,
+                //    потому что эта таблица нужна серверу (состояние цепочки/лимиты).
+                if (stateDAO.getByBlockchainName(c, req.getBlockchainName()) != null) {
+                    return NetExceptionResponseFactory.error(
+                            req,
+                            409,
+                            "BLOCKCHAIN_STATE_ALREADY_EXISTS",
+                            "blockchain_state уже существует"
+                    );
+                }
+
+                // 4. Создаём пользователя (все поля теперь лежат в solana_users)
+                SolanaUserEntry user = new SolanaUserEntry();
+                user.setLogin(req.getLogin());
+                user.setBlockchainName(req.getBlockchainName());
+                user.setSolanaKey(req.getSolanaKey());
+                user.setBlockchainKey(req.getBlockchainKey());
+                user.setDeviceKey(req.getDeviceKey());
+
+                usersDAO.insert(c, user);
+
+                // 5. Создаём INITIAL blockchain_state (для работы сервера)
+                BlockchainStateEntry st = new BlockchainStateEntry();
+                st.setBlockchainName(req.getBlockchainName());
+                st.setLogin(req.getLogin());
+                st.setBlockchainKey(req.getBlockchainKey()); // Base64(32)
+                st.setLastBlockNumber(-1);
+                st.setLastBlockHash(new byte[32]);
+                st.setFileSizeBytes(0);
+                st.setSizeLimit(limit);
+                st.setUpdatedAtMs(System.currentTimeMillis());
+
+                stateDAO.upsert(c, st);
+
+                c.commit();
+            }
+
+            Net_AddUser_Response resp = new Net_AddUser_Response();
+            resp.setOp(req.getOp());
+            resp.setRequestId(req.getRequestId());
+            resp.setStatus(WireCodes.Status.OK);
+
+            log.info("✅ AddUser ok: login={}, blockchainName={}, limit={}",
+                    req.getLogin(), req.getBlockchainName(), limit);
+
+            return resp;
+
+        } catch (SQLException e) {
+            log.error("❌ DB error AddUser", e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR",
+                    "Ошибка БД"
+            );
+        } catch (Exception e) {
+            log.error("❌ Internal error AddUser", e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.INTERNAL_ERROR,
+                    "INTERNAL_ERROR",
+                    "Внутренняя ошибка сервера"
+            );
+        }
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.tempToTest;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.tempToTest.entyties.Net_GetUser_Request;
+import server.logic.ws_protocol.JSON.handlers.tempToTest.entyties.Net_GetUser_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.dao.SolanaUsersDAO;
+import shine.db.entities.SolanaUserEntry;
+
+import java.sql.SQLException;
+
+public class Net_GetUser_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_GetUser_Handler.class);
+
+    @Override
+    public Net_Response handle(Net_Request baseRequest, ConnectionContext ctx) {
+        Net_GetUser_Request req = (Net_GetUser_Request) baseRequest;
+
+        if (req.getLogin() == null || req.getLogin().isBlank()) {
+            // тут логичнее BAD_REQUEST, но ты просил: "нет пользователя" тоже 200.
+            // Поэтому BAD_REQUEST оставляем только на реально пустой login.
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_FIELDS",
+                    "Некорректные поля: login"
+            );
+        }
+
+        SolanaUsersDAO usersDAO = SolanaUsersDAO.getInstance();
+
+        try {
+            SolanaUserEntry u = usersDAO.getByLogin(req.getLogin());
+
+            Net_GetUser_Response resp = new Net_GetUser_Response();
+            resp.setOp(req.getOp());
+            resp.setRequestId(req.getRequestId());
+            resp.setStatus(WireCodes.Status.OK);
+
+            if (u == null) {
+                resp.setExists(false);
+                log.info("ℹ️ GetUser: not found for login={}", req.getLogin());
+                return resp;
+            }
+
+            // ВАЖНО:
+            // - Поиск по login был case-insensitive,
+            // - а тут возвращаем login/blockchainName как в БД (с исходным регистром).
+            resp.setExists(true);
+            resp.setLogin(u.getLogin());
+            resp.setBlockchainName(u.getBlockchainName());
+            resp.setSolanaKey(u.getSolanaKey());
+            resp.setBlockchainKey(u.getBlockchainKey());
+            resp.setDeviceKey(u.getDeviceKey());
+
+            log.info("✅ GetUser: found login={}, blockchainName={}", u.getLogin(), u.getBlockchainName());
+            return resp;
+
+        } catch (SQLException e) {
+            log.error("❌ DB error GetUser", e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR",
+                    "Ошибка БД"
+            );
+        } catch (Exception e) {
+            log.error("❌ Internal error GetUser", e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.INTERNAL_ERROR,
+                    "INTERNAL_ERROR",
+                    "Внутренняя ошибка сервера"
+            );
+        }
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.tempToTest;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.tempToTest.entyties.Net_SearchUsers_Request;
+import server.logic.ws_protocol.JSON.handlers.tempToTest.entyties.Net_SearchUsers_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.dao.SolanaUsersDAO;
+import shine.db.entities.SolanaUserEntry;
+
+import java.sql.SQLException;
+import java.util.ArrayList;
+import java.util.List;
+
+public class Net_SearchUsers_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_SearchUsers_Handler.class);
+
+    @Override
+    public Net_Response handle(Net_Request baseRequest, ConnectionContext ctx) {
+        Net_SearchUsers_Request req = (Net_SearchUsers_Request) baseRequest;
+
+        if (req.getPrefix() == null || req.getPrefix().isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_FIELDS",
+                    "Некорректные поля: prefix"
+            );
+        }
+
+        String prefix = req.getPrefix().trim();
+
+        try {
+            SolanaUsersDAO dao = SolanaUsersDAO.getInstance();
+            List<SolanaUserEntry> users = dao.searchByLoginPrefix(prefix); // case-insensitive + LIMIT 5
+
+            List<String> logins = new ArrayList<>();
+            for (SolanaUserEntry u : users) {
+                if (u != null && u.getLogin() != null) {
+                    logins.add(u.getLogin()); // регистр как в БД
+                }
+            }
+
+            Net_SearchUsers_Response resp = new Net_SearchUsers_Response();
+            resp.setOp(req.getOp());
+            resp.setRequestId(req.getRequestId());
+            resp.setStatus(WireCodes.Status.OK);
+            resp.setLogins(logins);
+
+            log.info("✅ SearchUsers ok: prefix='{}' -> {}", prefix, logins.size());
+            return resp;
+
+        } catch (SQLException e) {
+            log.error("❌ DB error SearchUsers", e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR",
+                    "Ошибка БД"
+            );
+        } catch (Exception e) {
+            log.error("❌ Internal error SearchUsers", e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.INTERNAL_ERROR,
+                    "INTERNAL_ERROR",
+                    "Внутренняя ошибка сервера"
+            );
+        }
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.userParams.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Запрос GetUserParam — получить один параметр пользователя.
+ *
+ * {
+ *   "op": "GetUserParam",
+ *   "requestId": "req-1",
+ *   "payload": {
+ *     "login": "anya",
+ *     "param": "feed:lastSeenGlobal"
+ *   }
+ * }
+ *
+ * ПРО ДОСТУП (на будущее):
+ * ---------------------------------------------------------------------------------
+ * Сейчас (MVP) этот запрос не ограничивает просмотр параметров, т.к. проект в тестовом режиме.
+ * Позже, вероятно, потребуется ограничить: кто и какие параметры может читать (сессия/права).
+ * Но для MVP эти проверки не нужны.
+ * ---------------------------------------------------------------------------------
+ */
+public class Net_GetUserParam_Request extends Net_Request {
+
+    private String login;
+    private String param;
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+
+    public String getParam() { return param; }
+    public void setParam(String param) { this.param = param; }
+}
+package server.logic.ws_protocol.JSON.handlers.userParams.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Ответ GetUserParam.
+ *
+ * Если найден:
+ * {
+ *   "op": "GetUserParam",
+ *   "requestId": "req-1",
+ *   "status": 200,
+ *   "payload": {
+ *     "login": "anya",
+ *     "param": "feed:lastSeenGlobal",
+ *     "time_ms": 1736000000123,
+ *     "value": "105",
+ *     "device_key": "base64-32",
+ *     "signature": "base64-64"
+ *   }
+ * }
+ *
+ * Если не найден:
+ * status=404, payload пустой.
+ */
+public class Net_GetUserParam_Response extends Net_Response {
+
+    private String login;
+    private String param;
+    private Long time_ms;
+    private String value;
+    private String device_key;
+    private String signature;
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+
+    public String getParam() { return param; }
+    public void setParam(String param) { this.param = param; }
+
+    public Long getTime_ms() { return time_ms; }
+    public void setTime_ms(Long time_ms) { this.time_ms = time_ms; }
+
+    public String getValue() { return value; }
+    public void setValue(String value) { this.value = value; }
+
+    public String getDevice_key() { return device_key; }
+    public void setDevice_key(String device_key) { this.device_key = device_key; }
+
+    public String getSignature() { return signature; }
+    public void setSignature(String signature) { this.signature = signature; }
+}
+package server.logic.ws_protocol.JSON.handlers.userParams.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Запрос ListUserParams — получить все сохранённые параметры пользователя.
+ *
+ * {
+ *   "op": "ListUserParams",
+ *   "requestId": "req-2",
+ *   "payload": {
+ *     "login": "anya"
+ *   }
+ * }
+ *
+ * ПРО ДОСТУП (на будущее):
+ * ---------------------------------------------------------------------------------
+ * Сейчас (MVP) запрос не ограничивает просмотр параметров.
+ * В будущем, вероятно, потребуется проверка сессии/прав: кто может читать параметры.
+ * Для MVP эти проверки не нужны.
+ * ---------------------------------------------------------------------------------
+ */
+public class Net_ListUserParams_Request extends Net_Request {
+
+    private String login;
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+}
+package server.logic.ws_protocol.JSON.handlers.userParams.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * Ответ ListUserParams — список всех параметров пользователя.
+ *
+ * {
+ *   "op": "ListUserParams",
+ *   "requestId": "req-2",
+ *   "status": 200,
+ *   "payload": {
+ *     "login": "anya",
+ *     "params": [
+ *       {
+ *         "login": "anya",
+ *         "param": "feed:lastSeenGlobal",
+ *         "time_ms": 1736000000123,
+ *         "value": "105",
+ *         "device_key": "base64-32",
+ *         "signature": "base64-64"
+ *       },
+ *       ...
+ *     ]
+ *   }
+ * }
+ */
+public class Net_ListUserParams_Response extends Net_Response {
+
+    private String login;
+    private List<Item> params = new ArrayList<>();
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+
+    public List<Item> getParams() { return params; }
+    public void setParams(List<Item> params) { this.params = params; }
+
+    public static class Item {
+        private String login;
+        private String param;
+        private Long time_ms;
+        private String value;
+        private String device_key;
+        private String signature;
+
+        public String getLogin() { return login; }
+        public void setLogin(String login) { this.login = login; }
+
+        public String getParam() { return param; }
+        public void setParam(String param) { this.param = param; }
+
+        public Long getTime_ms() { return time_ms; }
+        public void setTime_ms(Long time_ms) { this.time_ms = time_ms; }
+
+        public String getValue() { return value; }
+        public void setValue(String value) { this.value = value; }
+
+        public String getDevice_key() { return device_key; }
+        public void setDevice_key(String device_key) { this.device_key = device_key; }
+
+        public String getSignature() { return signature; }
+        public void setSignature(String signature) { this.signature = signature; }
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.userParams.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+
+/**
+ * Запрос UpsertUserParam — добавить/обновить сохранённый параметр пользователя.
+ *
+ * Клиент отправляет:
+ *
+ * {
+ *   "op": "UpsertUserParam",
+ *   "requestId": "req-123",
+ *   "payload": {
+ *     "login": "anya",
+ *     "param": "feed:lastSeenGlobal",
+ *     "time_ms": 1736000000123,
+ *     "value": "105",
+ *     "device_key": "base64-ed25519-public-key-32",
+ *     "signature": "base64-ed25519-signature-64"
+ *   }
+ * }
+ *
+ * Подпись считается от UTF-8 строки:
+ *   USER_PARAMETER_PREFIX + login + param + time_ms + value
+ */
+public class Net_UpsertUserParam_Request extends Net_Request {
+
+    private String login;
+    private String param;
+    private Long time_ms;
+    private String value;
+
+    private String device_key;
+    private String signature;
+
+    public String getLogin() { return login; }
+    public void setLogin(String login) { this.login = login; }
+
+    public String getParam() { return param; }
+    public void setParam(String param) { this.param = param; }
+
+    public Long getTime_ms() { return time_ms; }
+    public void setTime_ms(Long time_ms) { this.time_ms = time_ms; }
+
+    public String getValue() { return value; }
+    public void setValue(String value) { this.value = value; }
+
+    public String getDevice_key() { return device_key; }
+    public void setDevice_key(String device_key) { this.device_key = device_key; }
+
+    public String getSignature() { return signature; }
+    public void setSignature(String signature) { this.signature = signature; }
+}
+package server.logic.ws_protocol.JSON.handlers.userParams.entyties;
+
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+
+/**
+ * Ответ на UpsertUserParam.
+ *
+ * Успех:
+ * {
+ *   "op": "UpsertUserParam",
+ *   "requestId": "req-123",
+ *   "status": 200,
+ *   "payload": { }
+ * }
+ */
+public class Net_UpsertUserParam_Response extends Net_Response {
+    // MVP: без payload. При желании позже можно добавить created/updated.
+}
+package server.logic.ws_protocol.JSON.handlers.userParams;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_GetUserParam_Request;
+import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_GetUserParam_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.SqliteDbController;
+import shine.db.dao.UserParamsDAO;
+import shine.db.entities.UserParamEntry;
+
+import java.sql.Connection;
+
+/**
+ * GetUserParam — получить один параметр пользователя.
+ *
+ * ПРО ДОСТУП (на будущее):
+ * ---------------------------------------------------------------------------------
+ * Сейчас (MVP) запрос не ограничивает просмотр параметров.
+ * В будущем, вероятно, потребуется проверка сессии/прав: кто может читать параметры.
+ * Для MVP эти проверки не нужны.
+ * ---------------------------------------------------------------------------------
+ */
+public class Net_GetUserParam_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_GetUserParam_Handler.class);
+
+    @Override
+    public Net_Response handle(Net_Request baseRequest, ConnectionContext ctx) {
+        Net_GetUserParam_Request req = (Net_GetUserParam_Request) baseRequest;
+
+        if (req.getLogin() == null || req.getLogin().isBlank()
+                || req.getParam() == null || req.getParam().isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_FIELDS",
+                    "Некорректные поля: login/param"
+            );
+        }
+
+        String login = req.getLogin().trim();
+        String param = req.getParam().trim();
+
+        try {
+            SqliteDbController db = SqliteDbController.getInstance();
+            UserParamsDAO dao = UserParamsDAO.getInstance();
+
+            try (Connection c = db.getConnection()) {
+                UserParamEntry e = dao.getByLoginAndParam(c, login, param);
+
+                if (e == null) {
+                    Net_GetUserParam_Response resp = new Net_GetUserParam_Response();
+                    resp.setOp(req.getOp());
+                    resp.setRequestId(req.getRequestId());
+                    resp.setStatus(404);
+                    return resp;
+                }
+
+                Net_GetUserParam_Response resp = new Net_GetUserParam_Response();
+                resp.setOp(req.getOp());
+                resp.setRequestId(req.getRequestId());
+                resp.setStatus(WireCodes.Status.OK);
+
+                resp.setLogin(e.getLogin());
+                resp.setParam(e.getParam());
+                resp.setTime_ms(e.getTimeMs());
+                resp.setValue(e.getValue());
+                resp.setDevice_key(e.getDeviceKey());
+                resp.setSignature(e.getSignature());
+
+                return resp;
+            }
+
+        } catch (Exception e) {
+            log.error("❌ Internal error GetUserParam", e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.INTERNAL_ERROR,
+                    "INTERNAL_ERROR",
+                    "Внутренняя ошибка сервера"
+            );
+        }
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.userParams;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_ListUserParams_Request;
+import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_ListUserParams_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.SqliteDbController;
+import shine.db.dao.UserParamsDAO;
+import shine.db.entities.UserParamEntry;
+
+import java.sql.Connection;
+import java.util.ArrayList;
+import java.util.List;
+
+/**
+ * ListUserParams — получить все параметры пользователя.
+ *
+ * ПРО ДОСТУП (на будущее):
+ * ---------------------------------------------------------------------------------
+ * Сейчас (MVP) запрос не ограничивает просмотр параметров.
+ * В будущем, вероятно, потребуется проверка сессии/прав: кто может читать параметры.
+ * Для MVP эти проверки не нужны.
+ * ---------------------------------------------------------------------------------
+ */
+public class Net_ListUserParams_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_ListUserParams_Handler.class);
+
+    @Override
+    public Net_Response handle(Net_Request baseRequest, ConnectionContext ctx) {
+        Net_ListUserParams_Request req = (Net_ListUserParams_Request) baseRequest;
+
+        if (req.getLogin() == null || req.getLogin().isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_FIELDS",
+                    "Некорректные поля: login"
+            );
+        }
+
+        String login = req.getLogin().trim();
+
+        try {
+            SqliteDbController db = SqliteDbController.getInstance();
+            UserParamsDAO dao = UserParamsDAO.getInstance();
+
+            List<UserParamEntry> entries;
+            try (Connection c = db.getConnection()) {
+                entries = dao.getByLogin(c, login);
+            }
+
+            Net_ListUserParams_Response resp = new Net_ListUserParams_Response();
+            resp.setOp(req.getOp());
+            resp.setRequestId(req.getRequestId());
+            resp.setStatus(WireCodes.Status.OK);
+
+            resp.setLogin(login);
+
+            List<Net_ListUserParams_Response.Item> items = new ArrayList<>();
+            for (UserParamEntry e : entries) {
+                Net_ListUserParams_Response.Item it = new Net_ListUserParams_Response.Item();
+                it.setLogin(e.getLogin());
+                it.setParam(e.getParam());
+                it.setTime_ms(e.getTimeMs());
+                it.setValue(e.getValue());
+                it.setDevice_key(e.getDeviceKey());
+                it.setSignature(e.getSignature());
+                items.add(it);
+            }
+            resp.setParams(items);
+
+            return resp;
+
+        } catch (Exception e) {
+            log.error("❌ Internal error ListUserParams", e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.INTERNAL_ERROR,
+                    "INTERNAL_ERROR",
+                    "Внутренняя ошибка сервера"
+            );
+        }
+    }
+}
+package server.logic.ws_protocol.JSON.handlers.userParams;
+
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import server.logic.ws_protocol.Base64Ws;
+import server.logic.ws_protocol.JSON.ConnectionContext;
+import server.logic.ws_protocol.JSON.entyties.Net_Request;
+import server.logic.ws_protocol.JSON.entyties.Net_Response;
+import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
+import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_UpsertUserParam_Request;
+import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_UpsertUserParam_Response;
+import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
+import server.logic.ws_protocol.WireCodes;
+import shine.db.SqliteDbController;
+import shine.db.dao.SolanaUsersDAO;
+import shine.db.dao.UserParamsDAO;
+import shine.db.entities.SolanaUserEntry;
+import shine.db.entities.UserParamEntry;
+import utils.config.ShineSignatureConstants;
+import utils.crypto.Ed25519Util;
+
+import java.nio.charset.StandardCharsets;
+import java.sql.Connection;
+import java.sql.SQLException;
+
+/**
+ * Net_UpsertUserParam_Handler
+ *
+ * Делает (MVP, без "сессий"):
+ *  1) Проверка входных полей.
+ *  2) Проверка подписи Ed25519 по device_key.
+ *  3) Проверка, что пользователь существует и что device_key принадлежит этому login.
+ *  4) Атомарная запись в БД "только если time_ms новее" (UPSERT + WHERE).
+ *
+ * ВАЖНО:
+ *  - НИКАКИХ ручных транзакций / BEGIN здесь нет.
+ *  - autoCommit=true, каждый statement завершённый сам по себе.
+ *  - Гонки не страшны: если за время проверок кто-то записал более новый time_ms,
+ *    наш финальный UPSERT просто вернёт 0 обновлённых строк.
+ */
+public class Net_UpsertUserParam_Handler implements JsonMessageHandler {
+
+    private static final Logger log = LoggerFactory.getLogger(Net_UpsertUserParam_Handler.class);
+
+    @Override
+    public Net_Response handle(Net_Request baseRequest, ConnectionContext ctx) {
+        Net_UpsertUserParam_Request req = (Net_UpsertUserParam_Request) baseRequest;
+
+        if (req.getLogin() == null || req.getLogin().isBlank()
+                || req.getParam() == null || req.getParam().isBlank()
+                || req.getTime_ms() == null || req.getTime_ms() <= 0
+                || req.getValue() == null
+                || req.getDevice_key() == null || req.getDevice_key().isBlank()
+                || req.getSignature() == null || req.getSignature().isBlank()) {
+
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "BAD_FIELDS",
+                    "Некорректные поля: login/param/time_ms/value/device_key/signature"
+            );
+        }
+
+        final String login = req.getLogin().trim();
+        final String param = req.getParam().trim();
+        final long timeMs = req.getTime_ms();
+        final String value = req.getValue();
+        final String deviceKeyB64 = req.getDevice_key().trim();
+        final String signatureB64 = req.getSignature().trim();
+
+        try {
+            // ---------------- Base64 decode ----------------
+            byte[] pubKey32;
+            byte[] sig64;
+            try {
+                pubKey32 = Base64Ws.decodeLen(deviceKeyB64, 32, "device_key");
+                sig64 = Base64Ws.decodeLen(signatureB64, 64, "signature");
+            } catch (IllegalArgumentException e) {
+                return NetExceptionResponseFactory.error(
+                        req,
+                        WireCodes.Status.BAD_REQUEST,
+                        "BAD_BASE64",
+                        "device_key/signature должны быть Base64"
+                );
+            }
+
+            // ---------------- Signature verify ----------------
+            String signText = ShineSignatureConstants.USER_PARAMETER_PREFIX
+                    + login
+                    + param
+                    + timeMs
+                    + value;
+
+            byte[] signBytes = signText.getBytes(StandardCharsets.UTF_8);
+
+            boolean sigOk = Ed25519Util.verify(signBytes, sig64, pubKey32);
+            if (!sigOk) {
+                return NetExceptionResponseFactory.error(
+                        req,
+                        403,
+                        "SIGNATURE_INVALID",
+                        "Подпись не прошла проверку"
+                );
+            }
+
+            // ---------------- DB checks + upsert ----------------
+            SqliteDbController db = SqliteDbController.getInstance();
+            SolanaUsersDAO usersDAO = SolanaUsersDAO.getInstance();
+            UserParamsDAO paramsDAO = UserParamsDAO.getInstance();
+
+            try (Connection c = db.getConnection()) {
+                // 1) user exists
+                SolanaUserEntry user = usersDAO.getByLogin(c, login);
+                if (user == null) {
+                    return NetExceptionResponseFactory.error(
+                            req,
+                            404,
+                            "USER_NOT_FOUND",
+                            "Пользователь не найден"
+                    );
+                }
+
+                // 2) device key must match the user's stored deviceKey
+                String userDeviceKey = user.getDeviceKey();
+                if (userDeviceKey == null || userDeviceKey.isBlank()) {
+                    return NetExceptionResponseFactory.error(
+                            req,
+                            WireCodes.Status.SERVER_DATA_ERROR,
+                            "USER_DEVICE_KEY_EMPTY",
+                            "У пользователя не задан deviceKey в БД"
+                    );
+                }
+
+                if (!userDeviceKey.trim().equals(deviceKeyB64)) {
+                    return NetExceptionResponseFactory.error(
+                            req,
+                            403,
+                            "DEVICE_KEY_MISMATCH",
+                            "device_key не соответствует пользователю"
+                    );
+                }
+
+                // 3) atomic upsert-if-newer
+                UserParamEntry e = new UserParamEntry(
+                        login,
+                        param,
+                        timeMs,
+                        value,
+                        deviceKeyB64,
+                        signatureB64
+                );
+
+                int changed = paramsDAO.upsertIfNewer(c, e);
+
+                Net_UpsertUserParam_Response resp = new Net_UpsertUserParam_Response();
+                resp.setOp(req.getOp());
+                resp.setRequestId(req.getRequestId());
+                resp.setStatus(WireCodes.Status.OK);
+
+                if (changed == 1) {
+                    log.info("✅ UpsertUserParam applied: login={}, param={}, time_ms={}", login, param, timeMs);
+                } else {
+                    // 0 строк — значит в БД уже есть time_ms >= incoming
+                    log.info("ℹ️ UpsertUserParam ignored (not newer): login={}, param={}, time_ms={}", login, param, timeMs);
+                }
+
+                return resp;
+            }
+
+        } catch (SQLException e) {
+            log.error("❌ DB error UpsertUserParam", e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR",
+                    "Ошибка БД"
+            );
+        } catch (Exception e) {
+            log.error("❌ Internal error UpsertUserParam", e);
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.INTERNAL_ERROR,
+                    "INTERNAL_ERROR",
+                    "Внутренняя ошибка сервера"
+            );
+        }
+    }
+}
