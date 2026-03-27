@@ -84,6 +84,8 @@
 - `SessionLogin`
 - последующих перевходов в уже созданную сессию
 
+В API клиент передаёт `sessionKey` целиком одной строкой, и сервер хранит `active_sessions.session_key` тоже целиком одной строкой.
+
 ### `storagePwd`
 
 `storagePwd` тоже **генерируется и передаётся клиентом** при создании сессии.
@@ -204,6 +206,7 @@ rsa2048/MIIBIjANBgkqh...
     "storagePwd": "BASE64_OR_APP_SPECIFIC_SECRET",
     "timeMs": 1774600000123,
     "authNonce": "8f2f0f71-0b1c-4ab2-8f5d-0bc5d6f6aa11",
+    "deviceKey": "BASE64_DEVICE_PUBLIC_KEY",
     "signatureB64": "BASE64_SIGNATURE_BY_DEVICE_KEY",
     "clientInfo": "Android 15; Pixel 9"
   }
@@ -229,6 +232,21 @@ AUTH_CREATE_SESSION:alice:ed25519/BASE64_PUBLIC_KEY:BASE64_OR_APP_SPECIFIC_SECRE
 - сервер получает криптографическое подтверждение того, какие именно значения утвердил клиент;
 - снижается риск подмены `session_key` между клиентом и сервером;
 - `storagePwd` становится частью подтверждённого набора параметров создания сессии.
+
+### Дополнительная проверка `deviceKey`
+
+Перед проверкой подписи сервер должен:
+
+1. загрузить актуальный `device_key` пользователя;
+2. сравнить его со значением `payload.deviceKey`;
+3. только после совпадения ключей проверять подпись.
+
+Если ключ не совпадает, сервер должен возвращать ошибку о том, что ключ не соответствует актуальной версии.
+
+На будущее:
+
+- для сценария обновления `device_key` желательно добавить дополнительную проверку актуального ключа через Solana;
+- если и после этого ключ не подтверждается, сервер всё равно должен возвращать ошибку о несовпадении актуального ключа.
 
 ### Успешный ответ
 
@@ -289,6 +307,7 @@ AUTH_CREATE_SESSION:alice:ed25519/BASE64_PUBLIC_KEY:BASE64_OR_APP_SPECIFIC_SECRE
   "requestId": "slogin-001",
   "payload": {
     "sessionId": "sess_7c5e5c4b",
+    "sessionKey": "ed25519/BASE64_PUBLIC_KEY",
     "timeMs": 1774600010456,
     "signatureB64": "BASE64_SIGNATURE_BY_SESSION_KEY",
     "clientInfo": "Android 15; Pixel 9"
@@ -307,6 +326,16 @@ SESSION_LOGIN:{sessionId}:{timeMs}:{nonce}
 ```text
 SESSION_LOGIN:sess_7c5e5c4b:1774600010456:0e5bb0f4-c7d8-4efb-b44d-bf31a6126c66
 ```
+
+### Дополнительная проверка `sessionKey`
+
+Перед проверкой подписи сервер должен:
+
+1. загрузить `active_sessions.session_key` по `sessionId`;
+2. сравнить его со значением `payload.sessionKey`;
+3. только после совпадения ключей проверять подпись.
+
+Если ключ не совпадает, сервер должен возвращать ошибку о том, что ключ не соответствует актуальной версии.
 
 Успешный ответ:
 
@@ -364,6 +393,8 @@ SESSION_LOGIN:sess_7c5e5c4b:1774600010456:0e5bb0f4-c7d8-4efb-b44d-bf31a6126c66
 
 ### `CloseActiveSession`
 
+Доступно только после успешного `SessionLogin`.
+
 Запрос:
 
 ```json
@@ -398,6 +429,8 @@ SESSION_LOGIN:sess_7c5e5c4b:1774600010456:0e5bb0f4-c7d8-4efb-b44d-bf31a6126c66
 - `400 BAD_REQUEST` — не хватает поля или неверный формат.
 - `401 UNAUTHORIZED` — challenge не был пройден или соединение не авторизовано.
 - `403 INVALID_SIGNATURE` — подпись не прошла проверку.
+- `403 DEVICE_KEY_NOT_ACTUAL` — присланный `deviceKey` не совпадает с актуальным ключом пользователя.
+- `403 SESSION_KEY_NOT_ACTUAL` — присланный `sessionKey` не совпадает с актуальным ключом сессии.
 - `404 SESSION_NOT_FOUND` — сессия не существует или уже закрыта.
 - `409 NONCE_ALREADY_USED` — challenge уже использован.
 - `410 CHALLENGE_EXPIRED` — nonce устарел.
@@ -422,32 +455,33 @@ SESSION_LOGIN:sess_7c5e5c4b:1774600010456:0e5bb0f4-c7d8-4efb-b44d-bf31a6126c66
 По текущему состоянию кода сервер уже использует схему:
 
 - `AuthChallenge(login)`
-- `CreateAuthSession(storagePwd, sessionPubKeyB64, timeMs, signatureB64, clientInfo)`
+- `CreateAuthSession(login, sessionKey, storagePwd, timeMs, authNonce, deviceKey, signatureB64, clientInfo)`
 - `SessionChallenge(sessionId)`
-- `SessionLogin(sessionId, timeMs, signatureB64, clientInfo)`
+- `SessionLogin(sessionId, sessionKey, timeMs, signatureB64, clientInfo)`
 
 Текущая строка подписи для `CreateAuthSession` в коде:
-
-```text
-AUTH_CREATE_SESSION:{login}:{timeMs}:{authNonce}
-```
-
-То есть **сейчас** `sessionPubKeyB64` и `storagePwd` ещё не входят в preimage подписи.
-
-### Рекомендуемый путь миграции
-
-1. Ввести новую версию контракта `CreateAuthSession`.
-2. Добавить поле `sessionKey` вместо `sessionPubKeyB64`.
-3. На сервере распознавать префикс алгоритма в `sessionKey`.
-4. Перейти на подпись строки:
 
 ```text
 AUTH_CREATE_SESSION:{login}:{sessionKey}:{storagePwd}:{timeMs}:{authNonce}
 ```
 
-5. На переходный период поддерживать оба варианта:
-   - legacy: без `sessionKey` и `storagePwd` в подписи;
-   - vNext: с полным набором полей.
+Перед проверкой подписи сервер также должен сверять:
+
+- `payload.deviceKey` с актуальным `solana_users.device_key`;
+- `payload.sessionKey` с актуальным `active_sessions.session_key`.
+
+### Рекомендуемый путь миграции
+
+1. Ввести новую версию контракта `CreateAuthSession`.
+2. На сервере хранить `session_key` целиком одной строкой.
+3. На сервере распознавать префикс алгоритма в `sessionKey`.
+4. В `CreateAuthSession` передавать и сверять `deviceKey`.
+5. В `SessionLogin` передавать и сверять `sessionKey`.
+6. Использовать подпись строки:
+
+```text
+AUTH_CREATE_SESSION:{login}:{sessionKey}:{storagePwd}:{timeMs}:{authNonce}
+```
 
 ---
 
@@ -467,5 +501,7 @@ AUTH_CREATE_SESSION:{login}:{sessionKey}:{storagePwd}:{timeMs}:{authNonce}
 - Да, клиент сам создаёт `session_key`.
 - Да, клиент сам передаёт `storagePwd`.
 - Для `session_key` имеет смысл ввести префикс алгоритма, например `ed25519/...`.
+- Для `CreateAuthSession` клиент должен дополнительно передавать `deviceKey`, а сервер должен сверять его с актуальным ключом пользователя.
+- Для `SessionLogin` клиент должен дополнительно передавать `sessionKey`, а сервер должен сверять его с актуальным ключом сессии.
 - Для `CreateAuthSession` рекомендуется подписывать не только `login`, `timeMs` и `authNonce`, но также `sessionKey` и `storagePwd`.
 - Для разработчиков клиентов лучше сразу документировать API через полные JSON-примеры запросов и ответов.

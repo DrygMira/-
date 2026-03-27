@@ -7,31 +7,47 @@ import server.logic.ws_protocol.JSON.entyties.Net_Request;
  *
  * Шаги:
  *  1) AuthChallenge(login) -> authNonce
- *  2) CreateAuthSession(storagePwd, sessionPubKeyB64, timeMs, signatureB64, clientInfo)
+ *  2) CreateAuthSession(login, sessionKey, storagePwd, timeMs, authNonce, deviceKey, signatureB64, clientInfo)
  *
  * Подпись deviceKey делается над строкой (UTF-8):
- *   AUTH_CREATE_SESSION:{login}:{timeMs}:{authNonce}:{sessionPubKeyB64}:{storagePwd}
+ *   AUTH_CREATE_SESSION:{login}:{sessionKey}:{storagePwd}:{timeMs}:{authNonce}
  *
  * Важно:
- * - sessionKey генерируется на клиенте, на сервер отправляется ТОЛЬКО sessionPubKeyB64 (32 bytes base64).
- * - В БД active_sessions.session_key хранится sessionPubKeyB64.
+ * - sessionKey генерируется на клиенте и передаётся на сервер целиком одной строкой.
+ * - В БД active_sessions.session_key хранится sessionKey целиком одной строкой.
  */
 public class Net_CreateAuthSession_Request extends Net_Request {
+
+    private String login;
 
     /** Клиентский пароль для хранения данных (base64 от 32 байт). */
     private String storagePwd;
 
-    /** Публичный ключ сессии (sessionPubKey), base64 от 32 байт. */
-    private String sessionPubKeyB64;
+    /** Публичный ключ сессии в API-формате, например ed25519/BASE64_PUBLIC_KEY. */
+    private String sessionKey;
 
     /** Время на стороне клиента (мс с 1970-01-01). */
     private long timeMs;
+
+    /** Nonce из AuthChallenge. */
+    private String authNonce;
+
+    /** Публичный ключ устройства пользователя. */
+    private String deviceKey;
 
     /** Подпись Ed25519(deviceKey) над строкой AUTH_CREATE_SESSION:... (base64). */
     private String signatureB64;
 
     /** Краткая строка от клиента (до 50 символов) с описанием устройства/клиента. */
     private String clientInfo;
+
+    public String getLogin() {
+        return login;
+    }
+
+    public void setLogin(String login) {
+        this.login = login;
+    }
 
     public String getStoragePwd() {
         return storagePwd;
@@ -41,12 +57,12 @@ public class Net_CreateAuthSession_Request extends Net_Request {
         this.storagePwd = storagePwd;
     }
 
-    public String getSessionPubKeyB64() {
-        return sessionPubKeyB64;
+    public String getSessionKey() {
+        return sessionKey;
     }
 
-    public void setSessionPubKeyB64(String sessionPubKeyB64) {
-        this.sessionPubKeyB64 = sessionPubKeyB64;
+    public void setSessionKey(String sessionKey) {
+        this.sessionKey = sessionKey;
     }
 
     public long getTimeMs() {
@@ -55,6 +71,22 @@ public class Net_CreateAuthSession_Request extends Net_Request {
 
     public void setTimeMs(long timeMs) {
         this.timeMs = timeMs;
+    }
+
+    public String getAuthNonce() {
+        return authNonce;
+    }
+
+    public void setAuthNonce(String authNonce) {
+        this.authNonce = authNonce;
+    }
+
+    public String getDeviceKey() {
+        return deviceKey;
+    }
+
+    public void setDeviceKey(String deviceKey) {
+        this.deviceKey = deviceKey;
     }
 
     public String getSignatureB64() {

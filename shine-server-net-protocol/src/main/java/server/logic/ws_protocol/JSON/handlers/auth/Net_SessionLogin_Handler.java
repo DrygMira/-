@@ -10,6 +10,7 @@ import server.logic.ws_protocol.JSON.entyties.Net_Response;
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
 import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_SessionLogin_Request;
 import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_SessionLogin_Response;
+import server.logic.ws_protocol.JSON.utils.AuthKeyUtils;
 import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
 import server.logic.ws_protocol.WireCodes;
 import shine.db.dao.ActiveSessionsDAO;
@@ -30,7 +31,7 @@ import java.sql.SQLException;
  * - SessionChallenge(sessionId) выдаёт nonce (одноразовый, TTL).
  * - SessionLogin проверяет подпись sessionKey над строкой:
  *     SESSION_LOGIN:{sessionId}:{timeMs}:{nonce}
- * - sessionPubKey берём из БД: active_sessions.session_key (base64 32 bytes).
+ * - sessionKey берём из запроса и сверяем с active_sessions.session_key.
  *
  * При успехе:
  * - ctx становится AUTH_STATUS_USER
@@ -100,6 +101,17 @@ public class Net_SessionLogin_Handler implements JsonMessageHandler {
             );
         }
 
+        String sessionKeyFromReq = req.getSessionKey();
+        if (sessionKeyFromReq == null || sessionKeyFromReq.isBlank()) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_SESSION_KEY",
+                    "Пустой sessionKey"
+            );
+        }
+        sessionKeyFromReq = AuthKeyUtils.normalize(sessionKeyFromReq, "sessionKey");
+
         ActiveSessionEntry session;
         try {
             session = ActiveSessionsDAO.getInstance().getBySessionId(sessionId);
@@ -121,8 +133,8 @@ public class Net_SessionLogin_Handler implements JsonMessageHandler {
             );
         }
 
-        String sessionPubKeyB64 = session.getSessionKey(); // это pubKey (Base64(32))
-        if (sessionPubKeyB64 == null || sessionPubKeyB64.isBlank()) {
+        String sessionKeyFromDb = session.getSessionKey();
+        if (sessionKeyFromDb == null || sessionKeyFromDb.isBlank()) {
             return NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.SERVER_DATA_ERROR,
@@ -130,12 +142,29 @@ public class Net_SessionLogin_Handler implements JsonMessageHandler {
                     "В сессии не задан session_key"
             );
         }
+        sessionKeyFromDb = sessionKeyFromDb.trim();
+
+        if (!sessionKeyFromReq.equals(sessionKeyFromDb)) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "SESSION_KEY_NOT_ACTUAL",
+                    "session_key не соответствует актуальной версии"
+            );
+        }
 
         String nonce = ctx.getSessionLoginNonce();
 
         boolean sigOk;
         try {
-            sigOk = verifySessionLoginSignature(sessionPubKeyB64, sessionId, timeMs, nonce, signatureB64);
+            sigOk = verifySessionLoginSignature(sessionKeyFromReq, sessionId, timeMs, nonce, signatureB64);
+        } catch (UnsupportedOperationException e) {
+            return NetExceptionResponseFactory.error(
+                    req,
+                    422,
+                    "UNSUPPORTED_KEY_ALGORITHM",
+                    "sessionKey prefix is not supported"
+            );
         } catch (IllegalArgumentException e) {
             return NetExceptionResponseFactory.error(
                     req,
@@ -243,17 +272,15 @@ public class Net_SessionLogin_Handler implements JsonMessageHandler {
     }
 
     private static boolean verifySessionLoginSignature(
-            String sessionPubKeyB64,
+            String sessionKey,
             String sessionId,
             long timeMs,
             String nonce,
             String signatureB64
     ) throws IllegalArgumentException {
 
-        // pubKey: Base64(32). (Ed25519Util.keyFromBase64 должен использовать стандартный Base64)
-        byte[] publicKey32 = Ed25519Util.keyFromBase64(sessionPubKeyB64);
+        byte[] publicKey32 = AuthKeyUtils.parseEd25519PublicKey(sessionKey, "sessionKey");
 
-        // signature: Base64(64) через единую утилиту WS-протокола
         byte[] signature64 = Base64Ws.decodeLen(signatureB64, 64, "signatureB64");
 
         String preimageStr = "SESSION_LOGIN:" + sessionId + ":" + timeMs + ":" + nonce;

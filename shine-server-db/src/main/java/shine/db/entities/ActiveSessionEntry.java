@@ -8,7 +8,7 @@ public class ActiveSessionEntry {
     private String sessionId;
     private String login;
 
-    /** session_key: публичный ключ сессии (base64 от 32 байт). */
+    /** session_key: публичный ключ сессии целиком одной строкой, например ed25519/BASE64_PUBLIC_KEY. */
     private String sessionKey;
 
     private String storagePwd;

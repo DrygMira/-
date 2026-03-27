@@ -104,20 +104,15 @@ public final class JsonBuilders {
     }
 
     // ---------------- CreateAuthSession (v2) ----------------
-    // v2: sessionKey генерируется/хранится на клиенте, на сервер отправляем sessionPubKeyB64 (base64).
-    //
-    // ВАЖНО (новое правило):
-    // Подпись CreateAuthSession делается ТОЛЬКО deviceKey над строкой:
-    //   preimage = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce
-    //
-    // storagePwd и sessionPubKeyB64 НЕ входят в preimage.
+    // Подпись CreateAuthSession делается deviceKey над строкой:
+    //   preimage = "AUTH_CREATE_SESSION:" + login + ":" + sessionKey + ":" + storagePwd + ":" + timeMs + ":" + authNonce
 
-    public static String createAuthSessionV2(String login, String authNonce, String storagePwd, String sessionPubKeyB64) {
+    public static String createAuthSessionV2(String login, String authNonce, String storagePwd, String sessionKey) {
         long timeMs = System.currentTimeMillis();
 
-        // подпись делаем devicePrivKey
         byte[] devicePriv = TestConfig.getDevicePrivatKey(login);
-        String sigB64 = signAuthCreateSession(login, timeMs, authNonce, devicePriv);
+        String deviceKey = TestConfig.devicePublicKeyB64(login);
+        String sigB64 = signAuthCreateSession(login, sessionKey, storagePwd, timeMs, authNonce, devicePriv);
 
         String requestId = TestIds.next("create");
         return """
@@ -125,18 +120,24 @@ public final class JsonBuilders {
                   "op": "CreateAuthSession",
                   "requestId": "%s",
                   "payload": {
+                    "login": "%s",
                     "storagePwd": "%s",
-                    "sessionPubKeyB64": "%s",
+                    "sessionKey": "%s",
                     "timeMs": %d,
+                    "authNonce": "%s",
+                    "deviceKey": "%s",
                     "signatureB64": "%s",
                     "clientInfo": "%s"
                   }
                 }
                 """.formatted(
                 requestId,
+                login,
                 storagePwd,
-                sessionPubKeyB64,
+                sessionKey,
                 timeMs,
+                authNonce,
+                deviceKey,
                 sigB64,
                 TestConfig.TEST_CLIENT_INFO
         );
@@ -161,7 +162,7 @@ public final class JsonBuilders {
     // Подпись SessionLogin по-прежнему делается sessionPrivKey:
     // preimage = "SESSION_LOGIN:" + sessionId + ":" + timeMs + ":" + nonce
 
-    public static String sessionLogin(String sessionId, String nonce, byte[] sessionPrivKey) {
+    public static String sessionLogin(String sessionId, String sessionKey, String nonce, byte[] sessionPrivKey) {
         long timeMs = System.currentTimeMillis();
         String sigB64 = signSessionLogin(sessionId, timeMs, nonce, sessionPrivKey);
 
@@ -172,12 +173,13 @@ public final class JsonBuilders {
               "requestId": "%s",
               "payload": {
                 "sessionId": "%s",
+                "sessionKey": "%s",
                 "timeMs": %d,
                 "signatureB64": "%s",
                 "clientInfo": "%s"
               }
             }
-            """.formatted(requestId, sessionId, timeMs, sigB64, TestConfig.TEST_CLIENT_INFO);
+            """.formatted(requestId, sessionId, sessionKey, timeMs, sigB64, TestConfig.TEST_CLIENT_INFO);
     }
 
     // ---------------- ListSessions ----------------
@@ -226,11 +228,11 @@ public final class JsonBuilders {
 
     /**
      * Подпись CreateAuthSession(v2):
-     * preimage = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce
+     * preimage = "AUTH_CREATE_SESSION:" + login + ":" + sessionKey + ":" + storagePwd + ":" + timeMs + ":" + authNonce
      * подписываем devicePrivKey.
      */
-    public static String signAuthCreateSession(String login, long timeMs, String authNonce, byte[] devicePrivKey) {
-        String preimageStr = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce;
+    public static String signAuthCreateSession(String login, String sessionKey, String storagePwd, long timeMs, String authNonce, byte[] devicePrivKey) {
+        String preimageStr = "AUTH_CREATE_SESSION:" + login + ":" + sessionKey + ":" + storagePwd + ":" + timeMs + ":" + authNonce;
         byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
         byte[] sig = Ed25519Util.sign(preimage, devicePrivKey);
         return Base64.getEncoder().encodeToString(sig);

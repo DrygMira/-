@@ -20,7 +20,7 @@ import static org.junit.jupiter.api.Assertions.*;
  *  - и после завершения оставить в БД 3 активных сессии (S1,S2,S3)
  *
  * Протокол v2:
- *  - создание сессии: AuthChallenge -> CreateAuthSession (deviceKey подпись, + sessionPubKey)
+ *  - создание сессии: AuthChallenge -> CreateAuthSession (deviceKey подпись, + deviceKey + sessionKey)
  *  - вход в сессию: SessionChallenge(sessionId) -> nonce, затем SessionLogin(sessionId,time,signature(sessionKey))
  *  - ListSessions и CloseActiveSession доступны только в AUTH_STATUS_USER (после SessionLogin)
  */
@@ -109,16 +109,15 @@ public class IT_02_Sessions {
             String authNonce = JsonParsers.authNonce(nonceResp);
             assertNotNull(authNonce, "authNonce must not be null for " + label);
 
-            // для тестов: sessionKey = deviceKey (в реале будет отдельный keypair)
-            String sessionPubKeyB64 = TestConfig.devicePublicKeyB64(login);
+            String sessionKey = TestConfig.sessionKey(login);
 
             // storagePwd на клиенте (сохраняем, чтобы потом проверить, что сервер вернул именно его)
             String storagePwd = TestConfig.fakeStoragePwd();
 
-            // шаг 2: CreateAuthSession (device подпись + sessionPubKey)
+            // шаг 2: CreateAuthSession (device подпись + deviceKey + sessionKey)
             String createResp = ws.call(
                     "CreateAuthSession(" + label + ")",
-                    JsonBuilders.createAuthSessionV2(login, authNonce, storagePwd, sessionPubKeyB64),
+                    JsonBuilders.createAuthSessionV2(login, authNonce, storagePwd, sessionKey),
                     t
             );
             assertEquals(200, JsonParsers.status(createResp), "CreateAuthSession(" + label + ") must be 200");
@@ -128,10 +127,9 @@ public class IT_02_Sessions {
 
             r.ok("Создана сессия " + label + ": sessionId=" + sid);
 
-            // для тестов используем devicePriv как sessionPriv
-            byte[] sessionPrivKey = TestConfig.getDevicePrivatKey(login);
+            byte[] sessionPrivKey = TestConfig.getSessionPrivatKey(login);
 
-            return new Session(sid, sessionPrivKey, storagePwd);
+            return new Session(sid, sessionKey, sessionPrivKey, storagePwd);
         }
     }
 
@@ -143,7 +141,7 @@ public class IT_02_Sessions {
         assertNotNull(nonce, "SessionChallenge nonce must not be null");
 
         // шаг 2: SessionLogin(sessionId, timeMs, signature(sessionKey, SESSION_LOGIN:...))
-        String loginResp = ws.call("SessionLogin " + label, JsonBuilders.sessionLogin(s.sessionId, nonce, s.sessionPrivKey), t);
+        String loginResp = ws.call("SessionLogin " + label, JsonBuilders.sessionLogin(s.sessionId, s.sessionKey, nonce, s.sessionPrivKey), t);
         assertEquals(200, JsonParsers.status(loginResp), "SessionLogin must be 200");
 
         String storagePwd = JsonParsers.storagePwd(loginResp);
@@ -153,5 +151,5 @@ public class IT_02_Sessions {
         r.ok(label + ": SessionLogin OK, storagePwd verified");
     }
 
-    private record Session(String sessionId, byte[] sessionPrivKey, String storagePwd) {}
+    private record Session(String sessionId, String sessionKey, byte[] sessionPrivKey, String storagePwd) {}
 }

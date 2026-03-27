@@ -119,6 +119,7 @@ public final class TestConfig {
 
     // NEW: session pub b64 helper
     public static String sessionPublicKeyB64(String login) { return Base64.getEncoder().encodeToString(getSessionPublicKey(login)); }
+    public static String sessionKey(String login) { return "ed25519/" + sessionPublicKeyB64(login); }
 
     // ============ backward-compatible helpers for "user1" ============
     public static String BCH_NAME() { return getBlockchainName(LOGIN()); }
@@ -143,6 +144,9 @@ public final class TestConfig {
     public static String SESSION_PUBKEY_B64() { return sessionPublicKeyB64(LOGIN()); }
     public static String SESSION2_PUBKEY_B64() { return sessionPublicKeyB64(LOGIN2()); }
     public static String SESSION3_PUBKEY_B64() { return sessionPublicKeyB64(LOGIN3()); }
+    public static String SESSION_KEY() { return sessionKey(LOGIN()); }
+    public static String SESSION2_KEY() { return sessionKey(LOGIN2()); }
+    public static String SESSION3_KEY() { return sessionKey(LOGIN3()); }
 
     // ============ misc ============
     public static String fakeStoragePwd() {

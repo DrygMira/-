@@ -20,7 +20,7 @@ import java.sql.Statement;
  *
  * v2 (sessions):
  *  - active_sessions.session_pwd удалён
- *  - active_sessions.session_key хранит публичный ключ сессии (sessionPubKeyB64)
+ *  - active_sessions.session_key хранит публичный ключ сессии целиком одной строкой
  */
 public final class DatabaseInitializer {
 

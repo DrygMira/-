@@ -10,10 +10,12 @@ import server.logic.ws_protocol.JSON.entyties.Net_Response;
 import server.logic.ws_protocol.JSON.handlers.JsonMessageHandler;
 import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_CreateAuthSession_Request;
 import server.logic.ws_protocol.JSON.handlers.auth.entyties.Net_CreateAuthSession_Response;
+import server.logic.ws_protocol.JSON.utils.AuthKeyUtils;
 import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
 import server.logic.ws_protocol.WireCodes;
 import server.ws.WsConnectionUtils;
 import shine.db.dao.ActiveSessionsDAO;
+import shine.db.dao.SolanaUsersDAO;
 import shine.db.entities.ActiveSessionEntry;
 import shine.db.entities.SolanaUserEntry;
 import shine.geo.ClientInfoService;
@@ -31,12 +33,12 @@ import java.sql.SQLException;
  *
  * Логика авторизации (v2):
  *  - Создание сессии: AuthChallenge(login) -> authNonce -> CreateAuthSession(...)
- *  - Клиент генерирует sessionKey (Ed25519), хранит приватный ключ у себя,
- *    отправляет на сервер ТОЛЬКО sessionPubKeyB64.
- *  - Сервер сохраняет sessionPubKeyB64 в active_sessions.session_key.
+ *  - Клиент генерирует sessionKey, хранит приватный ключ у себя,
+ *    отправляет на сервер sessionKey целиком одной строкой.
+ *  - Сервер сохраняет sessionKey в active_sessions.session_key как есть.
  *
  * Подпись deviceKey (Ed25519) проверяется над строкой (UTF-8):
- *   AUTH_CREATE_SESSION:{login}:{timeMs}:{authNonce}
+ *   AUTH_CREATE_SESSION:{login}:{sessionKey}:{storagePwd}:{timeMs}:{authNonce}
  *
  * На выходе:
  *  - создаётся запись active_sessions
@@ -70,8 +72,54 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
             return err;
         }
 
-        SolanaUserEntry user = ctx.getSolanaUser();
-        String login = user.getLogin();
+        SolanaUserEntry userFromContext = ctx.getSolanaUser();
+        String loginFromContext = userFromContext.getLogin();
+        String login = req.getLogin();
+        if (login == null || login.isBlank()) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_LOGIN",
+                    "Пустой login"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty login");
+            return err;
+        }
+        if (!login.equals(loginFromContext)) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "LOGIN_MISMATCH",
+                    "login не соответствует контексту AuthChallenge"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: login mismatch");
+            return err;
+        }
+
+        SolanaUserEntry user;
+        try {
+            user = SolanaUsersDAO.getInstance().getByLogin(login);
+        } catch (SQLException e) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.SERVER_DATA_ERROR,
+                    "DB_ERROR_USER_LOOKUP",
+                    "Ошибка БД при получении пользователя"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: db user lookup");
+            return err;
+        }
+        if (user == null) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "USER_NOT_FOUND",
+                    "Пользователь не найден"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: user not found");
+            return err;
+        }
+
         if (login == null || login.isBlank()) {
             Net_Response err = NetExceptionResponseFactory.error(
                     req,
@@ -95,40 +143,38 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
             return err;
         }
 
-        String sessionPubKeyB64 = req.getSessionPubKeyB64();
-        if (sessionPubKeyB64 == null || sessionPubKeyB64.isBlank()) {
+        String sessionKey = req.getSessionKey();
+        if (sessionKey == null || sessionKey.isBlank()) {
             Net_Response err = NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.BAD_REQUEST,
-                    "EMPTY_SESSION_PUBKEY",
-                    "Пустой sessionPubKeyB64"
+                    "EMPTY_SESSION_KEY",
+                    "Пустой sessionKey"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty session pubkey");
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty session key");
             return err;
         }
 
-        // Проверим, что sessionPubKeyB64 декодируется в 32 байта
-        byte[] sessionPubKey32;
+        sessionKey = AuthKeyUtils.normalize(sessionKey, "sessionKey");
         try {
-            sessionPubKey32 = Base64Ws.decode(sessionPubKeyB64);
+            AuthKeyUtils.parseEd25519PublicKey(sessionKey, "sessionKey");
+        } catch (UnsupportedOperationException e) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    422,
+                    "UNSUPPORTED_KEY_ALGORITHM",
+                    "sessionKey prefix is not supported"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: unsupported session key algorithm");
+            return err;
         } catch (IllegalArgumentException e) {
             Net_Response err = NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.BAD_REQUEST,
                     "BAD_BASE64",
-                    "Некорректный base64 в sessionPubKeyB64"
+                    "Некорректный формат sessionKey"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad session pubkey base64");
-            return err;
-        }
-        if (sessionPubKey32.length != 32) {
-            Net_Response err = NetExceptionResponseFactory.error(
-                    req,
-                    WireCodes.Status.BAD_REQUEST,
-                    "BAD_SESSION_PUBKEY_LEN",
-                    "sessionPubKey должен быть 32 байта"
-            );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad session pubkey length");
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad session key format");
             return err;
         }
 
@@ -163,8 +209,8 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
             clientInfoFromClient = clientInfoFromClient.substring(0, 50);
         }
 
-        String devicePubKeyB64 = user.getDeviceKey();
-        if (devicePubKeyB64 == null || devicePubKeyB64.isBlank()) {
+        String deviceKeyFromDb = user.getDeviceKey();
+        if (deviceKeyFromDb == null || deviceKeyFromDb.isBlank()) {
             Net_Response err = NetExceptionResponseFactory.error(
                     req,
                     WireCodes.Status.BAD_REQUEST,
@@ -176,16 +222,73 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
         }
 
         String authNonce = ctx.getAuthNonce();
+        String authNonceFromReq = req.getAuthNonce();
+        if (authNonceFromReq == null || authNonceFromReq.isBlank()) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_AUTH_NONCE",
+                    "Пустой authNonce"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty authNonce");
+            return err;
+        }
+        if (!authNonce.equals(authNonceFromReq)) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "AUTH_NONCE_MISMATCH",
+                    "authNonce не соответствует контексту AuthChallenge"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: authNonce mismatch");
+            return err;
+        }
+
+        String deviceKeyFromReq = req.getDeviceKey();
+        if (deviceKeyFromReq == null || deviceKeyFromReq.isBlank()) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.BAD_REQUEST,
+                    "EMPTY_DEVICE_KEY",
+                    "Пустой deviceKey"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty deviceKey");
+            return err;
+        }
+        deviceKeyFromReq = deviceKeyFromReq.trim();
+
+        // TODO: для ротации device_key стоит дополнительно сверять актуальное значение через Solana.
+        if (!deviceKeyFromReq.equals(deviceKeyFromDb)) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    WireCodes.Status.UNVERIFIED,
+                    "DEVICE_KEY_NOT_ACTUAL",
+                    "device_key не соответствует актуальной версии"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: device key mismatch");
+            return err;
+        }
 
         boolean sigOk;
         try {
             sigOk = verifyCreateSessionSignature(
-                    user,
                     login,
+                    sessionKey,
+                    storagePwd,
                     authNonce,
                     timeMs,
+                    deviceKeyFromDb,
                     signatureB64
             );
+        } catch (UnsupportedOperationException ex) {
+            Net_Response err = NetExceptionResponseFactory.error(
+                    req,
+                    422,
+                    "UNSUPPORTED_KEY_ALGORITHM",
+                    "deviceKey algorithm is not supported"
+            );
+            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: unsupported device key algorithm");
+            return err;
         } catch (IllegalArgumentException ex) {
             Net_Response err = NetExceptionResponseFactory.error(
                     req,
@@ -239,7 +342,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
             activeSessionEntry = new ActiveSessionEntry(
                     sessionId,
                     login,
-                    sessionPubKeyB64,         // session_key (pubkey)
+                    sessionKey,               // session_key (pubkey string as-is)
                     storagePwd,
                     now,
                     now,
@@ -283,18 +386,24 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
     }
 
     private static boolean verifyCreateSessionSignature(
-            SolanaUserEntry user,
             String login,
+            String sessionKey,
+            String storagePwd,
             String authNonce,
             long timeMs,
+            String deviceKey,
             String signatureB64
     ) throws IllegalArgumentException {
 
-        // deviceKey (pub, 32)
-        byte[] publicKey32 = Ed25519Util.keyFromBase64(user.getDeviceKey());
-        byte[] signature64 = Base64Ws.decode(signatureB64);
+        byte[] publicKey32 = AuthKeyUtils.parseEd25519PublicKey(deviceKey, "deviceKey");
+        byte[] signature64 = Base64Ws.decodeLen(signatureB64, 64, "signatureB64");
 
-        String preimageStr = "AUTH_CREATE_SESSION:" + login + ":" + timeMs + ":" + authNonce;
+        String preimageStr = "AUTH_CREATE_SESSION:"
+                + login + ":"
+                + sessionKey + ":"
+                + storagePwd + ":"
+                + timeMs + ":"
+                + authNonce;
         byte[] preimage = preimageStr.getBytes(StandardCharsets.UTF_8);
 
         return Ed25519Util.verify(preimage, signature64, publicKey32);

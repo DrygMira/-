@@ -4,7 +4,7 @@ import server.logic.ws_protocol.JSON.entyties.Net_Request;
 
 /**
  * Шаг 2 входа в существующую сессию (v2):
- * SessionLogin(sessionId, timeMs, signatureB64) -> storagePwd, AUTH_STATUS_USER
+ * SessionLogin(sessionId, sessionKey, timeMs, signatureB64) -> storagePwd, AUTH_STATUS_USER
  *
  * Подпись делается sessionKey (приватный ключ на устройстве) над строкой (UTF-8):
  *   SESSION_LOGIN:{sessionId}:{timeMs}:{nonce}
@@ -14,6 +14,7 @@ import server.logic.ws_protocol.JSON.entyties.Net_Request;
 public class Net_SessionLogin_Request extends Net_Request {
 
     private String sessionId;
+    private String sessionKey;
     private long timeMs;
     private String signatureB64;
 
@@ -26,6 +27,14 @@ public class Net_SessionLogin_Request extends Net_Request {
 
     public void setSessionId(String sessionId) {
         this.sessionId = sessionId;
+    }
+
+    public String getSessionKey() {
+        return sessionKey;
+    }
+
+    public void setSessionKey(String sessionKey) {
+        this.sessionKey = sessionKey;
     }
 
     public long getTimeMs() {
