@@ -1,3 +1,8 @@
+## папки с данными создавайемыми при работе сервера
+data/
+logs/
+logs
+
 .gradle
 build/
 !gradle/wrapper/gradle-wrapper.jar

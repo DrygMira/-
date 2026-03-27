@@ -18,17 +18,17 @@ public final class MsgSubType {
 
     /* ===================== TEXT (msg_type=1) ===================== */
 
-    /** Новая публикация. */
-    public static final short TEXT_NEW = 1;
+    /** POST — обычный пост в канале (в линии канала). */
+    public static final short TEXT_POST = 10;
 
-    /** Ответ (reply). */
-    public static final short TEXT_REPLY = 2;
+    /** EDIT_POST — редактирование исходного поста. */
+    public static final short TEXT_EDIT_POST = 11;
 
-    /** Репост (repost). */
-    public static final short TEXT_REPOST = 3;
+    /** REPLY — ответ на сообщение. */
+    public static final short TEXT_REPLY = 20;
 
-    /** Редактирование (edit). */
-    public static final short TEXT_EDIT = 10;
+    /** EDIT_REPLY — редактирование исходного ответа. */
+    public static final short TEXT_EDIT_REPLY = 21;
 
     /* ===================== REACTION (msg_type=2) ===================== */
 

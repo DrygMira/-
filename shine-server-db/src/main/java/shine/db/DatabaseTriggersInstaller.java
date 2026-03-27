@@ -306,12 +306,13 @@ public final class DatabaseTriggersInstaller {
     }
 
     private static void createEditApplyTrigger(Statement st) throws SQLException {
-        int EDIT = (int) DatabaseInitializer.TEXT_EDIT;
+        int EDIT_POST = (int) DatabaseInitializer.TEXT_EDIT_POST;
+        int EDIT_REPLY = (int) DatabaseInitializer.TEXT_EDIT_REPLY;
 
         st.executeUpdate("""
             CREATE TRIGGER IF NOT EXISTS trg_blocks_edit_apply_ai
             AFTER INSERT ON blocks
-            WHEN NEW.msg_type = 1 AND NEW.msg_sub_type = %d
+            WHEN NEW.msg_type = 1 AND NEW.msg_sub_type IN (%d, %d)
             BEGIN
                 -- 1) помечаем исходный блок, что его "перекрыл" этот edit
                 UPDATE blocks
@@ -346,6 +347,6 @@ public final class DatabaseTriggersInstaller {
                   AND NEW.to_block_number IS NOT NULL
                   AND NEW.to_block_hash IS NOT NULL;
             END;
-            """.formatted(EDIT));
+            """.formatted(EDIT_POST, EDIT_REPLY));
     }
 }

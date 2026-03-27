@@ -13,7 +13,7 @@ import java.util.List;
  * Возвращает по каждой активной подписке (FOLLOW) + "сам на себя":
  *  - login цели (channelLogin)
  *  - blockchainName цели (channelBchName)
- *  - count публикаций (TEXT_NEW)
+ *  - count публикаций (TEXT_POST)
  *  - last publication: bytes оригинального блока (для timestamp)
  *  - last publication: bytes актуального блока (edit или orig) — для текста превью
  *
@@ -92,7 +92,7 @@ public final class SubscriptionsDAO {
 
     /**
      * Получить список подписок (активные FOLLOW) + "сам на себя" и по каждой:
-     * - count публикаций (TEXT_NEW)
+     * - count публикаций (TEXT_POST)
      * - последнюю публикацию (orig bytes) + её edit (если есть)
      *
      * Поведение при 0 публикаций:
@@ -207,11 +207,11 @@ public final class SubscriptionsDAO {
 
             // pub_counts
             ps.setInt(i++, MSG_TYPE_TEXT);
-            ps.setInt(i++, (int) MsgSubType.TEXT_NEW);
+            ps.setInt(i++, (int) MsgSubType.TEXT_POST);
 
             // last_pub
             ps.setInt(i++, MSG_TYPE_TEXT);
-            ps.setInt(i++, (int) MsgSubType.TEXT_NEW);
+            ps.setInt(i++, (int) MsgSubType.TEXT_POST);
 
             try (ResultSet rs = ps.executeQuery()) {
                 while (rs.next()) {

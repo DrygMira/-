@@ -16,7 +16,7 @@ package shine.db.entities;
  * Плюс поля индексации:
  *  - msg_type / msg_sub_type
  *  - to_* (если есть target)
- *  - edited_by_block_number (для TEXT_EDIT)
+ *  - edited_by_block_number (для TEXT_EDIT_POST / TEXT_EDIT_REPLY)
  */
 public class BlockEntry {
 

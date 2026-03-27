@@ -94,10 +94,13 @@
 - Есть счетчики `message_stats` (likes/replies/edits) на уровне БД.
 - Есть `connections_state` как «текущее состояние», собранное триггерами.
 
-## 6) Важный текущий риск
+## 6) Статус унификации subType
 
-В проекте есть **несовпадение констант subType между модулями** (`shine-server-blockchain` и `shine-server-db`):
-- в blockchain-модуле `TEXT_POST=10, REPLY=20...`
-- в db-модуле местами используются старые `TEXT_NEW=1, REPLY=2...`
+Схема `subType` должна быть единой во всех модулях проекта:
 
-Это нужно унифицировать, иначе часть триггеров/DAO будет работать некорректно.
+- `TEXT_POST = 10`
+- `TEXT_EDIT_POST = 11`
+- `TEXT_REPLY = 20`
+- `TEXT_EDIT_REPLY = 21`
+
+Это правило должно одинаково использоваться в `shine-server-blockchain`, `shine-server-db`, SQL-триггерах и DAO.

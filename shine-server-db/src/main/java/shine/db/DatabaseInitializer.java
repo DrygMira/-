@@ -28,10 +28,10 @@ public final class DatabaseInitializer {
 
     /* ===================== TEXT (msg_type=1) ===================== */
 
-    public static final short TEXT_NEW = 1;
-    public static final short TEXT_REPLY = 2;
-    public static final short TEXT_REPOST = 3;
-    public static final short TEXT_EDIT = 10;
+    public static final short TEXT_POST = 10;
+    public static final short TEXT_EDIT_POST = 11;
+    public static final short TEXT_REPLY = 20;
+    public static final short TEXT_EDIT_REPLY = 21;
 
     /* ===================== REACTION (msg_type=2) ===================== */
 
