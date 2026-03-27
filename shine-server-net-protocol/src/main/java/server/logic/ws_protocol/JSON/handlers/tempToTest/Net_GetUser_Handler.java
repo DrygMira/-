@@ -77,7 +77,7 @@ public class Net_GetUser_Handler implements JsonMessageHandler {
                     req,
                     WireCodes.Status.INTERNAL_ERROR,
                     "INTERNAL_ERROR",
-                    "Внутренняя ошибка сервера"
+                    NetExceptionResponseFactory.detailedMessage("Внутренняя ошибка сервера при GetUser", e)
             );
         }
     }

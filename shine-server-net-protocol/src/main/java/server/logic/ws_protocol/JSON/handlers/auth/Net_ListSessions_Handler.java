@@ -66,7 +66,7 @@ public class Net_ListSessions_Handler implements JsonMessageHandler {
             info.setSessionId(s.getSessionId());
             info.setClientInfoFromClient(s.getClientInfoFromClient());
             info.setClientInfoFromRequest(s.getClientInfoFromRequest());
-            info.setLastAuthirificatedAtMs(s.getLastAuthirificatedAtMs());
+            info.setLastAuthenticatedAtMs(s.getLastAuthirificatedAtMs());
 
             String ip = s.getClientIp();
             String geo = GeoLookupService.resolveCountryCityOrIpWithCache(ip);

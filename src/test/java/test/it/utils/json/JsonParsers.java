@@ -19,6 +19,62 @@ public final class JsonParsers {
         }
     }
 
+    public static String op(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            return root.has("op") && !root.get("op").isNull() ? root.get("op").asText() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static String requestId(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            return root.has("requestId") && !root.get("requestId").isNull() ? root.get("requestId").asText() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static Boolean ok(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            return root.has("ok") ? root.get("ok").asBoolean() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static String message(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            return root.has("message") && !root.get("message").isNull() ? root.get("message").asText() : null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static boolean payloadIsObject(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            return payload != null && payload.isObject();
+        } catch (Exception e) {
+            return false;
+        }
+    }
+
+    public static int payloadSize(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            return payload != null && payload.isObject() ? payload.size() : -1;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
     public static String authNonce(String json) {
         try {
             JsonNode root = MAPPER.readTree(json);
@@ -97,6 +153,7 @@ public final class JsonParsers {
         try {
             JsonNode root = MAPPER.readTree(json);
 
+            if (root.has("error")) return root.get("error").asText();
             // поддержка старого формата (верхний уровень)
             if (root.has("errorCode")) return root.get("errorCode").asText();
             // поддержка нового формата (верхний уровень)
@@ -106,6 +163,7 @@ public final class JsonParsers {
             if (payload != null) {
                 // поддержка старого формата (внутри payload)
                 if (payload.has("errorCode")) return payload.get("errorCode").asText();
+                if (payload.has("error")) return payload.get("error").asText();
                 // поддержка нового формата (внутри payload)
                 if (payload.has("code")) return payload.get("code").asText();
             }

@@ -49,6 +49,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
 
     private static final Logger log = LoggerFactory.getLogger(Net_CreateAuthSession__Handler.class);
     private static final SecureRandom RANDOM = new SecureRandom();
+    private static final long CLOSE_AFTER_ERROR_DELAY_MS = 75L;
 
     public static final long ALLOWED_SKEW_MS = 30_000L;
 
@@ -68,7 +69,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "NO_STEP1_CONTEXT",
                     "Шаг 1 авторизации не был корректно выполнен для данного соединения"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: no step1 context or bad auth state");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: no step1 context or bad auth state");
             return err;
         }
 
@@ -82,7 +83,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "EMPTY_LOGIN",
                     "Пустой login"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty login");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: empty login");
             return err;
         }
         if (!login.equals(loginFromContext)) {
@@ -92,7 +93,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "LOGIN_MISMATCH",
                     "login не соответствует контексту AuthChallenge"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: login mismatch");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: login mismatch");
             return err;
         }
 
@@ -106,7 +107,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "DB_ERROR_USER_LOOKUP",
                     "Ошибка БД при получении пользователя"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: db user lookup");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: db user lookup");
             return err;
         }
         if (user == null) {
@@ -116,7 +117,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "USER_NOT_FOUND",
                     "Пользователь не найден"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: user not found");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: user not found");
             return err;
         }
 
@@ -127,7 +128,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "NO_LOGIN",
                     "Для пользователя не задан login в БД"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: no login");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: no login");
             return err;
         }
 
@@ -139,7 +140,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "EMPTY_STORAGE_PWD",
                     "Пустой storagePwd"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty storagePwd");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: empty storagePwd");
             return err;
         }
 
@@ -151,7 +152,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "EMPTY_SESSION_KEY",
                     "Пустой sessionKey"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty session key");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: empty session key");
             return err;
         }
 
@@ -165,7 +166,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "UNSUPPORTED_KEY_ALGORITHM",
                     "sessionKey prefix is not supported"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: unsupported session key algorithm");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: unsupported session key algorithm");
             return err;
         } catch (IllegalArgumentException e) {
             Net_Response err = NetExceptionResponseFactory.error(
@@ -174,7 +175,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "BAD_BASE64",
                     "Некорректный формат sessionKey"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad session key format");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: bad session key format");
             return err;
         }
 
@@ -186,7 +187,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "EMPTY_SIGNATURE",
                     "Пустая цифровая подпись"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty signature");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: empty signature");
             return err;
         }
 
@@ -200,7 +201,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "TIME_SKEW",
                     "Время клиента отличается от сервера более чем на 30 секунд"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: time skew");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: time skew");
             return err;
         }
 
@@ -217,7 +218,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "NO_DEVICE_KEY",
                     "Отсутствует deviceKey у пользователя"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: no deviceKey");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: no deviceKey");
             return err;
         }
 
@@ -230,7 +231,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "EMPTY_AUTH_NONCE",
                     "Пустой authNonce"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty authNonce");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: empty authNonce");
             return err;
         }
         if (!authNonce.equals(authNonceFromReq)) {
@@ -240,7 +241,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "AUTH_NONCE_MISMATCH",
                     "authNonce не соответствует контексту AuthChallenge"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: authNonce mismatch");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: authNonce mismatch");
             return err;
         }
 
@@ -252,7 +253,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "EMPTY_DEVICE_KEY",
                     "Пустой deviceKey"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: empty deviceKey");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: empty deviceKey");
             return err;
         }
         deviceKeyFromReq = deviceKeyFromReq.trim();
@@ -265,7 +266,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "DEVICE_KEY_NOT_ACTUAL",
                     "device_key не соответствует актуальной версии"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: device key mismatch");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: device key mismatch");
             return err;
         }
 
@@ -287,7 +288,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "UNSUPPORTED_KEY_ALGORITHM",
                     "deviceKey algorithm is not supported"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: unsupported device key algorithm");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: unsupported device key algorithm");
             return err;
         } catch (IllegalArgumentException ex) {
             Net_Response err = NetExceptionResponseFactory.error(
@@ -296,7 +297,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "BAD_BASE64",
                     "Некорректный формат Base64 для ключа или подписи"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad base64");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: bad base64");
             return err;
         }
 
@@ -307,7 +308,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "BAD_SIGNATURE",
                     "Подпись не прошла проверку"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: bad signature");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: bad signature");
             return err;
         }
 
@@ -364,7 +365,7 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
                     "DB_ERROR_SESSION_CREATE",
                     "Ошибка БД при создании сессии"
             );
-            WsConnectionUtils.closeConnection(ctx, 4001, "Auth failed: db error");
+            closeConnectionAfterErrorResponse(ctx, 4001, "Auth failed: db error");
             return err;
         }
 
@@ -413,5 +414,17 @@ public class Net_CreateAuthSession__Handler implements JsonMessageHandler {
         byte[] buf = new byte[32];
         RANDOM.nextBytes(buf);
         return Base64Ws.encode(buf);
+    }
+
+    private static void closeConnectionAfterErrorResponse(ConnectionContext ctx, int statusCode, String reason) {
+        if (ctx == null) return;
+        new Thread(() -> {
+            try {
+                Thread.sleep(CLOSE_AFTER_ERROR_DELAY_MS);
+            } catch (InterruptedException ignored) {
+                Thread.currentThread().interrupt();
+            }
+            WsConnectionUtils.closeConnection(ctx, statusCode, reason);
+        }, "CreateAuthSessionClose-" + System.identityHashCode(ctx)).start();
     }
 }

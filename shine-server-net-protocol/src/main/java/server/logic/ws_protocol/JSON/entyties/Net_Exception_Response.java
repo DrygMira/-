@@ -3,11 +3,8 @@ package server.logic.ws_protocol.JSON.entyties;
 /**
  * Ответ с ошибкой (любой отказ).
  *.
- * В payload будет:
- * {
- *   "code": "...",
- *   "message": "..."
- * }
+ * В wire-формате error/message поднимаются на верхний уровень,
+ * а payload остаётся объектом.
  */
 public class Net_Exception_Response extends Net_Response {
 

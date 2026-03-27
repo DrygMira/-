@@ -70,7 +70,7 @@ public class Net_SearchUsers_Handler implements JsonMessageHandler {
                     req,
                     WireCodes.Status.INTERNAL_ERROR,
                     "INTERNAL_ERROR",
-                    "Внутренняя ошибка сервера"
+                    NetExceptionResponseFactory.detailedMessage("Внутренняя ошибка сервера при SearchUsers", e)
             );
         }
     }

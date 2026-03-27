@@ -83,7 +83,7 @@ public class Net_GetUserParam_Handler implements JsonMessageHandler {
                     req,
                     WireCodes.Status.INTERNAL_ERROR,
                     "INTERNAL_ERROR",
-                    "Внутренняя ошибка сервера"
+                    NetExceptionResponseFactory.detailedMessage("Внутренняя ошибка сервера при GetUserParam", e)
             );
         }
     }

@@ -9,6 +9,8 @@ import server.logic.ws_protocol.JSON.entyties.Net_Request;
  */
 public final class NetExceptionResponseFactory {
 
+    private static final int MAX_DETAIL_LEN = 240;
+
     private NetExceptionResponseFactory() {
         // запрет на создание объектов
     }
@@ -33,6 +35,39 @@ public final class NetExceptionResponseFactory {
         resp.setCode(code);
         resp.setMessage(message);
         return resp;
+    }
+
+    public static String detailedMessage(String prefix, Throwable error) {
+        String safePrefix = prefix == null || prefix.isBlank()
+                ? "Внутренняя ошибка сервера"
+                : prefix.trim();
+
+        if (error == null) {
+            return safePrefix;
+        }
+
+        String className = error.getClass().getSimpleName();
+        if (className == null || className.isBlank()) {
+            className = error.getClass().getName();
+        }
+
+        String detail = error.getMessage();
+        StringBuilder sb = new StringBuilder(safePrefix)
+                .append(": ")
+                .append(className);
+
+        if (detail != null && !detail.isBlank()) {
+            sb.append(": ").append(detail.trim());
+        }
+
+        String message = sb.toString()
+                .replace('\n', ' ')
+                .replace('\r', ' ');
+
+        if (message.length() <= MAX_DETAIL_LEN) {
+            return message;
+        }
+        return message.substring(0, MAX_DETAIL_LEN - 3) + "...";
     }
 
     /**

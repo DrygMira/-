@@ -185,7 +185,10 @@ public final class JsonInboundProcessor {
                         requestId,
                         WireCodes.Status.BAD_REQUEST,
                         "BAD_REQUEST_FORMAT",
-                        "Некорректный формат запроса: не удалось распарсить поля payload"
+                        NetExceptionResponseFactory.detailedMessage(
+                                "Некорректный формат запроса: не удалось распарсить поля payload",
+                                mapErr
+                        )
                 );
 
                 String out = writeResponse(err);
@@ -216,7 +219,10 @@ public final class JsonInboundProcessor {
                         requestId,
                         WireCodes.Status.INTERNAL_ERROR,
                         "INTERNAL_HANDLER_ERROR",
-                        "Неожиданная ошибка при обработке операции: " + op
+                        NetExceptionResponseFactory.detailedMessage(
+                                "Неожиданная ошибка при обработке операции: " + op,
+                                handlerError
+                        )
                 );
 
                 String out = writeResponse(err);
@@ -254,7 +260,7 @@ public final class JsonInboundProcessor {
                     requestId,
                     WireCodes.Status.INTERNAL_ERROR,
                     "INTERNAL_ERROR",
-                    "Внутренняя ошибка сервера"
+                    NetExceptionResponseFactory.detailedMessage("Внутренняя ошибка сервера", e)
             );
 
             String out = writeResponse(err);
@@ -281,6 +287,7 @@ public final class JsonInboundProcessor {
      *   "op": ...,
      *   "requestId": ...,
      *   "status": ...,
+     *   "ok": true|false,
      *   "payload": { ... }
      * }
      */
@@ -293,18 +300,39 @@ public final class JsonInboundProcessor {
             String op = full.hasNonNull("op") ? full.get("op").asText() : null;
             String requestId = full.hasNonNull("requestId") ? full.get("requestId").asText() : null;
             int status = full.hasNonNull("status") ? full.get("status").asInt() : 0;
+            boolean ok = status >= 200 && status < 300;
+
+            String error = null;
+            if (!ok) {
+                if (full.hasNonNull("error")) error = full.get("error").asText();
+                else if (full.hasNonNull("code")) error = full.get("code").asText();
+            }
+
+            String message = null;
+            if (!ok && full.hasNonNull("message")) {
+                message = full.get("message").asText();
+            }
 
             // Удаляем базовые поля и payload из "полного" объекта,
             // всё остальное отправляем внутрь payload.
             full.remove("op");
             full.remove("requestId");
             full.remove("status");
+            full.remove("ok");
+            full.remove("error");
+            full.remove("code");
+            if (!ok) full.remove("message");
             full.remove("payload");
 
             ObjectNode root = JSON_MAPPER.createObjectNode();
             if (op != null) root.put("op", op); else root.putNull("op");
             if (requestId != null) root.put("requestId", requestId); else root.putNull("requestId");
             root.put("status", status);
+            root.put("ok", ok);
+            if (!ok) {
+                if (error != null) root.put("error", error); else root.putNull("error");
+                if (message != null) root.put("message", message); else root.putNull("message");
+            }
 
             // payload — это всё, что осталось от full (может быть пустым объектом {})
             root.set("payload", full);
@@ -321,7 +349,10 @@ public final class JsonInboundProcessor {
             return "{\"op\":\"" + safe(response != null ? response.getOp() : null) +
                     "\",\"requestId\":\"" + safe(response != null ? response.getRequestId() : null) +
                     "\",\"status\":" + (response != null ? response.getStatus() : 500) +
-                    ",\"payload\":{\"code\":\"SERIALIZATION_ERROR\",\"message\":\"Ошибка сериализации ответа\"}}";
+                    ",\"ok\":false" +
+                    ",\"error\":\"SERIALIZATION_ERROR\"" +
+                    ",\"message\":\"Ошибка сериализации ответа\"" +
+                    ",\"payload\":{}}";
         }
     }
 

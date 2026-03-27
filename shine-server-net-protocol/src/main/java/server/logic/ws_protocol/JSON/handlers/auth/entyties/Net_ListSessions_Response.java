@@ -17,7 +17,7 @@ import java.util.List;
  *          "clientInfoFromClient": "...",
  *          "clientInfoFromRequest": "...",
  *          "geo": "Country, City" | "unknown",
- *          "lastAuthirificatedAtMs": 1733310000000
+ *          "lastAuthenticatedAtMs": 1733310000000
  *        },
  *        ...
  *      ]
@@ -56,7 +56,7 @@ public class Net_ListSessions_Response extends Net_Response {
         private String geo;
 
         /** Время последней успешной авторизации/refresh (мс с 1970-01-01). */
-        private long lastAuthirificatedAtMs;
+        private long lastAuthenticatedAtMs;
 
         // --- getters / setters ---
 
@@ -92,12 +92,12 @@ public class Net_ListSessions_Response extends Net_Response {
             this.geo = geo;
         }
 
-        public long getLastAuthirificatedAtMs() {
-            return lastAuthirificatedAtMs;
+        public long getLastAuthenticatedAtMs() {
+            return lastAuthenticatedAtMs;
         }
 
-        public void setLastAuthirificatedAtMs(long lastAuthirificatedAtMs) {
-            this.lastAuthirificatedAtMs = lastAuthirificatedAtMs;
+        public void setLastAuthenticatedAtMs(long lastAuthenticatedAtMs) {
+            this.lastAuthenticatedAtMs = lastAuthenticatedAtMs;
         }
     }
 }

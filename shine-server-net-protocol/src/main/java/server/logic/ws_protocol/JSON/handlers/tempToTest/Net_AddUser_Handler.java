@@ -178,7 +178,7 @@ public class Net_AddUser_Handler implements JsonMessageHandler {
                     req,
                     WireCodes.Status.INTERNAL_ERROR,
                     "INTERNAL_ERROR",
-                    "Внутренняя ошибка сервера"
+                    NetExceptionResponseFactory.detailedMessage("Внутренняя ошибка сервера при AddUser", e)
             );
         }
     }

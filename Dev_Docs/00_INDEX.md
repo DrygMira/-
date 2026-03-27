@@ -4,11 +4,17 @@
 
 ## Список документов
 
-0. **API/01_Auth_and_Sessions_API.md**  
-   API-глава для разработчиков: транспортный JSON-конверт, форматы запросов/ответов, создание и вход в сессию, `session_key`, `storagePwd`, подписи и совместимость версий.
+0. **API/00_Common_API_Format.md**  
+   Общий формат JSON-запросов и JSON-ответов по всему API: `op`, `requestId`, `status`, `ok`, `payload`, единые правила успеха и ошибок.
 
-0. **API/02_User_Registration_API.md**  
-   Временная глава API по регистрации пользователя: текущая заглушка `AddUser`, ограничения схемы и пометка о будущем переходе на полноценную регистрацию через Solana.
+0. **API/01_User_Registration_API.md**  
+   Временная глава API по регистрации пользователя: `AddUser` и временный `GetUser`, с пометкой о будущем переходе проверки identity напрямую через Solana.
+
+0. **API/02_Authentication_API.md**  
+   Глава API по авторизации: `AuthChallenge`, `CreateAuthSession`, `SessionChallenge`, `SessionLogin`, подписи, `deviceKey`, `sessionKey`.
+
+0. **API/03_Session_Management_API.md**  
+   Глава API по управлению сессиями: `ListSessions` и `CloseActiveSession`.
 
 1. **01_Connection_and_Sessions.md**  
    Процесс подключения к WebSocket, авторизация (двухшаговая), создание сессии, вход в существующую сессию, просмотр и закрытие сессий.

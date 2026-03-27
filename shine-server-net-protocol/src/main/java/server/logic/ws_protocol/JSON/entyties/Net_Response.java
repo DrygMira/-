@@ -10,6 +10,7 @@ package server.logic.ws_protocol.JSON.entyties;
  *   "op": "...",
  *   "requestId": "...",
  *   "status": 200,
+ *   "ok": true,
  *   "payload": { ... } // и для успеха, и для ошибки
  * }
  */
@@ -29,6 +30,6 @@ public abstract class Net_Response extends Net_Request {
     }
 
     public boolean isOk() {
-        return status == 200;
+        return status >= 200 && status < 300;
     }
 }

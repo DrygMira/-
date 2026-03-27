@@ -1,6 +1,7 @@
 package test.it.cases;
 
 import test.it.utils.TestConfig;
+import test.it.utils.TestIds;
 import test.it.utils.json.JsonBuilders;
 import test.it.utils.json.JsonParsers;
 import test.it.utils.log.TestResult;
@@ -65,6 +66,8 @@ public class IT_01_AddUser {
             String prefix3Mixed = mixCase(prefix3);
             r.ok("SearchUsers: prefix(3)='" + prefix3Mixed + "' (должен вернуть список и содержать " + TestConfig.LOGIN() + ")");
             checkSearchUsersMustContain(r, ws, prefix3Mixed, TestConfig.LOGIN(), t);
+
+            checkNegativeRequests(r, ws, t);
 
         } catch (Throwable e) {
             r.fail("IT_01_AddUser упал: " + e.getMessage());
@@ -220,6 +223,74 @@ public class IT_01_AddUser {
         }
 
         r.ok("SearchUsers: ok, prefix=" + prefix + ", results=" + logins.size() + ", contains=" + expectedLogin);
+    }
+
+    private static void checkNegativeRequests(TestResult r, WsSession ws, Duration t) {
+        String badAddUserReqId = TestIds.next("bad-adduser");
+        String badAddUser = """
+                {
+                  "op": "AddUser",
+                  "requestId": "%s",
+                  "payload": {
+                    "login": "",
+                    "blockchainName": "%s",
+                    "solanaKey": "%s",
+                    "blockchainKey": "%s",
+                    "deviceKey": "%s",
+                    "bchLimit": %d
+                  }
+                }
+                """.formatted(
+                badAddUserReqId,
+                TestConfig.BCH_NAME(),
+                TestConfig.SOLANA_PUBKEY_B64(),
+                TestConfig.BLOCKCHAIN_PUBKEY_B64(),
+                TestConfig.DEVICE_PUBKEY_B64(),
+                TestConfig.TEST_BCH_LIMIT
+        );
+        String badAddUserResp = ws.call("AddUser#NEGATIVE", badAddUser, t);
+        assertErrorFormat(badAddUserResp, "AddUser", badAddUserReqId, "BAD_FIELDS");
+        r.ok("Negative AddUser: error format OK");
+
+        String badGetUserReqId = TestIds.next("bad-getuser");
+        String badGetUser = """
+                {
+                  "op": "GetUser",
+                  "requestId": "%s",
+                  "payload": {
+                    "login": ""
+                  }
+                }
+                """.formatted(badGetUserReqId);
+        String badGetUserResp = ws.call("GetUser#NEGATIVE", badGetUser, t);
+        assertErrorFormat(badGetUserResp, "GetUser", badGetUserReqId, "BAD_FIELDS");
+        r.ok("Negative GetUser: error format OK");
+
+        String badSearchReqId = TestIds.next("bad-searchusers");
+        String badSearch = """
+                {
+                  "op": "SearchUsers",
+                  "requestId": "%s",
+                  "payload": {
+                    "prefix": ""
+                  }
+                }
+                """.formatted(badSearchReqId);
+        String badSearchResp = ws.call("SearchUsers#NEGATIVE", badSearch, t);
+        assertErrorFormat(badSearchResp, "SearchUsers", badSearchReqId, "BAD_FIELDS");
+        r.ok("Negative SearchUsers: error format OK");
+    }
+
+    private static void assertErrorFormat(String resp, String op, String requestId, String code) {
+        int status = JsonParsers.status(resp);
+        if (status >= 200 && status < 300) fail("Expected non-2xx status: " + resp);
+        if (!Boolean.FALSE.equals(JsonParsers.ok(resp))) fail("Expected ok=false: " + resp);
+        if (!op.equals(JsonParsers.op(resp))) fail("Unexpected op: " + resp);
+        if (!requestId.equals(JsonParsers.requestId(resp))) fail("Unexpected requestId: " + resp);
+        if (!code.equals(JsonParsers.errorCode(resp))) fail("Unexpected error code: " + resp);
+        if (!JsonParsers.payloadIsObject(resp)) fail("payload must be object: " + resp);
+        if (JsonParsers.payloadSize(resp) != 0) fail("error payload must be empty object: " + resp);
+        if (isBlank(JsonParsers.message(resp))) fail("error message must be present: " + resp);
     }
 
     private static String canonicalLogin(String anyCaseLogin) {
