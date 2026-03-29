@@ -132,6 +132,21 @@ public final class JsonParsers {
         }
     }
 
+    public static Long pingTs(String json) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload != null && payload.has("ts")) return payload.get("ts").asLong();
+            return null;
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    public static String payloadText(String json, String field) {
+        return getPayloadText(json, field);
+    }
+
     public static List<String> sessionIds(String json) {
         List<String> res = new ArrayList<>();
         try {
