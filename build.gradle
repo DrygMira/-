@@ -5,10 +5,17 @@ plugins {
 }
 
 group = 'shine'
-version = '1.0'
+version = '1.1_codex'
 
 tasks.jar {
     enabled = false     // это что бы не создавала обычный джар, а будет только толстый джар
+}
+
+tasks.processResources {
+    filteringCharset = 'UTF-8'
+    filesMatching('application.properties') {
+        expand(projectVersion: project.version.toString())
+    }
 }
 
 repositories {
@@ -142,4 +149,3 @@ tasks.register('itDeployServer', JavaExec) {
 
     dependsOn testClasses
 }
-

@@ -1,6 +1,7 @@
 package test.it.runner;
 
 import test.it.cases.IT_01_AddUser;
+import test.it.cases.IT_00_TechnicalRequests;
 import test.it.cases.IT_02_Sessions;
 import test.it.cases.IT_03_AddBlock_NoAuth;
 import test.it.cases.IT_04_UserParams_NoAuth;
@@ -36,6 +37,9 @@ public class IT_RunAllMain {
 
         TestLog.title("IT RUN: запуск всех тестов подряд"
                 + (STOP_ON_FIRST_FAIL ? " (STOP_ON_FIRST_FAIL=ON)" : " (STOP_ON_FIRST_FAIL=OFF)"));
+
+        String s0 = IT_00_TechnicalRequests.run(); summaries.add(s0);
+        if (s0.contains("FAIL:")) { failed++; if (STOP_ON_FIRST_FAIL) return finishEarly(summaries, failed); }
 
         String s1 = IT_01_AddUser.run(); summaries.add(s1);
         if (s1.contains("FAIL:")) { failed++; if (STOP_ON_FIRST_FAIL) return finishEarly(summaries, failed); }

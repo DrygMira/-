@@ -16,6 +16,9 @@
 0. **API/03_Session_Management_API.md**  
    Глава API по управлению сессиями: `ListSessions` и `CloseActiveSession`.
 
+0. **API/05_Technical_Requests_API.md**  
+   Технические запросы без авторизации: `Ping` для keep-alive и `GetServerInfo` для проверки доступности узла и чтения его публичной информации.
+
 1. **01_Connection_and_Sessions.md**  
    Процесс подключения к WebSocket, авторизация (двухшаговая), создание сессии, вход в существующую сессию, просмотр и закрытие сессий.
 

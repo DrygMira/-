@@ -45,6 +45,12 @@ public final class AppConfig {
         return properties.getProperty(name);
     }
 
+    /** Вернёт строку или пустую строку, если параметр не найден. */
+    public String getStringOrEmpty(String name) {
+        String value = properties.getProperty(name);
+        return value == null ? "" : value.trim();
+    }
+
     /** Можно добавить методы для удобства */
     public int getInt(String name, int defaultValue) {
         String v = properties.getProperty(name);

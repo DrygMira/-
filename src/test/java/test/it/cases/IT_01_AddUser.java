@@ -36,6 +36,8 @@ public class IT_01_AddUser {
 
         try (WsSession ws = WsSession.open()) {
 
+            checkPingAndServerInfo(r, ws, t);
+
             r.ok("AddUser USER1: " + TestConfig.LOGIN());
             String resp1 = ws.call("AddUser#USER1", JsonBuilders.addUser(TestConfig.LOGIN()), t);
             checkAddUser200or409(r, resp1);
@@ -74,6 +76,38 @@ public class IT_01_AddUser {
         }
 
         return r.summaryLine();
+    }
+
+    private static void checkPingAndServerInfo(TestResult r, WsSession ws, Duration t) {
+        String pingResp = ws.call("Ping", JsonBuilders.ping(System.currentTimeMillis()), t);
+        if (JsonParsers.status(pingResp) != 200 || !Boolean.TRUE.equals(JsonParsers.ok(pingResp))) {
+            r.fail("Ping: ожидали status=200 и ok=true, resp=" + pingResp);
+            fail("Ping unexpected response");
+        }
+
+        Long serverTs = JsonParsers.pingTs(pingResp);
+        if (serverTs == null || serverTs <= 0) {
+            r.fail("Ping: сервер не вернул ts, resp=" + pingResp);
+            fail("Ping missing ts");
+        }
+        r.ok("Ping: ok, serverTs=" + serverTs);
+
+        String infoResp = ws.call("GetServerInfo", JsonBuilders.getServerInfo(), t);
+        if (JsonParsers.status(infoResp) != 200 || !Boolean.TRUE.equals(JsonParsers.ok(infoResp))) {
+            r.fail("GetServerInfo: ожидали status=200 и ok=true, resp=" + infoResp);
+            fail("GetServerInfo unexpected response");
+        }
+        if (!JsonParsers.payloadIsObject(infoResp)) {
+            r.fail("GetServerInfo: payload должен быть объектом, resp=" + infoResp);
+            fail("GetServerInfo payload is not object");
+        }
+
+        r.ok("GetServerInfo: ok, url='" + safe(JsonParsers.payloadText(infoResp, "url"))
+                + "', version='" + safe(JsonParsers.payloadText(infoResp, "version"))
+                + "', physicalRegion='" + safe(JsonParsers.payloadText(infoResp, "physicalRegion"))
+                + "', description='" + safe(JsonParsers.payloadText(infoResp, "description"))
+                + "', origin='" + safe(JsonParsers.payloadText(infoResp, "origin"))
+                + "', extraInfo='" + safe(JsonParsers.payloadText(infoResp, "extraInfo")) + "'");
     }
 
     private static void checkAddUser200or409(TestResult r, String resp) {
@@ -323,5 +357,9 @@ public class IT_01_AddUser {
 
     private static boolean isBlank(String s) {
         return s == null || s.trim().isEmpty();
+    }
+
+    private static String safe(String s) {
+        return s == null ? "" : s;
     }
 }

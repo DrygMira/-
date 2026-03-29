@@ -90,6 +90,35 @@ public final class JsonBuilders {
             """.formatted(requestId, login);
     }
 
+    // ---------------- Ping ----------------
+
+    public static String ping(long ts) {
+        String requestId = TestIds.next("ping");
+        return """
+                {
+                  "op": "Ping",
+                  "requestId": "%s",
+                  "payload": {
+                    "ts": %d
+                  }
+                }
+                """.formatted(requestId, ts);
+    }
+
+    // ---------------- GetServerInfo ----------------
+
+    public static String getServerInfo() {
+        String requestId = TestIds.next("serverinfo");
+        return """
+                {
+                  "op": "GetServerInfo",
+                  "requestId": "%s",
+                  "payload": {
+                  }
+                }
+                """.formatted(requestId);
+    }
+
     // ---------------- AuthChallenge ----------------
 
     public static String authChallenge(String login) {
