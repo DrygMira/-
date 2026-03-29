@@ -1,5 +1,12 @@
 import { renderHeader } from '../components/header.js?v=20260327192619';
-import { authorizeSession, state } from '../state.js?v=20260327192619';
+import {
+  authService,
+  authorizeSession,
+  refreshSessions,
+  setAuthError,
+  setAuthInfo,
+  state,
+} from '../state.js?v=20260327192619';
 
 export const pageMeta = { id: 'registration-keys-view', title: 'Сохранение ключей', showAppChrome: false };
 
@@ -15,11 +22,11 @@ export function render({ navigate }) {
 
   const title = document.createElement('p');
   title.className = 'auth-copy';
-  title.textContent = `Поздравляю, ваш логин ${displayLogin} зарегистрирован.`;
+  title.textContent = `Отлично, логин ${displayLogin} зарегистрирован.`;
 
   const question = document.createElement('p');
   question.className = 'auth-copy';
-  question.textContent = 'Какие ключи вы хотите сохранить на этом устройстве?';
+  question.textContent = 'Какие ключи сохранить в зашифрованном контейнере IndexedDB?';
 
   const rootToggle = document.createElement('input');
   rootToggle.type = 'checkbox';
@@ -31,19 +38,8 @@ export function render({ navigate }) {
 
   const deviceToggle = document.createElement('input');
   deviceToggle.type = 'checkbox';
-  deviceToggle.checked = state.keyStorage.saveDevice;
-
-  rootToggle.addEventListener('change', () => {
-    state.keyStorage.saveRoot = rootToggle.checked;
-  });
-
-  blockchainToggle.addEventListener('change', () => {
-    state.keyStorage.saveBlockchain = blockchainToggle.checked;
-  });
-
-  deviceToggle.addEventListener('change', () => {
-    state.keyStorage.saveDevice = deviceToggle.checked;
-  });
+  deviceToggle.checked = true;
+  deviceToggle.disabled = true;
 
   const rootRow = document.createElement('label');
   rootRow.className = 'checkbox-row';
@@ -55,7 +51,7 @@ export function render({ navigate }) {
 
   const deviceRow = document.createElement('label');
   deviceRow.className = 'checkbox-row';
-  deviceRow.append(deviceToggle, document.createTextNode('device key'));
+  deviceRow.append(deviceToggle, document.createTextNode('device key (всегда)'));
 
   card.append(title, question, rootRow, deviceRow, blockchainRow);
 
@@ -72,9 +68,41 @@ export function render({ navigate }) {
   okButton.className = 'primary-btn';
   okButton.type = 'button';
   okButton.textContent = 'OK';
-  okButton.addEventListener('click', () => {
-    authorizeSession();
-    navigate('profile-view');
+  okButton.addEventListener('click', async () => {
+    try {
+      if (!state.registrationDraft.pendingKeyBundle || !state.registrationDraft.pendingSessionMaterial) {
+        throw new Error('Сначала завершите шаг регистрации на предыдущем экране');
+      }
+
+      state.keyStorage.saveRoot = rootToggle.checked;
+      state.keyStorage.saveBlockchain = blockchainToggle.checked;
+
+      await authService.persistSelectedKeys(
+        state.registrationDraft.login,
+        state.registrationDraft.storagePwd,
+        state.registrationDraft.pendingKeyBundle,
+        {
+          saveRoot: state.keyStorage.saveRoot,
+          saveBlockchain: state.keyStorage.saveBlockchain,
+        },
+      );
+      await authService.persistSessionMaterial(
+        state.registrationDraft.login,
+        state.registrationDraft.pendingSessionMaterial,
+      );
+
+      authorizeSession({
+        login: state.registrationDraft.login,
+        sessionId: state.registrationDraft.sessionId,
+        storagePwd: state.registrationDraft.storagePwd,
+      });
+      await refreshSessions();
+      setAuthInfo('Ключи сохранены, регистрация завершена.');
+      navigate('profile-view');
+    } catch (error) {
+      setAuthError(error.message);
+      window.alert(error.message);
+    }
   });
 
   actions.append(cancelButton, okButton);
