@@ -1,5 +1,11 @@
 import { renderHeader } from '../components/header.js?v=20260327192619';
-import { authorizeSession, state } from '../state.js?v=20260327192619';
+import {
+  authorizeSession,
+  refreshSessions,
+  setAuthError,
+  setAuthInfo,
+  state,
+} from '../state.js?v=20260327192619';
 
 export const pageMeta = { id: 'registration-keys-view', title: 'Сохранение ключей', showAppChrome: false };
 
@@ -15,47 +21,23 @@ export function render({ navigate }) {
 
   const title = document.createElement('p');
   title.className = 'auth-copy';
-  title.textContent = `Поздравляю, ваш логин ${displayLogin} зарегистрирован.`;
+  title.textContent = `Поздравляю, логин ${displayLogin} зарегистрирован.`;
 
   const question = document.createElement('p');
   question.className = 'auth-copy';
-  question.textContent = 'Какие ключи вы хотите сохранить на этом устройстве?';
-
-  const rootToggle = document.createElement('input');
-  rootToggle.type = 'checkbox';
-  rootToggle.checked = state.keyStorage.saveRoot;
-
-  const blockchainToggle = document.createElement('input');
-  blockchainToggle.type = 'checkbox';
-  blockchainToggle.checked = state.keyStorage.saveBlockchain;
-
-  const deviceToggle = document.createElement('input');
-  deviceToggle.type = 'checkbox';
-  deviceToggle.checked = state.keyStorage.saveDevice;
-
-  rootToggle.addEventListener('change', () => {
-    state.keyStorage.saveRoot = rootToggle.checked;
-  });
-
-  blockchainToggle.addEventListener('change', () => {
-    state.keyStorage.saveBlockchain = blockchainToggle.checked;
-  });
-
-  deviceToggle.addEventListener('change', () => {
-    state.keyStorage.saveDevice = deviceToggle.checked;
-  });
+  question.textContent = 'Ключи считаются из пароля (SHA-256 + суффиксы root.key/dev.key/bch.key). В IndexedDB сохраняются только выбранные ключи и всегда device key.';
 
   const rootRow = document.createElement('label');
   rootRow.className = 'checkbox-row';
-  rootRow.append(rootToggle, document.createTextNode('root key'));
+  rootRow.innerHTML = `<input type="checkbox" ${state.keyStorage.saveRoot ? 'checked' : ''} disabled /> <span>root key</span>`;
 
   const blockchainRow = document.createElement('label');
   blockchainRow.className = 'checkbox-row';
-  blockchainRow.append(blockchainToggle, document.createTextNode('blockchain key'));
+  blockchainRow.innerHTML = `<input type="checkbox" ${state.keyStorage.saveBlockchain ? 'checked' : ''} disabled /> <span>blockchain key</span>`;
 
   const deviceRow = document.createElement('label');
   deviceRow.className = 'checkbox-row';
-  deviceRow.append(deviceToggle, document.createTextNode('device key'));
+  deviceRow.innerHTML = '<input type="checkbox" checked disabled /> <span>device key</span>';
 
   card.append(title, question, rootRow, deviceRow, blockchainRow);
 
@@ -72,9 +54,20 @@ export function render({ navigate }) {
   okButton.className = 'primary-btn';
   okButton.type = 'button';
   okButton.textContent = 'OK';
-  okButton.addEventListener('click', () => {
-    authorizeSession();
-    navigate('profile-view');
+  okButton.addEventListener('click', async () => {
+    try {
+      authorizeSession({
+        login: state.registrationDraft.login,
+        sessionId: state.registrationDraft.sessionId,
+        storagePwd: state.registrationDraft.storagePwd,
+      });
+      await refreshSessions();
+      setAuthInfo('Регистрация завершена, список сессий загружен.');
+      navigate('profile-view');
+    } catch (error) {
+      setAuthError(error.message);
+      window.alert(error.message);
+    }
   });
 
   actions.append(cancelButton, okButton);
@@ -82,7 +75,7 @@ export function render({ navigate }) {
   screen.append(
     renderHeader({
       title: 'Сохранение ключей',
-      leftAction: { label: '←', onClick: () => navigate('registration-payment-view') },
+      leftAction: { label: '←', onClick: () => navigate('start-view') },
     }),
     card,
     actions,
