@@ -1,11 +1,22 @@
 import { renderHeader } from '../components/header.js?v=20260327192619';
-import { state } from '../state.js?v=20260327192619';
+import {
+  authService,
+  authorizeSession,
+  clearAuthMessages,
+  refreshSessions,
+  setAuthBusy,
+  setAuthError,
+  setAuthInfo,
+  state,
+} from '../state.js?v=20260327192619';
 
 export const pageMeta = { id: 'login-password-view', title: 'Войти по логину', showAppChrome: false };
 
 export function render({ navigate }) {
   const screen = document.createElement('section');
   screen.className = 'stack';
+
+  clearAuthMessages();
 
   const form = document.createElement('div');
   form.className = 'card stack';
@@ -22,16 +33,9 @@ export function render({ navigate }) {
   passwordInput.value = state.loginDraft.password;
   passwordInput.placeholder = 'Введите пароль';
 
-  const advanced = document.createElement('label');
-  advanced.className = 'checkbox-row';
-  advanced.innerHTML = `<input type="checkbox" /> <span>Расширенные настройки</span>`;
-  const advancedInput = advanced.querySelector('input');
-  advancedInput.addEventListener('change', () => {
-    if (advancedInput.checked) {
-      window.alert('Расширенные настройки в стартовой версии приложения пока не используются.');
-      advancedInput.checked = false;
-    }
-  });
+  const hint = document.createElement('p');
+  hint.className = 'meta-muted';
+  hint.textContent = 'Root/dev/bch ключи вычисляются из пароля через SHA-256, storagePwd каждый вход приходит с сервера.';
 
   form.innerHTML = `
     <label class="stack"><span class="field-label">Логин</span></label>
@@ -39,7 +43,7 @@ export function render({ navigate }) {
   `;
   form.children[0].append(loginInput);
   form.children[1].append(passwordInput);
-  form.append(advanced);
+  form.append(hint);
 
   const actions = document.createElement('div');
   actions.className = 'auth-footer-actions';
@@ -54,10 +58,35 @@ export function render({ navigate }) {
   enterButton.className = 'primary-btn';
   enterButton.type = 'button';
   enterButton.textContent = 'Войти';
-  enterButton.addEventListener('click', () => {
-    state.loginDraft.login = loginInput.value;
+  enterButton.addEventListener('click', async () => {
+    state.loginDraft.login = loginInput.value.trim();
     state.loginDraft.password = passwordInput.value;
-    navigate('key-storage-view');
+
+    if (!state.loginDraft.login || !state.loginDraft.password) {
+      window.alert('Введите логин и пароль');
+      return;
+    }
+
+    setAuthBusy(true);
+    setAuthError('');
+    enterButton.disabled = true;
+    enterButton.textContent = 'Входим...';
+
+    try {
+      await authService.reconnect(state.entrySettings.shineServer);
+      const result = await authService.createSessionForExistingUser(state.loginDraft.login, state.loginDraft.password);
+      authorizeSession(result);
+      await refreshSessions();
+      setAuthInfo('Успешный вход выполнен.');
+      navigate('profile-view');
+    } catch (error) {
+      setAuthError(error.message);
+      window.alert(error.message);
+    } finally {
+      setAuthBusy(false);
+      enterButton.disabled = false;
+      enterButton.textContent = 'Войти';
+    }
   });
 
   actions.append(backButton, enterButton);
