@@ -1,5 +1,5 @@
-import { renderHeader } from '../components/header.js?v=20260327192619';
-import { directMessages } from '../mock-data.js?v=20260327192619';
+import { renderHeader } from '../components/header.js?v=20260330001044';
+import { directMessages } from '../mock-data.js?v=20260330001044';
 
 export const pageMeta = { id: 'messages-list', title: 'Личные сообщения' };
 

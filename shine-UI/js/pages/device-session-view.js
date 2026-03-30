@@ -1,5 +1,12 @@
-import { renderHeader } from '../components/header.js?v=20260327192619';
-import { authService, refreshSessions, setAuthError, state } from '../state.js?v=20260327192619';
+import { renderHeader } from '../components/header.js?v=20260330001044';
+import {
+  authService,
+  isSessionInvalidError,
+  refreshSessions,
+  setAuthError,
+  state,
+  terminateCurrentSession,
+} from '../state.js?v=20260330001044';
 
 export const pageMeta = { id: 'device-session-view', title: 'Сеанс устройства' };
 
@@ -51,11 +58,39 @@ export function render({ navigate, route }) {
   actionBtn.textContent = 'Завершить сеанс';
 
   actionBtn.addEventListener('click', async () => {
+    const isCurrentSession = session.sessionId === state.session.sessionId;
+    const confirmed = window.confirm(
+      isCurrentSession ? 'Хотите завершить текущую сессию?' : 'Хотите завершить этот сеанс?',
+    );
+    if (!confirmed) return;
+
     try {
       await authService.closeSession(session.sessionId);
+    } catch (error) {
+      if (!isSessionInvalidError(error)) {
+        setAuthError(error.message);
+        window.alert(error.message);
+        return;
+      }
+    }
+
+    if (isCurrentSession) {
+      await terminateCurrentSession({
+        infoMessage: 'Текущая сессия завершена, данные на устройстве очищены.',
+      });
+      return;
+    }
+
+    try {
       await refreshSessions();
       navigate('device-view');
     } catch (error) {
+      if (isSessionInvalidError(error)) {
+        await terminateCurrentSession({
+          infoMessage: 'Сессия на этом устройстве уже завершена. Выполните вход заново.',
+        });
+        return;
+      }
       setAuthError(error.message);
       window.alert(error.message);
     }

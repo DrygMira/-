@@ -1,7 +1,7 @@
 import {
   decryptJsonWithStoragePwd,
   encryptJsonWithStoragePwd,
-} from './crypto-utils.js?v=20260327192619';
+} from './crypto-utils.js?v=20260330001044';
 
 const DB_NAME = 'shine-ui-auth';
 const DB_VERSION = 1;
@@ -75,4 +75,13 @@ export async function saveSessionMaterial(login, material) {
 
 export async function loadSessionMaterial(login) {
   return get(STORE_SESSIONS, login);
+}
+
+export async function clearClientAuthData() {
+  await new Promise((resolve, reject) => {
+    const request = indexedDB.deleteDatabase(DB_NAME);
+    request.onsuccess = () => resolve();
+    request.onerror = () => reject(request.error || new Error('Не удалось очистить IndexedDB'));
+    request.onblocked = () => reject(new Error('Очистка IndexedDB заблокирована открытыми соединениями'));
+  });
 }

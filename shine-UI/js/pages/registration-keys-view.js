@@ -1,4 +1,4 @@
-import { renderHeader } from '../components/header.js?v=20260327192619';
+import { renderHeader } from '../components/header.js?v=20260330001044';
 import {
   authService,
   authorizeSession,
@@ -6,7 +6,7 @@ import {
   setAuthError,
   setAuthInfo,
   state,
-} from '../state.js?v=20260327192619';
+} from '../state.js?v=20260330001044';
 
 export const pageMeta = { id: 'registration-keys-view', title: 'Сохранение ключей', showAppChrome: false };
 
@@ -14,6 +14,7 @@ export function render({ navigate }) {
   const screen = document.createElement('section');
   screen.className = 'stack';
 
+  const isLoginFlow = state.registrationDraft.flowType === 'login';
   const normalizedLogin = (state.registrationDraft.login || '').trim();
   const displayLogin = normalizedLogin || '@new.user';
 
@@ -22,7 +23,9 @@ export function render({ navigate }) {
 
   const title = document.createElement('p');
   title.className = 'auth-copy';
-  title.textContent = `Отлично, логин ${displayLogin} зарегистрирован.`;
+  title.textContent = isLoginFlow
+    ? `Вход выполнен для логина ${displayLogin}.`
+    : `Отлично, логин ${displayLogin} зарегистрирован.`;
 
   const question = document.createElement('p');
   question.className = 'auth-copy';
@@ -43,17 +46,17 @@ export function render({ navigate }) {
 
   const rootRow = document.createElement('label');
   rootRow.className = 'checkbox-row';
-  rootRow.innerHTML = `<input type="checkbox" ${state.keyStorage.saveRoot ? 'checked' : ''} disabled /> <span>root key</span>`;
+  rootRow.append(rootToggle, document.createTextNode('root key'));
 
   const blockchainRow = document.createElement('label');
   blockchainRow.className = 'checkbox-row';
-  blockchainRow.innerHTML = `<input type="checkbox" ${state.keyStorage.saveBlockchain ? 'checked' : ''} disabled /> <span>blockchain key</span>`;
+  blockchainRow.append(blockchainToggle, document.createTextNode('blockchain.key'));
 
   const deviceRow = document.createElement('label');
   deviceRow.className = 'checkbox-row';
   deviceRow.append(deviceToggle, document.createTextNode('device key (всегда)'));
 
-  card.append(title, question, rootRow, deviceRow, blockchainRow);
+  card.append(title, question, rootRow, blockchainRow, deviceRow);
 
   const actions = document.createElement('div');
   actions.className = 'auth-footer-actions';
@@ -91,13 +94,30 @@ export function render({ navigate }) {
         state.registrationDraft.pendingSessionMaterial,
       );
 
+      if (!state.keyStorage.saveRoot && state.registrationDraft.pendingKeyBundle) {
+        state.registrationDraft.pendingKeyBundle.rootPair = null;
+      }
+      if (!state.keyStorage.saveBlockchain && state.registrationDraft.pendingKeyBundle) {
+        state.registrationDraft.pendingKeyBundle.blockchainPair = null;
+      }
+
       authorizeSession({
         login: state.registrationDraft.login,
         sessionId: state.registrationDraft.sessionId,
         storagePwd: state.registrationDraft.storagePwd,
       });
+
+      state.loginDraft.login = state.registrationDraft.login;
+      state.loginDraft.password = '';
+      state.registrationDraft.flowType = '';
+      state.registrationDraft.password = '';
+      state.registrationDraft.storagePwd = '';
+      state.registrationDraft.sessionId = '';
+      state.registrationDraft.pendingKeyBundle = null;
+      state.registrationDraft.pendingSessionMaterial = null;
+
       await refreshSessions();
-      setAuthInfo('Ключи сохранены, регистрация завершена.');
+      setAuthInfo(isLoginFlow ? 'Ключи сохранены, вход завершён.' : 'Ключи сохранены, регистрация завершена.');
       navigate('profile-view');
     } catch (error) {
       setAuthError(error.message);

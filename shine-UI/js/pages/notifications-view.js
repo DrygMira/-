@@ -1,6 +1,6 @@
-import { renderHeader } from '../components/header.js?v=20260327192619';
-import { notifications } from '../mock-data.js?v=20260327192619';
-import { state } from '../state.js?v=20260327192619';
+import { renderHeader } from '../components/header.js?v=20260330001044';
+import { notifications } from '../mock-data.js?v=20260330001044';
+import { state } from '../state.js?v=20260330001044';
 
 export const pageMeta = { id: 'notifications-view', title: 'Уведомления' };
 

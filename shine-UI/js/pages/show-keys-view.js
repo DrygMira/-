@@ -1,30 +1,23 @@
-import { renderHeader } from '../components/header.js?v=20260327192619';
+import { renderHeader } from '../components/header.js?v=20260330001044';
+import { state } from '../state.js?v=20260330001044';
+import { loadEncryptedUserSecrets } from '../services/key-vault.js?v=20260330001044';
 
 export const pageMeta = { id: 'show-keys-view', title: 'Показать ключи' };
-
-function randomKey(length = 44) {
-  const chars = 'ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz123456789';
-  let result = '';
-  for (let i = 0; i < length; i += 1) {
-    result += chars[Math.floor(Math.random() * chars.length)];
-  }
-  return result;
-}
 
 export function render({ navigate }) {
   const screen = document.createElement('section');
   screen.className = 'stack';
 
-  const keys = {
-    root: randomKey(),
-    blockchain: randomKey(),
-    device: randomKey(),
-  };
-
   const visible = {
     root: false,
     blockchain: false,
     device: false,
+  };
+
+  const keys = {
+    root: '',
+    blockchain: '',
+    device: '',
   };
 
   screen.append(
@@ -36,6 +29,11 @@ export function render({ navigate }) {
 
   const card = document.createElement('div');
   card.className = 'card stack';
+
+  const status = document.createElement('p');
+  status.className = 'meta-muted';
+  status.textContent = 'Загружаем сохранённые ключи...';
+  card.append(status);
 
   const renderField = (id, label) => {
     const row = document.createElement('div');
@@ -50,79 +48,80 @@ export function render({ navigate }) {
     return row;
   };
 
-  card.append(renderField('root', 'root key'), renderField('blockchain', 'blockchain key'), renderField('device', 'device key'));
+  card.append(
+    renderField('root', 'root key'),
+    renderField('blockchain', 'blockchain.key'),
+    renderField('device', 'device key'),
+  );
+
+  const setMissingState = (id) => {
+    const valueEl = card.querySelector(`[data-value="${id}"]`);
+    const btnEl = card.querySelector(`[data-toggle="${id}"]`);
+    valueEl.textContent = 'нет данных';
+    btnEl.disabled = true;
+    btnEl.textContent = 'Нет';
+  };
 
   const updateField = (id) => {
     const valueEl = card.querySelector(`[data-value="${id}"]`);
     const btnEl = card.querySelector(`[data-toggle="${id}"]`);
+    if (!keys[id]) {
+      setMissingState(id);
+      return;
+    }
     valueEl.textContent = visible[id] ? keys[id] : '*****';
+    btnEl.disabled = false;
     btnEl.textContent = visible[id] ? 'Скрыть' : 'Показать';
   };
 
   card.querySelectorAll('[data-toggle]').forEach((button) => {
     button.addEventListener('click', () => {
       const { toggle } = button.dataset;
+      if (!keys[toggle]) return;
       visible[toggle] = !visible[toggle];
       updateField(toggle);
     });
   });
 
+  ['root', 'blockchain', 'device'].forEach((id) => updateField(id));
+
   const actions = document.createElement('div');
   actions.className = 'auth-footer-actions';
-  actions.innerHTML = `
-    <button class="primary-btn" type="button" id="save-keys">Сохранить новые</button>
-    <button class="ghost-btn" type="button" id="cancel-keys">Отмена</button>
-  `;
 
-  const confirmModal = document.createElement('div');
-  confirmModal.className = 'modal-shell';
-  confirmModal.hidden = true;
-  confirmModal.innerHTML = `
-    <div class="modal-backdrop" data-close="true"></div>
-    <div class="modal-dialog card" role="dialog" aria-modal="true" tabindex="-1">
-      <p>Вы уверены, что хотите изменить ключи?</p>
-      <div class="auth-footer-actions">
-        <button class="primary-btn" type="button" id="confirm-keys-ok">ОК</button>
-        <button class="ghost-btn" type="button" data-close="true">Отмена</button>
-      </div>
-    </div>
-  `;
+  const closeButton = document.createElement('button');
+  closeButton.className = 'ghost-btn';
+  closeButton.type = 'button';
+  closeButton.textContent = 'Назад';
+  closeButton.addEventListener('click', () => navigate('device-view'));
+  actions.append(closeButton);
 
-  const openModal = () => {
-    confirmModal.hidden = false;
-    confirmModal.querySelector('.modal-dialog').focus();
-  };
+  (async () => {
+    try {
+      if (!state.session.login || !state.session.storagePwdInMemory) {
+        throw new Error('Нет активной сессии для чтения ключей');
+      }
 
-  const closeModal = () => {
-    confirmModal.hidden = true;
-  };
+      const savedKeys = await loadEncryptedUserSecrets(
+        state.session.login,
+        state.session.storagePwdInMemory,
+      );
 
-  actions.querySelector('#save-keys').addEventListener('click', openModal);
-  actions.querySelector('#cancel-keys').addEventListener('click', () => navigate('device-view'));
+      keys.root = savedKeys.rootKey || '';
+      keys.blockchain = savedKeys.blockchainKey || '';
+      keys.device = savedKeys.deviceKey || '';
 
-  confirmModal.querySelector('#confirm-keys-ok').addEventListener('click', () => {
-    keys.root = randomKey();
-    keys.blockchain = randomKey();
-    keys.device = randomKey();
-    updateField('root');
-    updateField('blockchain');
-    updateField('device');
-    closeModal();
-  });
-
-  confirmModal.addEventListener('click', (event) => {
-    const target = event.target;
-    if (target instanceof HTMLElement && target.dataset.close === 'true') {
-      closeModal();
+      if (keys.root || keys.blockchain || keys.device) {
+        status.textContent = 'Показаны только ключи, сохранённые на этом устройстве.';
+      } else {
+        status.textContent = 'На этом устройстве нет сохранённых ключей.';
+      }
+    } catch (error) {
+      status.textContent = 'На этом устройстве нет сохранённых ключей.';
     }
-  });
 
-  confirmModal.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      closeModal();
-    }
-  });
+    ['root', 'blockchain', 'device'].forEach((id) => updateField(id));
+  })();
 
-  screen.append(card, actions, confirmModal);
+  screen.append(card, actions);
   return screen;
 }

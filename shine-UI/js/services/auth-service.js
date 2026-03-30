@@ -1,4 +1,4 @@
-import { WsJsonClient } from './ws-client.js?v=20260327192619';
+import { WsJsonClient } from './ws-client.js?v=20260330001044';
 import {
   deriveEd25519FromPassword,
   exportEd25519PublicKeyB64,
@@ -7,8 +7,8 @@ import {
   importPkcs8Ed25519,
   randomBase64,
   signBase64,
-} from './crypto-utils.js?v=20260327192619';
-import { loadSessionMaterial, saveEncryptedUserSecrets, saveSessionMaterial } from './key-vault.js?v=20260327192619';
+} from './crypto-utils.js?v=20260330001044';
+import { loadSessionMaterial, saveEncryptedUserSecrets, saveSessionMaterial } from './key-vault.js?v=20260330001044';
 
 const BCH_SUFFIX = '001';
 
@@ -25,7 +25,11 @@ function normalizeServerUrl(url) {
 function opError(op, response) {
   const message = response?.payload?.message || response?.message || 'Неизвестная ошибка сервера';
   const code = response?.payload?.code || response?.code || 'UNKNOWN';
-  return new Error(`${op}: ${message} (${code})`);
+  const error = new Error(`${op}: ${message} (${code})`);
+  error.op = op;
+  error.code = code;
+  error.status = response?.status || 0;
+  return error;
 }
 
 function makeClientInfo() {
@@ -145,7 +149,8 @@ export class AuthService {
     if (!user.exists) throw new Error('Пользователь не найден');
 
     const keyBundle = await this.derivePasswordKeyBundle(password);
-    return this.createAuthSession(cleanLogin, keyBundle);
+    const session = await this.createAuthSession(cleanLogin, keyBundle);
+    return { ...session, keyBundle };
   }
 
   async persistSelectedKeys(login, storagePwd, keyBundle, saveOptions = { saveRoot: true, saveBlockchain: true }) {

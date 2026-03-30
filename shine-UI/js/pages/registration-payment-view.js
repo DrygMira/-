@@ -1,11 +1,11 @@
-import { renderHeader } from '../components/header.js?v=20260327192619';
+import { renderHeader } from '../components/header.js?v=20260330001044';
 import {
   authService,
   refreshRegistrationBalance,
   setAuthError,
   setAuthInfo,
   state,
-} from '../state.js?v=20260327192619';
+} from '../state.js?v=20260330001044';
 
 export const pageMeta = { id: 'registration-payment-view', title: 'Оплата регистрации', showAppChrome: false };
 
@@ -79,6 +79,7 @@ export function render({ navigate }) {
 
       await authService.reconnect(state.entrySettings.shineServer);
       const result = await authService.registerUser(state.registrationDraft.login, state.registrationDraft.password);
+      state.registrationDraft.flowType = 'registration';
       state.registrationDraft.sessionId = result.sessionId;
       state.registrationDraft.storagePwd = result.storagePwd;
       state.registrationDraft.pendingKeyBundle = result.keyBundle;

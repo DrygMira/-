@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-SRC_DIR="/home/player/docker/shine-UI"
+SRC_DIR="shine-UI"
 REMOTE_HOST="root@194.87.0.247"
 REMOTE_DIR="/home/user/docker/caddyFile/sites/shine-UI"
 BUILD_VERSION="$(date -u +%Y%m%d%H%M%S)"

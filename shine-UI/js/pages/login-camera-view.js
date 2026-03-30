@@ -1,4 +1,4 @@
-import { renderHeader } from '../components/header.js?v=20260327192619';
+import { renderHeader } from '../components/header.js?v=20260330001044';
 
 export const pageMeta = { id: 'login-camera-view', title: 'Войти по камере', showAppChrome: false };
 

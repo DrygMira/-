@@ -1,11 +1,13 @@
-import { renderHeader } from '../components/header.js?v=20260327192619';
+import { renderHeader } from '../components/header.js?v=20260330001044';
 import {
+  authService,
+  isSessionInvalidError,
   refreshSessions,
   setAuthError,
   setAuthInfo,
   state,
   terminateCurrentSession,
-} from '../state.js?v=20260327192619';
+} from '../state.js?v=20260330001044';
 
 export const pageMeta = { id: 'device-view', title: 'Устройства' };
 
@@ -83,9 +85,23 @@ export function render({ navigate }) {
     endCurrentSessionBtn.className = 'text-btn';
     endCurrentSessionBtn.type = 'button';
     endCurrentSessionBtn.textContent = 'Завершить текущую сессию';
-    endCurrentSessionBtn.addEventListener('click', () => {
-      terminateCurrentSession();
-      navigate('start-view');
+    endCurrentSessionBtn.addEventListener('click', async () => {
+      const confirmed = window.confirm('Хотите завершить текущую сессию?');
+      if (!confirmed) return;
+
+      try {
+        await authService.closeSession(state.session.sessionId);
+      } catch (error) {
+        if (!isSessionInvalidError(error)) {
+          setAuthError(error.message);
+          window.alert(error.message);
+          return;
+        }
+      }
+
+      await terminateCurrentSession({
+        infoMessage: 'Текущая сессия завершена, данные на устройстве очищены.',
+      });
     });
     currentMenu.append(endCurrentSessionBtn);
 
@@ -113,6 +129,12 @@ export function render({ navigate }) {
       buildList();
       setAuthInfo('Список сессий обновлён.');
     } catch (error) {
+      if (isSessionInvalidError(error)) {
+        await terminateCurrentSession({
+          infoMessage: 'Сессия на этом устройстве уже завершена. Выполните вход заново.',
+        });
+        return;
+      }
       setAuthError(error.message);
       window.alert(error.message);
     }

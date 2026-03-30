@@ -1,14 +1,11 @@
-import { renderHeader } from '../components/header.js?v=20260327192619';
+import { renderHeader } from '../components/header.js?v=20260330001044';
 import {
   authService,
-  authorizeSession,
   clearAuthMessages,
-  refreshSessions,
   setAuthBusy,
   setAuthError,
-  setAuthInfo,
   state,
-} from '../state.js?v=20260327192619';
+} from '../state.js?v=20260330001044';
 
 export const pageMeta = { id: 'login-password-view', title: 'Войти по логину', showAppChrome: false };
 
@@ -75,11 +72,14 @@ export function render({ navigate }) {
     try {
       await authService.reconnect(state.entrySettings.shineServer);
       const result = await authService.createSessionForExistingUser(state.loginDraft.login, state.loginDraft.password);
-      await authService.persistSessionMaterial(state.loginDraft.login, result.sessionMaterial);
-      authorizeSession(result);
-      await refreshSessions();
-      setAuthInfo('Успешный вход выполнен.');
-      navigate('profile-view');
+      state.registrationDraft.flowType = 'login';
+      state.registrationDraft.login = result.login;
+      state.registrationDraft.password = state.loginDraft.password;
+      state.registrationDraft.sessionId = result.sessionId;
+      state.registrationDraft.storagePwd = result.storagePwd;
+      state.registrationDraft.pendingKeyBundle = result.keyBundle;
+      state.registrationDraft.pendingSessionMaterial = result.sessionMaterial;
+      navigate('registration-keys-view');
     } catch (error) {
       setAuthError(error.message);
       window.alert(error.message);

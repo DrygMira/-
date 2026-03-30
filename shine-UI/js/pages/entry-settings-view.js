@@ -1,5 +1,5 @@
-import { renderHeader } from '../components/header.js?v=20260327192619';
-import { checkServerAvailability, saveEntrySettings, state } from '../state.js?v=20260327192619';
+import { renderHeader } from '../components/header.js?v=20260330001044';
+import { checkServerAvailability, saveEntrySettings, state } from '../state.js?v=20260330001044';
 
 export const pageMeta = { id: 'entry-settings-view', title: 'Настройки входа', showAppChrome: false };
 
