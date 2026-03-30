@@ -11,6 +11,7 @@ import server.logic.ws_protocol.JSON.handlers.channels.entyties.Net_GetChannelMe
 import server.logic.ws_protocol.JSON.utils.NetExceptionResponseFactory;
 import server.logic.ws_protocol.WireCodes;
 import shine.db.SqliteDbController;
+import utils.blockchain.BlockchainNameUtil;
 
 import java.sql.Connection;
 import java.util.ArrayList;
@@ -47,7 +48,7 @@ public class Net_GetChannelMessages_Handler implements JsonMessageHandler {
 
             Net_GetChannelMessages_Response.Channel channel = new Net_GetChannelMessages_Response.Channel();
             channel.setOwnerBlockchainName(ownerBch);
-            channel.setOwnerLogin(ownerBch.contains("-") ? ownerBch.substring(0, ownerBch.indexOf('-')) : ownerBch);
+            channel.setOwnerLogin(BlockchainNameUtil.loginFromBlockchainName(ownerBch));
             channel.setChannelName(ChannelsReadSupport.detectChannelName(c, ownerBch, lineCode));
             Net_GetChannelMessages_Response.BlockRef rootRef = new Net_GetChannelMessages_Response.BlockRef();
             rootRef.setBlockNumber(lineCode);

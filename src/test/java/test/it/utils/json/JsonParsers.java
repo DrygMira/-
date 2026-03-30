@@ -287,4 +287,32 @@ public final class JsonParsers {
             return null;
         }
     }
+
+    public static int payloadArraySize(String json, String field) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload == null) return -1;
+            JsonNode arr = payload.get(field);
+            if (arr == null || !arr.isArray()) return -1;
+            return arr.size();
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    public static int payloadNestedArraySize(String json, String objectField, String arrayField) {
+        try {
+            JsonNode root = MAPPER.readTree(json);
+            JsonNode payload = root.get("payload");
+            if (payload == null) return -1;
+            JsonNode obj = payload.get(objectField);
+            if (obj == null || !obj.isObject()) return -1;
+            JsonNode arr = obj.get(arrayField);
+            if (arr == null || !arr.isArray()) return -1;
+            return arr.size();
+        } catch (Exception e) {
+            return -1;
+        }
+    }
 }

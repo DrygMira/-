@@ -217,6 +217,24 @@ export class AuthService {
     if (response.status !== 200) throw opError('CloseActiveSession', response);
   }
 
+  async listSubscriptionsFeed(login, limit = 200) {
+    const response = await this.ws.request('ListSubscriptionsFeed', { login, limit });
+    if (response.status !== 200) throw opError('ListSubscriptionsFeed', response);
+    return response.payload || {};
+  }
+
+  async getChannelMessages(channel, limit = 200, sort = 'asc') {
+    const response = await this.ws.request('GetChannelMessages', { channel, limit, sort });
+    if (response.status !== 200) throw opError('GetChannelMessages', response);
+    return response.payload || {};
+  }
+
+  async getMessageThread(message, depthUp = 20, depthDown = 2, limitChildrenPerNode = 50) {
+    const response = await this.ws.request('GetMessageThread', { message, depthUp, depthDown, limitChildrenPerNode });
+    if (response.status !== 200) throw opError('GetMessageThread', response);
+    return response.payload || {};
+  }
+
   close() {
     this.ws.close();
   }

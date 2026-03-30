@@ -97,6 +97,8 @@ function createInitialState({ withStoredSession = true } = {}) {
       info: '',
     },
     sessions: [],
+    channelsFeed: null,
+    channelsIndex: {},
   };
 }
 
@@ -231,4 +233,9 @@ export function refreshRegistrationBalance() {
   const next = (0.005 + Math.random() * 0.03).toFixed(4);
   state.registrationPayment.balanceSOL = next;
   return next;
+}
+
+export function setChannelsFeed(feed, index) {
+  state.channelsFeed = feed || null;
+  state.channelsIndex = index || {};
 }
