@@ -57,6 +57,6 @@ export function resolveToolbarActive(pageId) {
     return 'profile-view';
   }
   if (pageId === 'chat-view' || pageId === 'contact-search-view') return 'messages-list';
-  if (pageId === 'channel-view') return 'channels-list';
+  if (pageId === 'channel-view' || pageId === 'add-channel-view') return 'channels-list';
   return 'profile-view';
 }

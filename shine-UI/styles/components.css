@@ -728,3 +728,38 @@
   border-radius: 16px;
   padding: 14px;
 }
+
+.section-title {
+  font-size: 14px;
+  font-weight: 700;
+  color: #dbe7ff;
+  margin: 4px 2px;
+}
+
+.channels-scroll-wrap {
+  position: relative;
+  max-height: 58vh;
+  overflow-y: auto;
+  padding-right: 12px;
+}
+
+.channels-groups {
+  min-height: min-content;
+}
+
+.channels-divider {
+  border: 0;
+  border-top: 1px solid rgba(255, 255, 255, 0.14);
+  margin: 6px 0 8px;
+}
+
+.channels-scroll-hint {
+  position: absolute;
+  top: 4px;
+  right: 0;
+  width: 4px;
+  height: calc(100% - 8px);
+  border-radius: 999px;
+  background: linear-gradient(180deg, rgba(83, 216, 251, 0.55), rgba(83, 216, 251, 0.15));
+  pointer-events: none;
+}

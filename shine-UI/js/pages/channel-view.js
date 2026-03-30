@@ -7,6 +7,7 @@ export function render({ navigate, route }) {
   const channelId = route.params.channelId || 'ch1';
   const channel = channels.find((c) => c.id === channelId) || channels[0];
   const posts = channelPosts[channelId] || [];
+  const isOwnChannel = channel.ownerLogin === '@shine.alex';
 
   const screen = document.createElement('section');
   screen.className = 'stack';
@@ -23,8 +24,12 @@ export function render({ navigate, route }) {
   head.innerHTML = `
     <strong># ${channel.name}</strong>
     <p class="meta-muted" style="margin-top:4px;">${channel.description}</p>
-    <p class="meta-muted" style="margin-top:8px;">Публичный канал, режим только чтение</p>
+    <p class="meta-muted" style="margin-top:8px;">Владелец: ${channel.ownerName}</p>
   `;
+
+  const actionButton = document.createElement('button');
+  actionButton.className = isOwnChannel ? 'primary-btn' : 'secondary-btn';
+  actionButton.textContent = isOwnChannel ? 'Добавить сообщение в канал' : 'Отписаться от канала';
 
   const feed = document.createElement('div');
   feed.className = 'stack';
@@ -36,6 +41,6 @@ export function render({ navigate, route }) {
     feed.append(card);
   });
 
-  screen.append(head, feed);
+  screen.append(head, actionButton, feed);
   return screen;
 }

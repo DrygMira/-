@@ -39,6 +39,7 @@ import * as contactSearchView from './pages/contact-search-view.js?v=20260330001
 import * as chatView from './pages/chat-view.js?v=20260330001044';
 import * as channelsList from './pages/channels-list.js?v=20260330001044';
 import * as channelView from './pages/channel-view.js?v=20260330001044';
+import * as addChannelView from './pages/add-channel-view.js?v=20260330001044';
 import * as networkView from './pages/network-view.js?v=20260330001044';
 import * as notificationsView from './pages/notifications-view.js?v=20260330001044';
 
@@ -69,6 +70,7 @@ const routes = {
   'chat-view': chatView,
   'channels-list': channelsList,
   'channel-view': channelView,
+  'add-channel-view': addChannelView,
   'network-view': networkView,
   'notifications-view': notificationsView,
 };
