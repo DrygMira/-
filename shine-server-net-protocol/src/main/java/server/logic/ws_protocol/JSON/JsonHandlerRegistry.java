@@ -45,10 +45,18 @@ import server.logic.ws_protocol.JSON.handlers.userParams.entyties.Net_UpsertUser
 // --- NEW: connections friends lists ---
 import server.logic.ws_protocol.JSON.handlers.connections.Net_GetFriendsLists_Handler;
 import server.logic.ws_protocol.JSON.handlers.connections.entyties.Net_GetFriendsLists_Request;
+import server.logic.ws_protocol.JSON.handlers.channels.Net_GetChannelMessages_Handler;
+import server.logic.ws_protocol.JSON.handlers.channels.Net_GetMessageThread_Handler;
+import server.logic.ws_protocol.JSON.handlers.channels.Net_ListSubscriptionsFeed_Handler;
+import server.logic.ws_protocol.JSON.handlers.channels.entyties.Net_GetChannelMessages_Request;
+import server.logic.ws_protocol.JSON.handlers.channels.entyties.Net_GetMessageThread_Request;
+import server.logic.ws_protocol.JSON.handlers.channels.entyties.Net_ListSubscriptionsFeed_Request;
 
 // --- NEW: Ping ---
 import server.logic.ws_protocol.JSON.handlers.system.Net_GetServerInfo_Handler;
+import server.logic.ws_protocol.JSON.handlers.system.Net_ClientErrorLog_Handler;
 import server.logic.ws_protocol.JSON.handlers.system.Net_Ping_Handler;
+import server.logic.ws_protocol.JSON.handlers.system.entyties.Net_ClientErrorLog_Request;
 import server.logic.ws_protocol.JSON.handlers.system.entyties.Net_GetServerInfo_Request;
 import server.logic.ws_protocol.JSON.handlers.system.entyties.Net_Ping_Request;
 
@@ -85,10 +93,14 @@ public final class JsonHandlerRegistry {
 
             // --- connections ---
             Map.entry("GetFriendsLists",    new Net_GetFriendsLists_Handler()),
+            Map.entry("ListSubscriptionsFeed", new Net_ListSubscriptionsFeed_Handler()),
+            Map.entry("GetChannelMessages", new Net_GetChannelMessages_Handler()),
+            Map.entry("GetMessageThread", new Net_GetMessageThread_Handler()),
 
             // --- system ---
             Map.entry("Ping",               new Net_Ping_Handler()),
-            Map.entry("GetServerInfo",      new Net_GetServerInfo_Handler())
+            Map.entry("GetServerInfo",      new Net_GetServerInfo_Handler()),
+            Map.entry("ClientErrorLog",     new Net_ClientErrorLog_Handler())
 
             // --- subscriptions ---
 //            Map.entry("ListSubscribedChannels", new Net_GetSubscribedChannels_Handler())
@@ -119,10 +131,14 @@ public final class JsonHandlerRegistry {
 
             // --- connections ---
             Map.entry("GetFriendsLists",    Net_GetFriendsLists_Request.class),
+            Map.entry("ListSubscriptionsFeed", Net_ListSubscriptionsFeed_Request.class),
+            Map.entry("GetChannelMessages", Net_GetChannelMessages_Request.class),
+            Map.entry("GetMessageThread", Net_GetMessageThread_Request.class),
 
             // --- system ---
             Map.entry("Ping",               Net_Ping_Request.class),
-            Map.entry("GetServerInfo",      Net_GetServerInfo_Request.class)
+            Map.entry("GetServerInfo",      Net_GetServerInfo_Request.class),
+            Map.entry("ClientErrorLog",     Net_ClientErrorLog_Request.class)
     );
 
     private JsonHandlerRegistry() { }

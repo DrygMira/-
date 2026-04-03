@@ -5,6 +5,7 @@ import blockchain.BchCryptoVerifier;
 import blockchain.MsgSubType;
 import blockchain.body.BodyHasLine;
 import blockchain.body.BodyHasTarget;
+import blockchain.body.CreateChannelBody;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import server.logic.ws_protocol.Base64Ws;
@@ -25,6 +26,9 @@ import shine.db.entities.BlockEntry;
 import utils.blockchain.BlockchainNameUtil;
 
 import java.util.Arrays;
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
@@ -128,6 +132,7 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
             case "prev_line_block_not_found" -> "Не найден блок prevLineNumber для проверки линии";
             case "bad_prev_line_hash" -> "Некорректный prevLineHash";
             case "db_error_prev_line_check" -> "Ошибка БД при проверке prevLine";
+            case "channel_name_already_exists" -> "Канал с таким именем уже существует";
             case "internal_error" -> "Внутренняя ошибка сервера при записи блока";
             default -> "Ошибка: " + code;
         };
@@ -226,6 +231,18 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
             log.warn("AddBlock: body.check() не прошёл (login={}, blockchainName={}, blockNumber={}, type={}, ver={})",
                     login, blockchainName, block.blockNumber, (block.type & 0xFFFF), (block.version & 0xFFFF), e);
             return new AddBlockResult(WireCodes.Status.BAD_REQUEST, "bad_block_body", serverLastNum, serverLastHashHex);
+        }
+
+        if (block.body instanceof CreateChannelBody createChannelBody) {
+            try {
+                if (channelNameExists(blockchainName, createChannelBody.channelName)) {
+                    return new AddBlockResult(409, "channel_name_already_exists", serverLastNum, serverLastHashHex);
+                }
+            } catch (Exception e) {
+                log.error("AddBlock: channel_name_check_failed (blockchainName={}, channelName={})",
+                        blockchainName, createChannelBody.channelName, e);
+                return new AddBlockResult(WireCodes.Status.INTERNAL_ERROR, "internal_error", serverLastNum, serverLastHashHex);
+            }
         }
 
         // 4.2) запрет дырок: blockNumber строго last+1
@@ -376,6 +393,32 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
     private static byte[] decodeBase64(String b64) {
         if (b64 == null) throw new IllegalArgumentException("blockBytesB64 == null");
         return Base64Ws.decode(b64);
+    }
+
+    private boolean channelNameExists(String blockchainName, String channelName) throws Exception {
+        String sql = """
+                SELECT block_bytes
+                FROM blocks
+                WHERE bch_name = ? AND msg_type = 0 AND msg_sub_type = 1
+                """;
+        try (Connection c = shine.db.SqliteDbController.getInstance().getConnection();
+             PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, blockchainName);
+            try (ResultSet rs = ps.executeQuery()) {
+                while (rs.next()) {
+                    byte[] bytes = rs.getBytes("block_bytes");
+                    try {
+                        BchBlockEntry entry = new BchBlockEntry(bytes);
+                        if (entry.body instanceof CreateChannelBody ccb) {
+                            if (ccb.channelName.equalsIgnoreCase(channelName)) return true;
+                        }
+                    } catch (Exception ignored) {
+                        // ignore bad historic rows, uniqueness check is best effort
+                    }
+                }
+            }
+        }
+        return false;
     }
 
     private static long safeAdd(long a, long b) {

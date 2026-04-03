@@ -255,6 +255,61 @@ public final class JsonBuilders {
         """.formatted(requestId, login);
     }
 
+    public static String listSubscriptionsFeed(String login, int limit) {
+        String requestId = TestIds.next("subsfeed");
+        return """
+        {
+          "op": "ListSubscriptionsFeed",
+          "requestId": "%s",
+          "payload": {
+            "login": "%s",
+            "limit": %d
+          }
+        }
+        """.formatted(requestId, login, limit);
+    }
+
+    public static String getChannelMessages(String ownerBlockchainName, int channelRootBlockNumber, String channelRootBlockHash, int limit, String sort) {
+        String requestId = TestIds.next("chmsg");
+        String hash = channelRootBlockHash == null ? "" : channelRootBlockHash;
+        return """
+        {
+          "op": "GetChannelMessages",
+          "requestId": "%s",
+          "payload": {
+            "channel": {
+              "ownerBlockchainName": "%s",
+              "channelRootBlockNumber": %d,
+              "channelRootBlockHash": "%s"
+            },
+            "limit": %d,
+            "sort": "%s"
+          }
+        }
+        """.formatted(requestId, ownerBlockchainName, channelRootBlockNumber, hash, limit, sort == null ? "asc" : sort);
+    }
+
+    public static String getMessageThread(String blockchainName, int blockNumber, String blockHash, int depthUp, int depthDown, int limitChildrenPerNode) {
+        String requestId = TestIds.next("thread");
+        String hash = blockHash == null ? "" : blockHash;
+        return """
+        {
+          "op": "GetMessageThread",
+          "requestId": "%s",
+          "payload": {
+            "message": {
+              "blockchainName": "%s",
+              "blockNumber": %d,
+              "blockHash": "%s"
+            },
+            "depthUp": %d,
+            "depthDown": %d,
+            "limitChildrenPerNode": %d
+          }
+        }
+        """.formatted(requestId, blockchainName, blockNumber, hash, depthUp, depthDown, limitChildrenPerNode);
+    }
+
     /**
      * Подпись CreateAuthSession(v2):
      * preimage = "AUTH_CREATE_SESSION:" + login + ":" + sessionKey + ":" + storagePwd + ":" + timeMs + ":" + authNonce
