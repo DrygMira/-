@@ -1,4 +1,4 @@
-import { WsJsonClient } from './ws-client.js?v=20260330001044';
+import { WsJsonClient } from './ws-client.js?v=20260330210201';
 import {
   deriveEd25519FromPassword,
   exportEd25519PublicKeyB64,
@@ -7,8 +7,8 @@ import {
   importPkcs8Ed25519,
   randomBase64,
   signBase64,
-} from './crypto-utils.js?v=20260330001044';
-import { loadSessionMaterial, saveEncryptedUserSecrets, saveSessionMaterial } from './key-vault.js?v=20260330001044';
+} from './crypto-utils.js?v=20260330210201';
+import { loadSessionMaterial, saveEncryptedUserSecrets, saveSessionMaterial } from './key-vault.js?v=20260330210201';
 
 const BCH_SUFFIX = '001';
 
@@ -233,6 +233,15 @@ export class AuthService {
     const response = await this.ws.request('GetMessageThread', { message, depthUp, depthDown, limitChildrenPerNode });
     if (response.status !== 200) throw opError('GetMessageThread', response);
     return response.payload || {};
+  }
+
+  async reportClientError(details) {
+    try {
+      const response = await this.ws.request('ClientErrorLog', details || {}, 3000);
+      return response?.status === 200;
+    } catch {
+      return false;
+    }
   }
 
   close() {

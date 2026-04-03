@@ -1,3 +1,5 @@
+import { captureClientError } from './client-error-reporter.js?v=20260331000100';
+
 const DEFAULT_TIMEOUT_MS = 12000;
 
 function buildWsUrl(raw) {
@@ -34,6 +36,11 @@ export class WsJsonClient {
       }, { once: true });
 
       ws.addEventListener('error', () => {
+        captureClientError({
+          kind: 'ws_open_error',
+          message: `Failed to connect WebSocket ${this.url}`,
+          context: { url: this.url },
+        });
         reject(new Error(`Не удалось подключиться к ${this.url}`));
       }, { once: true });
 
@@ -59,10 +66,20 @@ export class WsJsonClient {
     const responsePromise = new Promise((resolve, reject) => {
       const timer = window.setTimeout(() => {
         this.pending.delete(requestId);
+        if (op !== 'ClientErrorLog') {
+          captureClientError({
+            kind: 'ws_timeout',
+            message: `Timeout waiting for ${op}`,
+            requestOp: op,
+            requestIdRef: requestId,
+            context: { url: this.url, timeoutMs },
+          });
+        }
         reject(new Error(`Таймаут ответа для операции ${op}`));
       }, timeoutMs);
 
       this.pending.set(requestId, {
+        op,
         resolve: (value) => {
           window.clearTimeout(timer);
           resolve(value);
@@ -90,6 +107,11 @@ export class WsJsonClient {
     try {
       data = JSON.parse(raw);
     } catch {
+      captureClientError({
+        kind: 'ws_bad_json',
+        message: 'Received non-JSON message from server',
+        context: { raw: String(raw).slice(0, 1000) },
+      });
       return;
     }
 
@@ -103,6 +125,17 @@ export class WsJsonClient {
   }
 
   failPending(message) {
+    const pendingOps = [...this.pending.values()]
+      .map((slot) => slot.op)
+      .filter((op) => op && op !== 'ClientErrorLog');
+    if (pendingOps.length > 0) {
+      captureClientError({
+        kind: 'ws_closed',
+        message,
+        context: { url: this.url, pendingOps },
+      });
+    }
+
     const error = new Error(message);
     for (const [, slot] of this.pending.entries()) {
       slot.reject(error);

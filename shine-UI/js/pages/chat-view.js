@@ -1,6 +1,6 @@
-import { renderHeader } from '../components/header.js?v=20260330001044';
-import { directMessages } from '../mock-data.js?v=20260330001044';
-import { addChatMessage, getChatMessages } from '../state.js?v=20260330001044';
+import { renderHeader } from '../components/header.js?v=20260330210201';
+import { directMessages } from '../mock-data.js?v=20260330210201';
+import { addChatMessage, getChatMessages } from '../state.js?v=20260330210201';
 
 export const pageMeta = { id: 'chat-view', title: 'Чат' };
 

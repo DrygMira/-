@@ -113,8 +113,36 @@ tasks.named('test') {
     enabled = false
 }
 
-tasks.register('itCleanRun', JavaExec) {
-    group = "build"
+tasks.register('cleanServerLogs') {
+    group = "!!test"
+    description = "Clear server logs/app.log and remove rolled log files"
+
+    doLast {
+        File logsDir = file('logs')
+        if (!logsDir.exists()) {
+            logsDir.mkdirs()
+        }
+
+        File appLog = new File(logsDir, 'app.log')
+        if (!appLog.exists()) {
+            appLog.createNewFile()
+        }
+        appLog.text = ''
+
+        fileTree(logsDir) {
+            include 'app.*.log'
+        }.files.each { File f ->
+            if (!f.delete()) {
+                throw new GradleException("Failed to delete log file: ${f.absolutePath}")
+            }
+        }
+
+        println "Server logs cleared: ${logsDir.absolutePath}"
+    }
+}
+
+tasks.register('integrationTest', JavaExec) {
+    group = "!!test"
     description = "Clean data → kill 7070 → start WS → run all IT tests"
 
     classpath = sourceSets.test.runtimeClasspath
@@ -127,15 +155,19 @@ tasks.register('itCleanRun', JavaExec) {
     dependsOn testClasses
 }
 
-tasks.register('itDeployServer', JavaExec) {
-    group = "build"
+tasks.named('build') {
+    finalizedBy tasks.named('integrationTest')
+}
+
+tasks.register('deployServer', JavaExec) {
+    group = "!!deployment"
     description = "Build → upload to server → clean remote data → restart service → run IT against server"
 
     classpath = sourceSets.test.runtimeClasspath
     mainClass = "test.it.IT_DeployRestartAndRunRemoteMain"
 
     // можно переопределить при запуске:
-    // ./gradlew itDeployServer -Dit.remoteHost=... -Dit.wsUri=...
+    // ./gradlew deployServer -Dit.remoteHost=... -Dit.wsUri=...
     dependsOn shadowJar
     systemProperty "it.remoteHost", System.getProperty("it.remoteHost", "10.147.20.7")
     systemProperty "it.remoteUser", System.getProperty("it.remoteUser", "user")
@@ -148,4 +180,12 @@ tasks.register('itDeployServer', JavaExec) {
     systemProperty "it.login", System.getProperty("it.login", "anya24")
 
     dependsOn testClasses
+}
+
+tasks.register('deployPWA', Exec) {
+    group = "!!deployment"
+    description = "Deploy PWA via deploy_shine-PWA.sh"
+
+    workingDir = rootDir
+    commandLine 'bash', file('deploy_shine-PWA.sh').absolutePath
 }

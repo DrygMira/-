@@ -1,5 +1,5 @@
-import { renderHeader } from '../components/header.js?v=20260330001044';
-import { networkGraph } from '../mock-data.js?v=20260330001044';
+import { renderHeader } from '../components/header.js?v=20260330210201';
+import { networkGraph } from '../mock-data.js?v=20260330210201';
 
 export const pageMeta = { id: 'network-view', title: 'Связи' };
 

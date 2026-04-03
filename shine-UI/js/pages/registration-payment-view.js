@@ -1,11 +1,11 @@
-import { renderHeader } from '../components/header.js?v=20260330001044';
+import { renderHeader } from '../components/header.js?v=20260330210201';
 import {
   authService,
   refreshRegistrationBalance,
   setAuthError,
   setAuthInfo,
   state,
-} from '../state.js?v=20260330001044';
+} from '../state.js?v=20260330210201';
 
 export const pageMeta = { id: 'registration-payment-view', title: 'Оплата регистрации', showAppChrome: false };
 

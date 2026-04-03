@@ -1,5 +1,5 @@
-import { renderHeader } from '../components/header.js?v=20260330001044';
-import { state } from '../state.js?v=20260330001044';
+import { renderHeader } from '../components/header.js?v=20260330210201';
+import { state } from '../state.js?v=20260330210201';
 
 export const pageMeta = { id: 'language-view', title: 'Язык' };
 

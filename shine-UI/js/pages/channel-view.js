@@ -1,6 +1,6 @@
-import { renderHeader } from '../components/header.js?v=20260330001044';
-import { channelPosts, channels } from '../mock-data.js?v=20260330001044';
-import { authService, state } from '../state.js?v=20260330001044';
+import { renderHeader } from '../components/header.js?v=20260330210201';
+import { channelPosts, channels } from '../mock-data.js?v=20260330210201';
+import { addLocalChannelPost, authService, getLocalChannelPosts, state } from '../state.js?v=20260330210201';
 
 export const pageMeta = { id: 'channel-view', title: 'Канал' };
 
@@ -8,7 +8,10 @@ function findMockChannel(channelId) {
   const channel = channels.find((c) => c.id === channelId) || channels[0];
   return {
     channel,
-    posts: (channelPosts[channel.id] || []).map((post) => ({ title: post.title, body: post.body })),
+    posts: [
+      ...(channelPosts[channel.id] || []).map((post) => ({ title: post.title, body: post.body })),
+      ...getLocalChannelPosts(channelId),
+    ],
     isOwnChannel: channel.ownerLogin === '@shine.alex',
   };
 }
@@ -20,7 +23,55 @@ function mapApiMessageToPost(message) {
   };
 }
 
-function renderBody(screen, navigate, channelData) {
+function renderPostCard(post) {
+  const card = document.createElement('article');
+  card.className = 'card stack';
+  card.innerHTML = `<strong>${post.title}</strong><p class="meta-muted">${post.body}</p>`;
+  return card;
+}
+
+function openAddMessageModal({ channelId, channelName, onSubmit }) {
+  const root = document.getElementById('modal-root');
+  root.innerHTML = `
+    <div class="modal" id="channel-message-modal">
+      <div class="modal-card stack">
+        <h3 style="font-size:18px;">Новое сообщение в канал</h3>
+        <p class="meta-muted"># ${channelName}</p>
+        <textarea id="channel-message-text" class="input" rows="6" maxlength="2000" placeholder="Введите текст сообщения"></textarea>
+        <div class="meta-muted" id="channel-message-error" style="min-height:18px;"></div>
+        <div style="display:grid; grid-template-columns:1fr 1fr; gap:10px;">
+          <button class="secondary-btn" id="channel-message-cancel" type="button">Отмена</button>
+          <button class="primary-btn" id="channel-message-submit" type="button">Отправить</button>
+        </div>
+      </div>
+    </div>
+  `;
+
+  const textEl = root.querySelector('#channel-message-text');
+  const errorEl = root.querySelector('#channel-message-error');
+  const close = () => {
+    root.innerHTML = '';
+  };
+
+  root.querySelector('#channel-message-cancel').addEventListener('click', close);
+  root.querySelector('#channel-message-submit').addEventListener('click', () => {
+    const body = textEl.value.trim();
+    if (!body) {
+      errorEl.textContent = 'Введите текст сообщения.';
+      return;
+    }
+
+    onSubmit({
+      title: `${state.session.login || 'Вы'} • сейчас`,
+      body,
+    });
+    close();
+  });
+
+  if (textEl) textEl.focus();
+}
+
+function renderBody(screen, navigate, channelId, channelData) {
   const head = document.createElement('div');
   head.className = 'card';
   head.innerHTML = `
@@ -37,11 +88,22 @@ function renderBody(screen, navigate, channelData) {
   feed.className = 'stack';
 
   channelData.posts.forEach((post) => {
-    const card = document.createElement('article');
-    card.className = 'card stack';
-    card.innerHTML = `<strong>${post.title}</strong><p class="meta-muted">${post.body}</p>`;
-    feed.append(card);
+    feed.append(renderPostCard(post));
   });
+
+  if (channelData.isOwnChannel) {
+    actionButton.addEventListener('click', () => {
+      openAddMessageModal({
+        channelId,
+        channelName: channelData.channel.name,
+        onSubmit: (post) => {
+          addLocalChannelPost(channelId, post);
+          channelData.posts.push(post);
+          feed.append(renderPostCard(post));
+        },
+      });
+    });
+  }
 
   const backButton = document.createElement('button');
   backButton.className = 'secondary-btn';
@@ -64,7 +126,10 @@ async function loadFromApi(channelId) {
   if (!selector.ownerBlockchainName || selector.channelRootBlockNumber == null) return null;
 
   const payload = await authService.getChannelMessages(selector, 200, 'asc');
-  const posts = (payload.messages || []).map(mapApiMessageToPost);
+  const posts = [
+    ...(payload.messages || []).map(mapApiMessageToPost),
+    ...getLocalChannelPosts(channelId),
+  ];
 
   return {
     channel: {
@@ -104,7 +169,7 @@ export function render({ navigate, route }) {
       const apiData = await loadFromApi(channelId);
       loading.remove();
       if (apiData) {
-        renderBody(screen, navigate, apiData);
+        renderBody(screen, navigate, channelId, apiData);
         return;
       }
     } catch {
@@ -112,7 +177,7 @@ export function render({ navigate, route }) {
     }
 
     loading.remove();
-    renderBody(screen, navigate, findMockChannel(channelId));
+    renderBody(screen, navigate, channelId, findMockChannel(channelId));
   })();
 
   return screen;

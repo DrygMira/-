@@ -1,6 +1,6 @@
-import { chatMessages, wallet } from './mock-data.js?v=20260330001044';
-import { AuthService } from './services/auth-service.js?v=20260330001044';
-import { clearClientAuthData } from './services/key-vault.js?v=20260330001044';
+import { chatMessages, wallet } from './mock-data.js?v=20260330210201';
+import { AuthService } from './services/auth-service.js?v=20260330210201';
+import { clearClientAuthData } from './services/key-vault.js?v=20260330210201';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const SESSION_STORAGE_KEY = 'shine-ui-current-session-v1';
@@ -99,6 +99,7 @@ function createInitialState({ withStoredSession = true } = {}) {
     sessions: [],
     channelsFeed: null,
     channelsIndex: {},
+    localChannelPosts: {},
   };
 }
 
@@ -238,4 +239,23 @@ export function refreshRegistrationBalance() {
 export function setChannelsFeed(feed, index) {
   state.channelsFeed = feed || null;
   state.channelsIndex = index || {};
+}
+
+export function getLocalChannelPosts(channelId) {
+  if (!channelId) return [];
+  if (!state.localChannelPosts[channelId]) {
+    state.localChannelPosts[channelId] = [];
+  }
+  return state.localChannelPosts[channelId];
+}
+
+export function addLocalChannelPost(channelId, post) {
+  if (!channelId) return;
+  const text = post?.body?.trim();
+  if (!text) return;
+
+  getLocalChannelPosts(channelId).push({
+    title: post.title || `${state.session.login || 'Вы'} • сейчас`,
+    body: text,
+  });
 }

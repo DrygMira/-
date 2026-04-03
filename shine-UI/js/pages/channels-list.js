@@ -1,6 +1,6 @@
-import { renderHeader } from '../components/header.js?v=20260330001044';
-import { channels as mockChannels } from '../mock-data.js?v=20260330001044';
-import { authService, setChannelsFeed, state } from '../state.js?v=20260330001044';
+import { renderHeader } from '../components/header.js?v=20260330210201';
+import { channels as mockChannels } from '../mock-data.js?v=20260330210201';
+import { authService, setChannelsFeed, state } from '../state.js?v=20260330210201';
 
 export const pageMeta = { id: 'channels-list', title: 'Каналы' };
 

@@ -1,4 +1,4 @@
-import { renderHeader } from '../components/header.js?v=20260330001044';
+import { renderHeader } from '../components/header.js?v=20260330210201';
 
 export const pageMeta = { id: 'login-view', title: 'Войти', showAppChrome: false };
 

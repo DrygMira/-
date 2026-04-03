@@ -1,5 +1,5 @@
-import { renderHeader } from '../components/header.js?v=20260330001044';
-import { authService, clearAuthMessages, state } from '../state.js?v=20260330001044';
+import { renderHeader } from '../components/header.js?v=20260330210201';
+import { authService, clearAuthMessages, state } from '../state.js?v=20260330210201';
 
 export const pageMeta = { id: 'register-view', title: 'Зарегистрироваться', showAppChrome: false };
 

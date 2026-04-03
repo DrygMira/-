@@ -54,7 +54,9 @@ import server.logic.ws_protocol.JSON.handlers.channels.entyties.Net_ListSubscrip
 
 // --- NEW: Ping ---
 import server.logic.ws_protocol.JSON.handlers.system.Net_GetServerInfo_Handler;
+import server.logic.ws_protocol.JSON.handlers.system.Net_ClientErrorLog_Handler;
 import server.logic.ws_protocol.JSON.handlers.system.Net_Ping_Handler;
+import server.logic.ws_protocol.JSON.handlers.system.entyties.Net_ClientErrorLog_Request;
 import server.logic.ws_protocol.JSON.handlers.system.entyties.Net_GetServerInfo_Request;
 import server.logic.ws_protocol.JSON.handlers.system.entyties.Net_Ping_Request;
 
@@ -97,7 +99,8 @@ public final class JsonHandlerRegistry {
 
             // --- system ---
             Map.entry("Ping",               new Net_Ping_Handler()),
-            Map.entry("GetServerInfo",      new Net_GetServerInfo_Handler())
+            Map.entry("GetServerInfo",      new Net_GetServerInfo_Handler()),
+            Map.entry("ClientErrorLog",     new Net_ClientErrorLog_Handler())
 
             // --- subscriptions ---
 //            Map.entry("ListSubscribedChannels", new Net_GetSubscribedChannels_Handler())
@@ -134,7 +137,8 @@ public final class JsonHandlerRegistry {
 
             // --- system ---
             Map.entry("Ping",               Net_Ping_Request.class),
-            Map.entry("GetServerInfo",      Net_GetServerInfo_Request.class)
+            Map.entry("GetServerInfo",      Net_GetServerInfo_Request.class),
+            Map.entry("ClientErrorLog",     Net_ClientErrorLog_Request.class)
     );
 
     private JsonHandlerRegistry() { }

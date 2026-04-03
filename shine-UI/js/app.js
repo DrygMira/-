@@ -1,6 +1,7 @@
-import { navigate, getRoute, PRE_AUTH_PAGES } from './router.js?v=20260330001044';
-import { renderToolbar } from './components/toolbar.js?v=20260330001044';
-import { renderPageLabel } from './components/page-label.js?v=20260330001044';
+import { navigate, getRoute, PRE_AUTH_PAGES } from './router.js?v=20260330210201';
+import { renderToolbar } from './components/toolbar.js?v=20260330210201';
+import { renderPageLabel } from './components/page-label.js?v=20260330210201';
+import { captureClientError, setClientErrorTransport } from './services/client-error-reporter.js?v=20260331000100';
 import {
   authService,
   authorizeSession,
@@ -10,38 +11,38 @@ import {
   state,
   terminateCurrentSession,
   togglePageLabel,
-} from './state.js?v=20260330001044';
+} from './state.js?v=20260330210201';
 
-import * as startView from './pages/start-view.js?v=20260330001044';
-import * as entrySettingsView from './pages/entry-settings-view.js?v=20260330001044';
-import * as registerView from './pages/register-view.js?v=20260330001044';
-import * as registrationPaymentView from './pages/registration-payment-view.js?v=20260330001044';
-import * as registrationKeysView from './pages/registration-keys-view.js?v=20260330001044';
-import * as topupView from './pages/topup-view.js?v=20260330001044';
-import * as loginView from './pages/login-view.js?v=20260330001044';
-import * as loginCameraView from './pages/login-camera-view.js?v=20260330001044';
-import * as loginPasswordView from './pages/login-password-view.js?v=20260330001044';
-import * as keyStorageView from './pages/key-storage-view.js?v=20260330001044';
+import * as startView from './pages/start-view.js?v=20260330210201';
+import * as entrySettingsView from './pages/entry-settings-view.js?v=20260330210201';
+import * as registerView from './pages/register-view.js?v=20260330210201';
+import * as registrationPaymentView from './pages/registration-payment-view.js?v=20260330210201';
+import * as registrationKeysView from './pages/registration-keys-view.js?v=20260330210201';
+import * as topupView from './pages/topup-view.js?v=20260330210201';
+import * as loginView from './pages/login-view.js?v=20260330210201';
+import * as loginCameraView from './pages/login-camera-view.js?v=20260330210201';
+import * as loginPasswordView from './pages/login-password-view.js?v=20260330210201';
+import * as keyStorageView from './pages/key-storage-view.js?v=20260330210201';
 
-import * as profileView from './pages/profile-view.js?v=20260330001044';
-import * as walletView from './pages/wallet-view.js?v=20260330001044';
-import * as settingsView from './pages/settings-view.js?v=20260330001044';
-import * as serverSettingsView from './pages/server-settings-view.js?v=20260330001044';
-import * as deviceView from './pages/device-view.js?v=20260330001044';
-import * as connectDeviceView from './pages/connect-device-view.js?v=20260330001044';
-import * as deviceQrView from './pages/device-qr-view.js?v=20260330001044';
-import * as deviceCameraView from './pages/device-camera-view.js?v=20260330001044';
-import * as showKeysView from './pages/show-keys-view.js?v=20260330001044';
-import * as deviceSessionView from './pages/device-session-view.js?v=20260330001044';
-import * as languageView from './pages/language-view.js?v=20260330001044';
-import * as messagesList from './pages/messages-list.js?v=20260330001044';
-import * as contactSearchView from './pages/contact-search-view.js?v=20260330001044';
-import * as chatView from './pages/chat-view.js?v=20260330001044';
-import * as channelsList from './pages/channels-list.js?v=20260330001044';
-import * as channelView from './pages/channel-view.js?v=20260330001044';
-import * as addChannelView from './pages/add-channel-view.js?v=20260330001044';
-import * as networkView from './pages/network-view.js?v=20260330001044';
-import * as notificationsView from './pages/notifications-view.js?v=20260330001044';
+import * as profileView from './pages/profile-view.js?v=20260330210201';
+import * as walletView from './pages/wallet-view.js?v=20260330210201';
+import * as settingsView from './pages/settings-view.js?v=20260330210201';
+import * as serverSettingsView from './pages/server-settings-view.js?v=20260330210201';
+import * as deviceView from './pages/device-view.js?v=20260330210201';
+import * as connectDeviceView from './pages/connect-device-view.js?v=20260330210201';
+import * as deviceQrView from './pages/device-qr-view.js?v=20260330210201';
+import * as deviceCameraView from './pages/device-camera-view.js?v=20260330210201';
+import * as showKeysView from './pages/show-keys-view.js?v=20260330210201';
+import * as deviceSessionView from './pages/device-session-view.js?v=20260330210201';
+import * as languageView from './pages/language-view.js?v=20260330210201';
+import * as messagesList from './pages/messages-list.js?v=20260330210201';
+import * as contactSearchView from './pages/contact-search-view.js?v=20260330210201';
+import * as chatView from './pages/chat-view.js?v=20260330210201';
+import * as channelsList from './pages/channels-list.js?v=20260330210201';
+import * as channelView from './pages/channel-view.js?v=20260330210201';
+import * as addChannelView from './pages/add-channel-view.js?v=20260330210201';
+import * as networkView from './pages/network-view.js?v=20260330210201';
+import * as notificationsView from './pages/notifications-view.js?v=20260330210201';
 
 const routes = {
   'start-view': startView,
@@ -80,6 +81,35 @@ const labelEl = document.getElementById('page-label-slot');
 const toolbarEl = document.getElementById('toolbar-slot');
 
 let currentCleanup = null;
+
+setClientErrorTransport((payload) => authService.reportClientError(payload));
+
+window.addEventListener('error', (event) => {
+  captureClientError({
+    kind: 'global_error',
+    message: event.message || 'Global JS error',
+    stack: event.error?.stack || '',
+    sourceUrl: event.filename || '',
+    lineNumber: event.lineno,
+    columnNumber: event.colno,
+    context: {
+      pageId: getRoute().pageId || '',
+    },
+  });
+});
+
+window.addEventListener('unhandledrejection', (event) => {
+  const reason = event.reason;
+  captureClientError({
+    kind: 'unhandled_rejection',
+    message: reason?.message || String(reason || 'Unhandled promise rejection'),
+    stack: reason?.stack || '',
+    context: {
+      pageId: getRoute().pageId || '',
+      reasonType: reason?.constructor?.name || typeof reason,
+    },
+  });
+});
 
 function renderApp() {
   const route = getRoute();

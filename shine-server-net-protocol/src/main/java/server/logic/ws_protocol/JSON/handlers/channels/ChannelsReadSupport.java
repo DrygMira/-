@@ -121,7 +121,7 @@ final class ChannelsReadSupport {
         try {
             BchBlockEntry e = new BchBlockEntry(blockBytes);
             TextInfo ti = new TextInfo();
-            ti.createdAtMs = e.timeMs;
+            ti.createdAtMs = e.timestamp * 1000L;
             if (e.body instanceof TextBody tb) {
                 ti.text = tb.message;
             }
@@ -137,7 +137,8 @@ final class ChannelsReadSupport {
             SELECT login,bch_name,block_number,block_hash,block_bytes
             FROM blocks
             WHERE bch_name=? AND msg_type=? AND msg_sub_type=? AND line_code=?
-            ORDER BY block_number """ + order + " LIMIT ?";
+            ORDER BY block_number
+            """ + order + " LIMIT ?";
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, ownerBch);
             ps.setInt(2, MSG_TYPE_TEXT);
