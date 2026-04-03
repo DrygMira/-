@@ -7,7 +7,7 @@ import java.util.Objects;
 public class IT_DeployRestartAndRunRemoteMain {
 
     // ====== НАСТРОЙКИ (можно переопределять systemProperty) ======
-    private static final String REMOTE_HOST = System.getProperty("it.remoteHost", "10.147.20.7");
+    private static final String REMOTE_HOST = System.getProperty("it.remoteHost", "194.87.0.247");
     private static final String REMOTE_USER = System.getProperty("it.remoteUser", "user");
 
     private static final String REMOTE_DIR  = System.getProperty("it.remoteDir", "/home/user/docker/shine-server");
