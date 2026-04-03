@@ -1,5 +1,5 @@
-import { renderHeader } from '../components/header.js?v=20260330210201';
-import { authorizeSession, state } from '../state.js?v=20260330210201';
+import { renderHeader } from '../components/header.js?v=20260403081123';
+import { authorizeSession, state } from '../state.js?v=20260403081123';
 
 export const pageMeta = { id: 'key-storage-view', title: 'Какие ключи сохранить', showAppChrome: false };
 

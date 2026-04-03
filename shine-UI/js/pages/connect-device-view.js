@@ -1,5 +1,5 @@
-import { renderHeader } from '../components/header.js?v=20260330210201';
-import { state } from '../state.js?v=20260330210201';
+import { renderHeader } from '../components/header.js?v=20260403081123';
+import { state } from '../state.js?v=20260403081123';
 
 export const pageMeta = { id: 'connect-device-view', title: 'Подключить устройство' };
 
