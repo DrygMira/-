@@ -1,19 +1,24 @@
 import { renderHeader } from '../components/header.js?v=20260403081123';
 import { profile } from '../mock-data.js?v=20260403081123';
+import { state } from '../state.js?v=20260403081123';
+import { loadProfileParams, profileFieldDefs, saveProfileParams } from '../services/user-profile-params.js?v=20260403081123';
 
 export const pageMeta = { id: 'profile-view', title: 'Профиль' };
 
+function formatDateTime(timeMs) {
+  if (!timeMs) return 'ещё не заполнено';
+  return new Date(timeMs).toLocaleString('ru-RU');
+}
+
+function getDisplayName(fieldMap) {
+  const firstName = fieldMap.get('first_name')?.value?.trim() || '';
+  const lastName = fieldMap.get('last_name')?.value?.trim() || '';
+  const fullName = `${firstName} ${lastName}`.trim();
+  return fullName || profile.name;
+}
+
 export function render({ navigate }) {
-  const badgeHelp = {
-    official: {
-      title: 'Официальный аккаунт',
-      text: 'Эта настройка включает или отключает отметку официального аккаунта в профиле. Используйте её, когда нужно показать или скрыть подтверждённый статус.',
-    },
-    shine: {
-      title: 'Сияющий',
-      text: 'Этот переключатель включает или отключает режим «Сияющий». Он управляет отображением дополнительного визуального акцента для профиля.',
-    },
-  };
+  const login = state.session.login || profile.login;
 
   const screen = document.createElement('section');
   screen.className = 'stack';
@@ -25,83 +30,169 @@ export function render({ navigate }) {
         { label: 'Кошелёк', onClick: () => navigate('wallet-view') },
         { label: 'Настройки', onClick: () => navigate('settings-view') },
       ],
-    })
+    }),
   );
 
   const card = document.createElement('div');
   card.className = 'card stack';
-  card.innerHTML = `
-    <div class="row">
+
+  const topRow = document.createElement('div');
+  topRow.className = 'row';
+  topRow.innerHTML = `
+    <div class="row" style="gap:12px; align-items:center;">
       <div class="avatar large">${profile.avatarInitials}</div>
-      <div class="stack" style="justify-items:end; text-align:right;">
-        <button class="badge profile-badge-trigger" type="button" data-badge="official">✔ ${profile.badges[0]}</button>
-        <button class="badge alt profile-badge-trigger" type="button" data-badge="shine">✨ ${profile.badges[1]}</button>
+      <div>
+        <h2 style="font-size:22px; margin-bottom:2px;" data-profile-name="true">${profile.name}</h2>
+        <p class="meta-muted">${login}</p>
       </div>
     </div>
-    <div>
-      <h2 style="font-size:22px; margin-bottom:2px;">${profile.name}</h2>
-      <p class="meta-muted">${profile.login}</p>
-    </div>
-    <div class="stack" style="gap:8px;">
-      <div class="card" style="padding:10px;"><span class="meta-muted">Телефон:</span> ${profile.phone}</div>
-      <div class="card" style="padding:10px;"><span class="meta-muted">Адрес:</span> ${profile.address}</div>
-      <div class="card" style="padding:10px;"><span class="meta-muted">Email:</span> ${profile.email}</div>
-      <div class="card" style="padding:10px;"><span class="meta-muted">Соцсети:</span> ${profile.socials}</div>
-    </div>
+    <button class="primary-btn" type="button" data-open-edit="true">Обновить</button>
   `;
 
-  const modal = document.createElement('div');
-  modal.className = 'profile-help-modal';
-  modal.hidden = true;
-  modal.innerHTML = `
+  const hint = document.createElement('div');
+  hint.className = 'card profile-data-help';
+  hint.innerHTML = `
+    <div class="meta-muted">Личные данные пользователя</div>
+    <p>Поля ниже читаются из реальных пользовательских параметров сервера (ListUserParams). Кнопка «Обновить» отправляет UpsertUserParam, что добавляет новую запись в блокчейн.</p>
+  `;
+
+  const status = document.createElement('div');
+  status.className = 'status-line';
+  status.textContent = 'Загрузка параметров...';
+
+  const listWrap = document.createElement('div');
+  listWrap.className = 'stack profile-param-list';
+
+  const editModal = document.createElement('div');
+  editModal.className = 'profile-help-modal';
+  editModal.hidden = true;
+  editModal.innerHTML = `
     <div class="profile-help-backdrop" data-close="true"></div>
-    <div class="profile-help-dialog card" role="dialog" aria-modal="true" aria-labelledby="profile-help-title" tabindex="-1">
+    <div class="profile-help-dialog card" role="dialog" aria-modal="true" aria-labelledby="profile-edit-title" tabindex="-1">
       <div class="row" style="align-items:flex-start;">
         <div>
-          <div class="meta-muted" style="margin-bottom:4px;">Управление функцией</div>
-          <h3 id="profile-help-title" style="font-size:18px;"></h3>
+          <div class="meta-muted" style="margin-bottom:4px;">Обновление личных данных</div>
+          <h3 id="profile-edit-title" style="font-size:18px;">Редактирование профиля</h3>
         </div>
         <button class="icon-btn profile-help-close" type="button" aria-label="Закрыть">✕</button>
       </div>
-      <p class="profile-help-text"></p>
+      <p class="profile-help-text">После сохранения по каждому полю отправляется `UpsertUserParam`. Сервер хранит историю, а на экране показывается самое свежее значение по времени.</p>
+      <form class="stack" data-profile-form="true"></form>
+      <div class="row">
+        <button class="ghost-btn" type="button" data-cancel-edit="true">Отмена</button>
+        <button class="primary-btn" type="button" data-save-profile="true">Сохранить</button>
+      </div>
     </div>
   `;
 
-  const titleEl = modal.querySelector('#profile-help-title');
-  const textEl = modal.querySelector('.profile-help-text');
-  const dialogEl = modal.querySelector('.profile-help-dialog');
+  const profileNameEl = topRow.querySelector('[data-profile-name="true"]');
+  const openEditBtn = topRow.querySelector('[data-open-edit="true"]');
+  const formEl = editModal.querySelector('[data-profile-form="true"]');
+  const dialogEl = editModal.querySelector('.profile-help-dialog');
+  const saveBtn = editModal.querySelector('[data-save-profile="true"]');
 
-  function closeModal() {
-    modal.hidden = true;
+  let currentFields = profileFieldDefs.map((field) => ({ ...field, value: '', timeMs: 0 }));
+
+  function renderParams(fields) {
+    const fieldMap = new Map(fields.map((field) => [field.key, field]));
+    profileNameEl.textContent = getDisplayName(fieldMap);
+
+    listWrap.innerHTML = '';
+    fields.forEach((field) => {
+      const row = document.createElement('div');
+      row.className = 'card profile-param-item';
+      row.innerHTML = `
+        <div class="profile-param-head">
+          <span class="meta-muted">${field.label}</span>
+          <span class="meta-muted">${field.key}</span>
+        </div>
+        <div class="profile-param-value">${field.value || '—'}</div>
+        <div class="meta-muted profile-param-time">Обновлено: ${formatDateTime(field.timeMs)}</div>
+      `;
+      listWrap.append(row);
+    });
   }
 
-  function openModal(type) {
-    const content = badgeHelp[type];
-    if (!content) return;
+  async function refreshParams() {
+    status.className = 'status-line';
+    status.textContent = 'Загрузка параметров...';
+    openEditBtn.disabled = true;
 
-    titleEl.textContent = content.title;
-    textEl.textContent = content.text;
-    modal.hidden = false;
+    try {
+      const fields = await loadProfileParams(login);
+      currentFields = fields;
+      renderParams(fields);
+      status.className = 'status-line is-available';
+      status.textContent = 'Актуальные параметры загружены с сервера.';
+    } catch (error) {
+      renderParams(currentFields);
+      status.className = 'status-line is-unavailable';
+      status.textContent = `Не удалось загрузить параметры: ${error.message || 'ошибка сети'}`;
+    } finally {
+      openEditBtn.disabled = false;
+    }
+  }
+
+  function closeEditModal() {
+    editModal.hidden = true;
+  }
+
+  function openEditModal() {
+    formEl.innerHTML = '';
+
+    currentFields.forEach((field) => {
+      const fieldWrap = document.createElement('label');
+      fieldWrap.className = 'stack';
+      fieldWrap.innerHTML = `
+        <span class="field-label">${field.label}</span>
+        <input class="input" type="text" name="${field.key}" placeholder="${field.placeholder || ''}" value="${field.value || ''}" />
+      `;
+      formEl.append(fieldWrap);
+    });
+
+    editModal.hidden = false;
     dialogEl.focus();
   }
 
-  card.querySelectorAll('.profile-badge-trigger').forEach((button) => {
-    button.addEventListener('click', () => openModal(button.dataset.badge));
-  });
+  async function saveChanges() {
+    const valuesByKey = {};
+    currentFields.forEach((field) => {
+      const input = formEl.querySelector(`input[name="${field.key}"]`);
+      valuesByKey[field.key] = input instanceof HTMLInputElement ? input.value : '';
+    });
 
-  modal.addEventListener('click', (event) => {
+    saveBtn.disabled = true;
+    try {
+      await saveProfileParams(login, valuesByKey);
+      closeEditModal();
+      await refreshParams();
+    } catch (error) {
+      status.className = 'status-line is-unavailable';
+      status.textContent = `Не удалось сохранить: ${error.message || 'ошибка сети'}`;
+    } finally {
+      saveBtn.disabled = false;
+    }
+  }
+
+  openEditBtn.addEventListener('click', openEditModal);
+  saveBtn.addEventListener('click', saveChanges);
+  editModal.querySelector('[data-cancel-edit="true"]').addEventListener('click', closeEditModal);
+
+  editModal.addEventListener('click', (event) => {
     const target = event.target;
     if (target instanceof HTMLElement && (target.dataset.close === 'true' || target.classList.contains('profile-help-close'))) {
-      closeModal();
+      closeEditModal();
     }
   });
 
-  modal.addEventListener('keydown', (event) => {
-    if (event.key === 'Escape') {
-      closeModal();
-    }
+  editModal.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') closeEditModal();
   });
 
-  screen.append(card, modal);
+  card.append(topRow, hint, status, listWrap);
+  screen.append(card, editModal);
+
+  refreshParams();
+
   return screen;
 }
