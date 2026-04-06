@@ -7,6 +7,7 @@ import test.it.cases.IT_03_AddBlock_NoAuth;
 import test.it.cases.IT_04_UserParams_NoAuth;
 import test.it.cases.IT_05_UserConnections;
 import test.it.cases.IT_06_ChannelsApi;
+import test.it.cases.Seed_TestDataPopulation;
 import test.it.utils.log.TestLog;
 
 import java.util.ArrayList;
@@ -59,6 +60,9 @@ public class IT_RunAllMain {
 
         String s6 = IT_06_ChannelsApi.run(); summaries.add(s6);
         if (s6.contains("FAIL:")) { failed++; if (STOP_ON_FIRST_FAIL) return finishEarly(summaries, failed); }
+
+        String s7 = Seed_TestDataPopulation.run(); summaries.add(s7);
+        if (s7.contains("FAIL:")) { failed++; if (STOP_ON_FIRST_FAIL) return finishEarly(summaries, failed); }
 
         return finish(summaries, failed);
     }

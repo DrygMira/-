@@ -5,6 +5,7 @@ import org.junit.platform.suite.api.Suite;
 import test.it.cases.IT_01_AddUser;
 import test.it.cases.IT_02_Sessions;
 import test.it.cases.IT_03_AddBlock_NoAuth;
+import test.it.cases.Seed_TestDataPopulation;
 
 /**
  * Сьют, который запускает IT тесты строго в заданном порядке.
@@ -16,7 +17,8 @@ import test.it.cases.IT_03_AddBlock_NoAuth;
 @SelectClasses({
         IT_01_AddUser.class,
         IT_02_Sessions.class,
-        IT_03_AddBlock_NoAuth.class
+        IT_03_AddBlock_NoAuth.class,
+        Seed_TestDataPopulation.class
 })
 public class IT_00_Suite {
     // пусто
