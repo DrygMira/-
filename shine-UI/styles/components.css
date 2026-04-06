@@ -131,6 +131,38 @@
   font-size: 14px;
 }
 
+
+.profile-data-help p {
+  margin-top: 6px;
+  line-height: 1.4;
+  color: #d8e3ff;
+}
+
+.profile-param-list {
+  gap: 8px;
+}
+
+.profile-param-item {
+  padding: 10px;
+  gap: 6px;
+}
+
+.profile-param-head {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.profile-param-value {
+  font-size: 15px;
+  color: #eef3ff;
+  word-break: break-word;
+}
+
+.profile-param-time {
+  font-size: 12px;
+}
+
 .auth-screen {
   min-height: calc(100dvh - 48px - env(safe-area-inset-bottom));
   display: grid;

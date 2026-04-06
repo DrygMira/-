@@ -8,9 +8,15 @@ import {
   randomBase64,
   signBase64,
 } from './crypto-utils.js?v=20260405171816';
-import { loadSessionMaterial, saveEncryptedUserSecrets, saveSessionMaterial } from './key-vault.js?v=20260405171816';
+import {
+  loadEncryptedUserSecrets,
+  loadSessionMaterial,
+  saveEncryptedUserSecrets,
+  saveSessionMaterial,
+} from './key-vault.js?v=20260405171816';
 
 const BCH_SUFFIX = '001';
+const USER_PARAMETER_PREFIX = 'SHiNe/UserParameter:';
 
 function normalizeServerUrl(url) {
   const value = (url || '').trim();
@@ -281,6 +287,50 @@ export class AuthService {
     const response = await this.ws.request('SearchUsers', { prefix });
     if (response.status !== 200) throw opError('SearchUsers', response);
     return response.payload?.logins || [];
+  }
+
+  async listUserParams(login) {
+    const cleanLogin = (login || '').trim();
+    if (!cleanLogin) throw new Error('Не передан login');
+    const response = await this.ws.request('ListUserParams', { login: cleanLogin });
+    if (response.status !== 200) throw opError('ListUserParams', response);
+    return response.payload || {};
+  }
+
+  async upsertUserParam({ login, param, value, timeMs = Date.now(), storagePwd }) {
+    const cleanLogin = (login || '').trim();
+    const cleanParam = (param || '').trim();
+    if (!cleanLogin || !cleanParam) throw new Error('Не переданы login/param');
+    if (!storagePwd) throw new Error('Не передан storagePwd для подписи UserParam');
+
+    const user = await this.getUser(cleanLogin);
+    const deviceKey = String(user?.deviceKey || '').trim();
+    if (!deviceKey) {
+      throw new Error('GetUser не вернул deviceKey для подписи UserParam');
+    }
+
+    const savedKeys = await loadEncryptedUserSecrets(cleanLogin, storagePwd);
+    const devicePrivatePkcs8 = savedKeys?.deviceKey;
+    if (!devicePrivatePkcs8) {
+      throw new Error('На устройстве нет сохраненного приватного deviceKey');
+    }
+
+    const privateKey = await importPkcs8Ed25519(devicePrivatePkcs8);
+    const cleanValue = String(value ?? '');
+    const signText = `${USER_PARAMETER_PREFIX}${cleanLogin}${cleanParam}${timeMs}${cleanValue}`;
+    const signature = await signBase64(privateKey, signText);
+
+    const response = await this.ws.request('UpsertUserParam', {
+      login: cleanLogin,
+      param: cleanParam,
+      time_ms: Number(timeMs),
+      value: cleanValue,
+      device_key: deviceKey,
+      signature,
+    });
+
+    if (response.status !== 200) throw opError('UpsertUserParam', response);
+    return response.payload || {};
   }
 
   async reportClientError(details) {
