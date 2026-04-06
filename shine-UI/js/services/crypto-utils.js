@@ -148,3 +148,8 @@ export async function signBase64(privateKey, text) {
   const signature = await crypto.subtle.sign({ name: 'Ed25519' }, privateKey, utf8Bytes(text));
   return bytesToBase64(new Uint8Array(signature));
 }
+
+export async function signBytes(privateKey, bytes) {
+  const signature = await crypto.subtle.sign({ name: 'Ed25519' }, privateKey, bytes);
+  return new Uint8Array(signature);
+}

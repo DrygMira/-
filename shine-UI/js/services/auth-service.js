@@ -1,12 +1,16 @@
 import { WsJsonClient } from './ws-client.js?v=20260405171816';
 import {
+  bytesToBase64,
   deriveEd25519FromPassword,
   exportEd25519PublicKeyB64,
   exportPkcs8B64,
   generateEd25519Pair,
   importPkcs8Ed25519,
   randomBase64,
+  sha256Bytes,
+  signBytes,
   signBase64,
+  utf8Bytes,
 } from './crypto-utils.js?v=20260405171816';
 import {
   loadEncryptedUserSecrets,
@@ -16,7 +20,6 @@ import {
 } from './key-vault.js?v=20260405171816';
 
 const BCH_SUFFIX = '001';
-const USER_PARAMETER_PREFIX = 'SHiNe/UserParameter:';
 
 function normalizeServerUrl(url) {
   const value = (url || '').trim();
@@ -41,6 +44,67 @@ function opError(op, response) {
 function makeClientInfo() {
   const ua = navigator.userAgent || 'unknown';
   return ua.slice(0, 50);
+}
+
+function hexToBytes(hex) {
+  const clean = String(hex || '').trim().toLowerCase();
+  if (!clean || clean.length % 2 !== 0) throw new Error('Некорректный hex');
+  const out = new Uint8Array(clean.length / 2);
+  for (let i = 0; i < out.length; i += 1) {
+    out[i] = Number.parseInt(clean.slice(i * 2, i * 2 + 2), 16);
+  }
+  return out;
+}
+
+function concatBytes(...chunks) {
+  const total = chunks.reduce((sum, chunk) => sum + chunk.length, 0);
+  const out = new Uint8Array(total);
+  let offset = 0;
+  chunks.forEach((chunk) => {
+    out.set(chunk, offset);
+    offset += chunk.length;
+  });
+  return out;
+}
+
+function int32Bytes(value) {
+  const bytes = new Uint8Array(4);
+  const view = new DataView(bytes.buffer);
+  view.setInt32(0, Number(value), false);
+  return bytes;
+}
+
+function int16Bytes(value) {
+  const bytes = new Uint8Array(2);
+  const view = new DataView(bytes.buffer);
+  view.setUint16(0, Number(value), false);
+  return bytes;
+}
+
+function int64Bytes(value) {
+  const bytes = new Uint8Array(8);
+  const view = new DataView(bytes.buffer);
+  view.setBigInt64(0, BigInt(value), false);
+  return bytes;
+}
+
+function makeUserParamBodyBytes({ lineCode, prevLineNumber, prevLineHashHex, thisLineNumber, key, value }) {
+  const keyBytes = utf8Bytes(String(key || ''));
+  const valueBytes = utf8Bytes(String(value || ''));
+  const prevHashBytes = hexToBytes(prevLineHashHex);
+  if (!keyBytes.length || !valueBytes.length) throw new Error('Пустые key/value для блока параметра');
+  if (prevHashBytes.length !== 32) throw new Error('prevLineHash должен быть 32 байта');
+
+  return concatBytes(
+    int32Bytes(lineCode),
+    int32Bytes(prevLineNumber),
+    prevHashBytes,
+    int32Bytes(thisLineNumber),
+    int16Bytes(keyBytes.length),
+    keyBytes,
+    int16Bytes(valueBytes.length),
+    valueBytes,
+  );
 }
 
 export class AuthService {
@@ -289,47 +353,91 @@ export class AuthService {
     return response.payload?.logins || [];
   }
 
-  async listUserParams(login) {
-    const cleanLogin = (login || '').trim();
-    if (!cleanLogin) throw new Error('Не передан login');
-    const response = await this.ws.request('ListUserParams', { login: cleanLogin });
-    if (response.status !== 200) throw opError('ListUserParams', response);
-    return response.payload || {};
-  }
 
-  async upsertUserParam({ login, param, value, timeMs = Date.now(), storagePwd }) {
+
+  async getUserParam(login, param) {
     const cleanLogin = (login || '').trim();
     const cleanParam = (param || '').trim();
     if (!cleanLogin || !cleanParam) throw new Error('Не переданы login/param');
-    if (!storagePwd) throw new Error('Не передан storagePwd для подписи UserParam');
+
+    const response = await this.ws.request('GetUserParam', { login: cleanLogin, param: cleanParam });
+    if (response.status === 200) return response.payload || {};
+
+    if (response.status === 404 || response.status === 204) return {};
+
+    throw opError('GetUserParam', response);
+  }
+
+  async addBlockUserParam({ login, param, value, storagePwd }) {
+    const cleanLogin = (login || '').trim();
+    const cleanParam = (param || '').trim();
+    const cleanValue = String(value ?? '').trim();
+    if (!cleanLogin || !cleanParam) throw new Error('Не переданы login/param.');
+    if (!cleanValue) throw new Error('Значение параметра не может быть пустым.');
+    if (!storagePwd) throw new Error('Не передан storagePwd для подписи AddBlock.');
 
     const user = await this.getUser(cleanLogin);
-    const deviceKey = String(user?.deviceKey || '').trim();
-    if (!deviceKey) {
-      throw new Error('GetUser не вернул deviceKey для подписи UserParam');
-    }
+    const blockchainName = String(user?.blockchainName || `${cleanLogin}-${BCH_SUFFIX}`).trim();
 
     const savedKeys = await loadEncryptedUserSecrets(cleanLogin, storagePwd);
-    const devicePrivatePkcs8 = savedKeys?.deviceKey;
-    if (!devicePrivatePkcs8) {
-      throw new Error('На устройстве нет сохраненного приватного deviceKey');
+    const blockchainPrivatePkcs8 = savedKeys?.blockchainKey;
+    if (!blockchainPrivatePkcs8) {
+      throw new Error('На устройстве нет сохраненного приватного blockchainKey');
     }
 
-    const privateKey = await importPkcs8Ed25519(devicePrivatePkcs8);
-    const cleanValue = String(value ?? '');
-    const signText = `${USER_PARAMETER_PREFIX}${cleanLogin}${cleanParam}${timeMs}${cleanValue}`;
-    const signature = await signBase64(privateKey, signText);
+    const privateKey = await importPkcs8Ed25519(blockchainPrivatePkcs8);
 
-    const response = await this.ws.request('UpsertUserParam', {
-      login: cleanLogin,
-      param: cleanParam,
-      time_ms: Number(timeMs),
-      value: cleanValue,
-      device_key: deviceKey,
-      signature,
-    });
+    const tryAdd = async (cursor) => {
+      const blockNumber = Number(cursor?.serverLastGlobalNumber ?? -1) + 1;
+      const prevBlockHash = String(cursor?.serverLastGlobalHash || '0'.repeat(64));
 
-    if (response.status !== 200) throw opError('UpsertUserParam', response);
+      const bodyBytes = makeUserParamBodyBytes({
+        lineCode: Number(cursor?.serverLastGlobalNumber ?? 0),
+        prevLineNumber: Number(cursor?.serverLastGlobalNumber ?? 0),
+        prevLineHashHex: prevBlockHash,
+        thisLineNumber: 1,
+        key: cleanParam,
+        value: cleanValue,
+      });
+
+      const preimage = concatBytes(
+        int16Bytes(0),
+        hexToBytes(prevBlockHash),
+        int32Bytes(2 + 32 + 4 + 4 + 8 + 2 + 2 + 2 + bodyBytes.length),
+        int32Bytes(blockNumber),
+        int64Bytes(Math.floor(Date.now() / 1000)),
+        int16Bytes(4),
+        int16Bytes(1),
+        int16Bytes(1),
+        bodyBytes,
+      );
+
+      const hash32 = await sha256Bytes(preimage);
+      const signatureBytes = await signBytes(privateKey, hash32);
+      const fullBlock = concatBytes(preimage, int16Bytes(0x0100), signatureBytes);
+
+      const response = await this.ws.request('AddBlock', {
+        blockchainName,
+        blockNumber,
+        prevBlockHash,
+        blockBytesB64: bytesToBase64(fullBlock),
+      });
+
+      return response;
+    };
+
+    let cursor = { serverLastGlobalNumber: -1, serverLastGlobalHash: '0'.repeat(64) };
+    let response = await tryAdd(cursor);
+    if (response.status !== 200) {
+      const knownNum = Number(response?.payload?.serverLastGlobalNumber);
+      const knownHash = String(response?.payload?.serverLastGlobalHash || '');
+      if (Number.isFinite(knownNum) && knownHash.length === 64) {
+        cursor = { serverLastGlobalNumber: knownNum, serverLastGlobalHash: knownHash };
+        response = await tryAdd(cursor);
+      }
+    }
+
+    if (response.status !== 200) throw opError('AddBlock', response);
     return response.payload || {};
   }
 
