@@ -203,6 +203,7 @@ tasks.register('startLocal', Exec) {
     description = "Builds server, starts local WS server and local HTTP UI for end-to-end local testing"
 
     dependsOn shadowJar
+    dependsOn cleanServerLogs
 
     workingDir = rootDir
     def wsPort = System.getProperty("localWsPort", "7070")

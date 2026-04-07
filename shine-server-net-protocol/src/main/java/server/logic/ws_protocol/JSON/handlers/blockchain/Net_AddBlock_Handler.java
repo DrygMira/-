@@ -309,6 +309,7 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
 
             // Нормализация: -1 не пишем в БД (для совместимости со старым TextBody)
             if (prevLineNumber != null && prevLineNumber == -1) {
+                lineCode = null;
                 prevLineNumber = null;
                 prevLineHash32 = null;
                 thisLineNumber = null;
