@@ -5,9 +5,21 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <link rel="manifest" href="./manifest.webmanifest" />
     <title>Shine UI Demo</title>
-    <link rel="stylesheet" href="./styles/main.css?v=20260407105357" />
-    <link rel="stylesheet" href="./styles/layout.css?v=20260407105357" />
-    <link rel="stylesheet" href="./styles/components.css?v=20260407105357" />
+    <script>
+      window.__SHINE_BUILD_HASH__ = '20260407120000';
+    </script>
+    <script>
+      (function attachStylesWithBuildHash() {
+        const v = encodeURIComponent(window.__SHINE_BUILD_HASH__ || 'dev');
+        const cssFiles = ['./styles/main.css', './styles/layout.css', './styles/components.css'];
+        cssFiles.forEach((file) => {
+          const link = document.createElement('link');
+          link.rel = 'stylesheet';
+          link.href = `${file}?v=${v}`;
+          document.head.appendChild(link);
+        });
+      }());
+    </script>
   </head>
   <body>
     <div class="app-shell">
@@ -27,6 +39,14 @@
       };
       window.__SHINE_FIREBASE_VAPID_KEY__ = '';
     </script>
-    <script type="module" src="./js/app.js?v=20260407105357"></script>
+    <script>
+      (function attachAppWithBuildHash() {
+        const v = encodeURIComponent(window.__SHINE_BUILD_HASH__ || 'dev');
+        const script = document.createElement('script');
+        script.type = 'module';
+        script.src = `./js/app.js?v=${v}`;
+        document.body.appendChild(script);
+      }());
+    </script>
   </body>
 </html>

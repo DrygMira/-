@@ -1,4 +1,4 @@
-import { renderHeader } from '../components/header.js?v=20260407105357';
+import { renderHeader } from '../components/header.js';
 import {
   authService,
   isSessionInvalidError,
@@ -7,7 +7,7 @@ import {
   setAuthInfo,
   state,
   terminateCurrentSession,
-} from '../state.js?v=20260407105357';
+} from '../state.js';
 
 export const pageMeta = { id: 'device-view', title: 'Устройства' };
 

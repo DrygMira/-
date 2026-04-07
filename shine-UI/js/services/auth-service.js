@@ -1,4 +1,4 @@
-import { WsJsonClient } from './ws-client.js?v=20260407105357';
+import { WsJsonClient } from './ws-client.js';
 import {
   bytesToBase64,
   deriveEd25519FromPassword,
@@ -11,13 +11,13 @@ import {
   signBytes,
   signBase64,
   utf8Bytes,
-} from './crypto-utils.js?v=20260407105357';
+} from './crypto-utils.js';
 import {
   loadEncryptedUserSecrets,
   loadSessionMaterial,
   saveEncryptedUserSecrets,
   saveSessionMaterial,
-} from './key-vault.js?v=20260407105357';
+} from './key-vault.js';
 
 const BCH_SUFFIX = '001';
 

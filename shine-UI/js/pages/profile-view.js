@@ -1,11 +1,11 @@
-import { renderHeader } from '../components/header.js?v=20260407105357';
-import { profile } from '../mock-data.js?v=20260407105357';
-import { state } from '../state.js?v=20260407105357';
+import { renderHeader } from '../components/header.js';
+import { profile } from '../mock-data.js';
+import { state } from '../state.js';
 import {
   loadProfileSnapshot,
   saveProfileParamBlock,
   saveProfileToggle,
-} from '../services/user-profile-params.js?v=20260407105357';
+} from '../services/user-profile-params.js';
 
 export const pageMeta = { id: 'profile-view', title: 'Профиль' };
 

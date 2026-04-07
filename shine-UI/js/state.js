@@ -1,6 +1,6 @@
-import { chatMessages, wallet } from './mock-data.js?v=20260407105357';
-import { AuthService } from './services/auth-service.js?v=20260407105357';
-import { clearClientAuthData } from './services/key-vault.js?v=20260407105357';
+import { chatMessages, wallet } from './mock-data.js';
+import { AuthService } from './services/auth-service.js';
+import { clearClientAuthData } from './services/key-vault.js';
 
 const clone = (value) => JSON.parse(JSON.stringify(value));
 const SESSION_STORAGE_KEY = 'shine-ui-current-session-v1';

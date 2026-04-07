@@ -1,7 +1,7 @@
-import { navigate, getRoute, PRE_AUTH_PAGES } from './router.js?v=20260407105357';
-import { renderToolbar } from './components/toolbar.js?v=20260407105357';
-import { captureClientError, setClientErrorTransport } from './services/client-error-reporter.js?v=20260407105357';
-import { initPwaPush } from './services/pwa-push-service.js?v=20260407105357';
+import { navigate, getRoute, PRE_AUTH_PAGES } from './router.js';
+import { renderToolbar } from './components/toolbar.js';
+import { captureClientError, setClientErrorTransport } from './services/client-error-reporter.js';
+import { initPwaPush } from './services/pwa-push-service.js';
 import {
   authService,
   authorizeSession,
@@ -12,38 +12,38 @@ import {
   terminateCurrentSession,
   addIncomingMessage,
   setContacts,
-} from './state.js?v=20260407105357';
+} from './state.js';
 
-import * as startView from './pages/start-view.js?v=20260407105357';
-import * as entrySettingsView from './pages/entry-settings-view.js?v=20260407105357';
-import * as registerView from './pages/register-view.js?v=20260407105357';
-import * as registrationPaymentView from './pages/registration-payment-view.js?v=20260407105357';
-import * as registrationKeysView from './pages/registration-keys-view.js?v=20260407105357';
-import * as topupView from './pages/topup-view.js?v=20260407105357';
-import * as loginView from './pages/login-view.js?v=20260407105357';
-import * as loginCameraView from './pages/login-camera-view.js?v=20260407105357';
-import * as loginPasswordView from './pages/login-password-view.js?v=20260407105357';
-import * as keyStorageView from './pages/key-storage-view.js?v=20260407105357';
+import * as startView from './pages/start-view.js';
+import * as entrySettingsView from './pages/entry-settings-view.js';
+import * as registerView from './pages/register-view.js';
+import * as registrationPaymentView from './pages/registration-payment-view.js';
+import * as registrationKeysView from './pages/registration-keys-view.js';
+import * as topupView from './pages/topup-view.js';
+import * as loginView from './pages/login-view.js';
+import * as loginCameraView from './pages/login-camera-view.js';
+import * as loginPasswordView from './pages/login-password-view.js';
+import * as keyStorageView from './pages/key-storage-view.js';
 
-import * as profileView from './pages/profile-view.js?v=20260407105357';
-import * as walletView from './pages/wallet-view.js?v=20260407105357';
-import * as settingsView from './pages/settings-view.js?v=20260407105357';
-import * as serverSettingsView from './pages/server-settings-view.js?v=20260407105357';
-import * as deviceView from './pages/device-view.js?v=20260407105357';
-import * as connectDeviceView from './pages/connect-device-view.js?v=20260407105357';
-import * as deviceQrView from './pages/device-qr-view.js?v=20260407105357';
-import * as deviceCameraView from './pages/device-camera-view.js?v=20260407105357';
-import * as showKeysView from './pages/show-keys-view.js?v=20260407105357';
-import * as deviceSessionView from './pages/device-session-view.js?v=20260407105357';
-import * as languageView from './pages/language-view.js?v=20260407105357';
-import * as messagesList from './pages/messages-list.js?v=20260407105357';
-import * as contactSearchView from './pages/contact-search-view.js?v=20260407105357';
-import * as chatView from './pages/chat-view.js?v=20260407105357';
-import * as channelsList from './pages/channels-list.js?v=20260407105357';
-import * as channelView from './pages/channel-view.js?v=20260407105357';
-import * as addChannelView from './pages/add-channel-view.js?v=20260407105357';
-import * as networkView from './pages/network-view.js?v=20260407105357';
-import * as notificationsView from './pages/notifications-view.js?v=20260407105357';
+import * as profileView from './pages/profile-view.js';
+import * as walletView from './pages/wallet-view.js';
+import * as settingsView from './pages/settings-view.js';
+import * as serverSettingsView from './pages/server-settings-view.js';
+import * as deviceView from './pages/device-view.js';
+import * as connectDeviceView from './pages/connect-device-view.js';
+import * as deviceQrView from './pages/device-qr-view.js';
+import * as deviceCameraView from './pages/device-camera-view.js';
+import * as showKeysView from './pages/show-keys-view.js';
+import * as deviceSessionView from './pages/device-session-view.js';
+import * as languageView from './pages/language-view.js';
+import * as messagesList from './pages/messages-list.js';
+import * as contactSearchView from './pages/contact-search-view.js';
+import * as chatView from './pages/chat-view.js';
+import * as channelsList from './pages/channels-list.js';
+import * as channelView from './pages/channel-view.js';
+import * as addChannelView from './pages/add-channel-view.js';
+import * as networkView from './pages/network-view.js';
+import * as notificationsView from './pages/notifications-view.js';
 
 const routes = {
   'start-view': startView,
