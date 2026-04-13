@@ -54,6 +54,7 @@ public class Net_GetChannelMessages_Handler implements JsonMessageHandler {
             channel.setOwnerBlockchainName(ownerBch);
             channel.setOwnerLogin(BlockchainNameUtil.loginFromBlockchainName(ownerBch));
             channel.setChannelName(ChannelsReadSupport.detectChannelName(c, ownerBch, lineCode));
+            channel.setChannelDescription(ChannelsReadSupport.detectChannelDescription(c, ownerBch, lineCode));
             Net_GetChannelMessages_Response.BlockRef rootRef = new Net_GetChannelMessages_Response.BlockRef();
             rootRef.setBlockNumber(lineCode);
             rootRef.setBlockHash(req.getChannel().getChannelRootBlockHash());

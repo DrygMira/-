@@ -1,10 +1,20 @@
-﻿import { renderHeader } from '../components/header.js';
-import { channels as mockChannels } from '../mock-data.js';
+﻿import { channels as mockChannels } from '../mock-data.js';
 import { authService, setChannelsFeed, state } from '../state.js';
 import { toUserMessage } from '../services/ui-error-texts.js';
+import {
+  animatePress,
+  createSkeletonCard,
+  formatRelativeTime,
+  readChannelNotificationsState,
+  showToast,
+  softHaptic,
+  writeChannelNotificationsState,
+} from '../services/channels-ux.js';
 
 export const pageMeta = { id: 'channels-list', title: 'Каналы' };
+
 const CREATE_CHANNEL_FLASH_KEY = 'shine-channels-create-success';
+const MENU_OVERLAY_ID = 'channels-context-menu-overlay';
 
 function isChannelsDemoMode() {
   try {
@@ -25,6 +35,10 @@ function encodeRoutePart(value = '') {
   return encodeURIComponent(String(value));
 }
 
+function normalizeLoginInput(value) {
+  return String(value || '').trim().replace(/^@+/, '');
+}
+
 function buildChannelRouteFromSummary(summary, fallbackId) {
   const ownerBch = summary?.channel?.ownerBlockchainName;
   const rootBlockNumber = summary?.channel?.channelRoot?.blockNumber;
@@ -33,9 +47,9 @@ function buildChannelRouteFromSummary(summary, fallbackId) {
   return `channel-view/${encodeRoutePart(ownerBch)}/${Number(rootBlockNumber)}/${rootBlockHash}`;
 }
 
-function initialsFromName(name = '') {
-  const parts = name.split(/\s+/).filter(Boolean);
-  return (parts[0]?.[0] || '#') + (parts[1]?.[0] || '');
+function avatarLetterFromName(name = '') {
+  const first = Array.from(String(name || '').trim())[0] || '#';
+  return first.toUpperCase();
 }
 
 function allFeedSummaries() {
@@ -47,9 +61,32 @@ function allFeedSummaries() {
   ];
 }
 
-function resolveChannelTargetFromInput(rawInput) {
+function uniqueBy(items, keySelector) {
+  const seen = new Set();
+  const out = [];
+  for (const item of items) {
+    const key = keySelector(item);
+    if (!key || seen.has(key)) continue;
+    seen.add(key);
+    out.push(item);
+  }
+  return out;
+}
+
+function createDebounced(fn, delayMs = 250) {
+  let timer = null;
+  return (...args) => {
+    if (timer) clearTimeout(timer);
+    timer = setTimeout(() => {
+      timer = null;
+      fn(...args);
+    }, delayMs);
+  };
+}
+
+async function resolveChannelTargetFromInput(rawInput) {
   const input = String(rawInput || '').trim();
-  if (!input) return null;
+  if (!input) throw new Error('Введите канал.');
 
   const bySelector = input.match(/^([A-Za-z0-9._-]+-\d+)\s*[:/]\s*(\d+)\s*[:/]\s*([A-Fa-f0-9]{1,64})$/);
   if (bySelector) {
@@ -60,46 +97,110 @@ function resolveChannelTargetFromInput(rawInput) {
     };
   }
 
-  const summaries = allFeedSummaries();
-
   const byOwnerAndName = input.match(/^@?([^/#\s]+)\s*\/\s*#?(.+)$/);
   if (byOwnerAndName) {
-    const owner = byOwnerAndName[1].trim().toLowerCase();
-    const channelName = byOwnerAndName[2].trim().toLowerCase();
-    const match = summaries.find((summary) => (
-      String(summary?.channel?.ownerLogin || '').toLowerCase() === owner
-      && String(summary?.channel?.channelName || '').toLowerCase() === channelName
+    const ownerLogin = normalizeLoginInput(byOwnerAndName[1]);
+    const channelName = String(byOwnerAndName[2] || '').trim().toLowerCase();
+    if (!ownerLogin || !channelName) {
+      throw new Error('Укажите канал в формате user/channel.');
+    }
+
+    const user = await authService.getUser(ownerLogin);
+    if (!user?.exists || !user?.blockchainName) {
+      throw new Error('Пользователь не найден.');
+    }
+
+    const ownerFeed = await authService.listSubscriptionsFeed(ownerLogin, 500);
+    const ownChannels = (ownerFeed?.ownedChannels || []).filter((item) => (
+      String(item?.channel?.ownerBlockchainName || '') === String(user.blockchainName)
     ));
-    if (!match) return null;
+
+    const match = ownChannels.find((item) => (
+      String(item?.channel?.channelName || '').trim().toLowerCase() === channelName
+    ));
+
+    if (!match) {
+      throw new Error('Канал не найден у указанного автора.');
+    }
+
     return {
-      ownerBlockchainName: match.channel?.ownerBlockchainName,
-      rootBlockNumber: Number(match.channel?.channelRoot?.blockNumber),
-      rootBlockHash: normalizeHash(match.channel?.channelRoot?.blockHash),
+      ownerBlockchainName: String(match?.channel?.ownerBlockchainName || user.blockchainName),
+      rootBlockNumber: Number(match?.channel?.channelRoot?.blockNumber),
+      rootBlockHash: normalizeHash(match?.channel?.channelRoot?.blockHash),
     };
   }
 
   const byNameOnly = input.replace(/^#/, '').trim().toLowerCase();
-  if (!byNameOnly) return null;
-
+  const summaries = allFeedSummaries();
   const matches = summaries.filter((summary) => (
-    String(summary?.channel?.channelName || '').toLowerCase() === byNameOnly
+    String(summary?.channel?.channelName || '').trim().toLowerCase() === byNameOnly
   ));
 
-  if (matches.length !== 1) return null;
+  if (!matches.length) {
+    throw new Error('Канал не найден. Укажите user/channel или выберите из списка.');
+  }
+  if (matches.length > 1) {
+    throw new Error('Найдено несколько каналов с таким именем. Уточните в формате user/channel.');
+  }
 
+  const one = matches[0];
   return {
-    ownerBlockchainName: matches[0].channel?.ownerBlockchainName,
-    rootBlockNumber: Number(matches[0].channel?.channelRoot?.blockNumber),
-    rootBlockHash: normalizeHash(matches[0].channel?.channelRoot?.blockHash),
+    ownerBlockchainName: String(one?.channel?.ownerBlockchainName || ''),
+    rootBlockNumber: Number(one?.channel?.channelRoot?.blockNumber),
+    rootBlockHash: normalizeHash(one?.channel?.channelRoot?.blockHash),
   };
+}
+
+function channelSuggestionsByInput(rawInput) {
+  const q = String(rawInput || '').trim().toLowerCase();
+  if (q.length < 1) return [];
+
+  const rows = allFeedSummaries().map((summary) => {
+    const owner = String(summary?.channel?.ownerLogin || '').trim();
+    const channel = String(summary?.channel?.channelName || '').trim();
+    if (!owner || !channel) return null;
+    return {
+      key: `${owner.toLowerCase()}/${channel.toLowerCase()}`,
+      label: `@${owner}/${channel}`,
+      owner,
+      channel,
+    };
+  }).filter(Boolean);
+
+  return uniqueBy(rows, (it) => it.key)
+    .filter((it) => (
+      it.channel.toLowerCase().includes(q) ||
+      `${it.owner.toLowerCase()}/${it.channel.toLowerCase()}`.includes(q) ||
+      `@${it.owner.toLowerCase()}/${it.channel.toLowerCase()}`.includes(q)
+    ))
+    .slice(0, 7)
+    .map((it) => it.label);
+}
+
+function renderSuggestions(container, values, onPick) {
+  container.innerHTML = '';
+  if (!values.length) {
+    container.style.display = 'none';
+    return;
+  }
+
+  container.style.display = '';
+  values.forEach((value) => {
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'channel-search-item';
+    btn.textContent = value;
+    btn.addEventListener('click', () => onPick(value));
+    container.append(btn);
+  });
 }
 
 function openSimpleSubscribeModal({ kind, kindLabel, submitLabel, unfollow = false, onSuccess }) {
   const targetHint = kind === 'channel'
-    ? '<p class="meta-muted">Цель канала: owner/channel или bch:number:hash.</p>'
-    : '<p class="meta-muted">Цель пользователя: @login.</p>';
+    ? '<p class="meta-muted">Канал: user/channel, имя канала или bch:number:hash.</p>'
+    : '<p class="meta-muted">Автор: @login или login.</p>';
   const submitText = submitLabel || (unfollow ? 'Отписаться' : 'Подписаться');
-  const placeholder = kind === 'channel' ? '@owner/#channel или bch:number:hash' : '@login';
+  const placeholder = kind === 'channel' ? '@owner/channel' : '@login';
 
   const root = document.getElementById('modal-root');
   root.innerHTML = `
@@ -107,8 +208,9 @@ function openSimpleSubscribeModal({ kind, kindLabel, submitLabel, unfollow = fal
       <div class="modal-card stack">
         <h3 class="modal-title">${kindLabel}</h3>
         ${targetHint}
-        <label class="meta-muted" for="subscribe-input">Идентификатор</label>
-        <input id="subscribe-input" class="input" placeholder="${placeholder}" />
+        <label class="meta-muted" for="subscribe-input">Поиск</label>
+        <input id="subscribe-input" class="input" placeholder="${placeholder}" autocomplete="off" />
+        <div id="subscribe-suggest" class="channels-search-suggest" style="display:none"></div>
         <div id="subscribe-error" class="meta-muted inline-error"></div>
         <div class="form-actions-grid">
           <button class="secondary-btn" id="sub-cancel" type="button">Отмена</button>
@@ -119,16 +221,73 @@ function openSimpleSubscribeModal({ kind, kindLabel, submitLabel, unfollow = fal
   `;
 
   const inputEl = root.querySelector('#subscribe-input');
+  const suggestEl = root.querySelector('#subscribe-suggest');
   const errorEl = root.querySelector('#subscribe-error');
   const submitEl = root.querySelector('#sub-submit');
+
+  let inFlight = false;
+
+  const setBusy = (busy) => {
+    inFlight = !!busy;
+    submitEl.disabled = inFlight;
+    if (inputEl) inputEl.disabled = inFlight;
+    submitEl.textContent = inFlight ? 'Выполняем...' : submitText;
+  };
 
   const close = () => {
     root.innerHTML = '';
   };
 
-  root.querySelector('#sub-cancel').addEventListener('click', close);
+  const applySuggestion = (value) => {
+    if (!inputEl) return;
+    inputEl.value = value;
+    if (suggestEl) suggestEl.style.display = 'none';
+    inputEl.focus();
+  };
 
-  submitEl.addEventListener('click', async () => {
+  const refreshSuggestions = createDebounced(async () => {
+    if (!inputEl || !suggestEl || inFlight) return;
+
+    const raw = String(inputEl.value || '').trim();
+    if (!raw) {
+      suggestEl.style.display = 'none';
+      suggestEl.innerHTML = '';
+      return;
+    }
+
+    try {
+      if (kind === 'user') {
+        const prefix = normalizeLoginInput(raw);
+        if (prefix.length < 2) {
+          suggestEl.style.display = 'none';
+          suggestEl.innerHTML = '';
+          return;
+        }
+        const logins = await authService.searchUsers(prefix);
+        const suggestions = (Array.isArray(logins) ? logins : []).slice(0, 8).map((login) => `@${login}`);
+        renderSuggestions(suggestEl, suggestions, applySuggestion);
+        return;
+      }
+
+      const suggestions = channelSuggestionsByInput(raw);
+      renderSuggestions(suggestEl, suggestions, applySuggestion);
+    } catch {
+      suggestEl.style.display = 'none';
+      suggestEl.innerHTML = '';
+    }
+  }, 240);
+
+  root.querySelector('#sub-cancel')?.addEventListener('click', close);
+
+  inputEl?.addEventListener('input', () => {
+    if (!errorEl) return;
+    errorEl.textContent = '';
+    refreshSuggestions();
+  });
+
+  submitEl?.addEventListener('click', async () => {
+    if (inFlight) return;
+
     const login = state.session.login;
     const storagePwd = state.session.storagePwdInMemory;
     const value = String(inputEl?.value || '').trim();
@@ -143,21 +302,21 @@ function openSimpleSubscribeModal({ kind, kindLabel, submitLabel, unfollow = fal
       return;
     }
 
-    submitEl.disabled = true;
+    setBusy(true);
     errorEl.textContent = '';
 
     try {
       if (kind === 'user') {
         await authService.addBlockFollowUser({
           login,
-          targetLogin: value.replace(/^@+/, ''),
+          targetLogin: normalizeLoginInput(value),
           storagePwd,
           unfollow,
         });
       } else if (kind === 'channel') {
-        const target = resolveChannelTargetFromInput(value);
+        const target = await resolveChannelTargetFromInput(value);
         if (!target?.ownerBlockchainName || !Number.isFinite(target.rootBlockNumber)) {
-          throw new Error('Канал не найден. Используйте owner/channel или bch:number:hash.');
+          throw new Error('Канал не найден.');
         }
 
         await authService.addBlockFollowChannel({
@@ -172,11 +331,13 @@ function openSimpleSubscribeModal({ kind, kindLabel, submitLabel, unfollow = fal
         throw new Error('Неподдерживаемый тип подписки');
       }
 
+      softHaptic(15);
+      showToast(unfollow ? 'Отписка выполнена' : 'Подписка выполнена');
       close();
       if (typeof onSuccess === 'function') onSuccess();
     } catch (error) {
       errorEl.textContent = toUserMessage(error, `${submitText} не удалось.`);
-      submitEl.disabled = false;
+      setBusy(false);
     }
   });
 
@@ -187,40 +348,72 @@ function mapMockGroups() {
   const mapRow = (channel) => ({
     ...channel,
     route: `channel-view/${channel.id}`,
+    tabCategory: channel.kind === 'own' || channel.kind === 'own-personal' ? 'my' : 'subscriptions',
+    messagePreview: channel.lastMessage || 'Ждем ваших начинаний',
+    isSubscribed: channel.kind !== 'own' && channel.kind !== 'own-personal',
+    isOwnChannel: channel.kind === 'own' || channel.kind === 'own-personal',
+    notificationsEnabled: false,
+    messagesCount: Number(channel.messagesCount || 0),
+    lastMessageAt: 0,
+    ownerName: String(channel.ownerName || 'неизвестно'),
+    channelName: String(channel.channelName || channel.title || ''),
+    title: String(channel.title || channel.channelName || ''),
   });
 
   const ownChannels = mockChannels
     .filter((channel) => channel.kind === 'own-personal' || channel.kind === 'own')
-    .map(mapRow);
+    .map((item) => ({ ...mapRow(item), tabCategory: 'my' }));
+
   const followedUserChannels = mockChannels
     .filter((channel) => channel.kind === 'followed-user-channel')
-    .map(mapRow);
+    .map((item) => ({ ...mapRow(item), tabCategory: 'authors' }));
+
   const subscribedChannels = mockChannels
     .filter((channel) => channel.kind === 'subscribed')
-    .map(mapRow);
+    .map((item) => ({ ...mapRow(item), tabCategory: 'subscriptions' }));
 
   return { ownChannels, followedUserChannels, subscribedChannels, index: {} };
 }
 
-function mapApiChannelRow(summary, bucketKey, idx, index) {
+function mapApiChannelRow(summary, bucketKey, idx, index, notificationsState) {
   const rowId = `${bucketKey}-${idx}`;
   index[rowId] = summary;
-  const ownerLogin = summary.channel?.ownerLogin || 'неизвестно';
-  const channelName = summary.channel?.channelName || '(без названия)';
-  const displayName = `${ownerLogin}/${channelName}`;
+
+  const ownerLogin = summary?.channel?.ownerLogin || 'неизвестно';
+  const channelName = summary?.channel?.channelName || '(без названия)';
+  const channelDescription = String(summary?.channel?.channelDescription || '').trim();
+  const isOwn = bucketKey === 'own';
+  const tabCategory = bucketKey === 'own'
+    ? 'my'
+    : bucketKey === 'followedUsers'
+      ? 'authors'
+      : 'subscriptions';
+
+  const title = isOwn
+    ? channelName
+    : tabCategory === 'authors'
+      ? channelName
+      : `${ownerLogin}/${channelName}`;
 
   return {
     id: rowId,
-    source: 'api',
     route: buildChannelRouteFromSummary(summary, rowId),
     ownerName: ownerLogin,
-    initials: initialsFromName(channelName || ownerLogin || '?'),
-    name: channelName,
-    displayName,
-    description: `bch=${summary.channel?.ownerBlockchainName || '-'}`,
-    lastMessage: summary.lastMessage?.text || 'Сообщений пока нет',
-    time: summary.lastMessage?.createdAtMs ? new Date(summary.lastMessage.createdAtMs).toLocaleString('ru-RU') : '-',
-    messagesCount: summary.messagesCount || 0,
+    ownerBlockchainName: summary?.channel?.ownerBlockchainName || '',
+    channelRootBlockNumber: Number(summary?.channel?.channelRoot?.blockNumber),
+    channelRootBlockHash: normalizeHash(summary?.channel?.channelRoot?.blockHash),
+    avatar: avatarLetterFromName(channelName),
+    title,
+    channelName,
+    channelDescription,
+    messagePreview: summary?.lastMessage?.text || 'Ждем ваших начинаний',
+    messagesCount: Number(summary?.messagesCount || 0),
+    lastMessageAt: Number(summary?.lastMessage?.createdAtMs || 0),
+    tabCategory,
+    isOwnChannel: isOwn,
+    isSubscribed: !isOwn,
+    notificationsEnabled: notificationsState[rowId] === true,
+    pending: false,
   };
 }
 
@@ -234,100 +427,57 @@ function pullCreateSuccessFlash() {
   }
 }
 
-function mapApiFeed(feed) {
+function mapApiFeed(feed, notificationsState) {
   const index = {};
-
-  const ownChannels = (feed?.ownedChannels || []).map((it, idx) => mapApiChannelRow(it, 'own', idx, index));
-  const followedUserChannels = (feed?.followedUsersChannels || []).map((it, idx) => mapApiChannelRow(it, 'followedUsers', idx, index));
-  const subscribedChannels = (feed?.followedChannels || []).map((it, idx) => mapApiChannelRow(it, 'followedChannels', idx, index));
-
-  ownChannels.sort((a, b) => {
-    const ap = index[a.id]?.channel?.personal === true;
-    const bp = index[b.id]?.channel?.personal === true;
-    if (ap && !bp) return -1;
-    if (!ap && bp) return 1;
-    return a.name.localeCompare(b.name, 'ru');
-  });
+  const ownChannels = (feed?.ownedChannels || []).map((it, idx) => mapApiChannelRow(it, 'own', idx, index, notificationsState));
+  const followedUserChannels = (feed?.followedUsersChannels || []).map((it, idx) => mapApiChannelRow(it, 'followedUsers', idx, index, notificationsState));
+  const subscribedChannels = (feed?.followedChannels || []).map((it, idx) => mapApiChannelRow(it, 'followedChannels', idx, index, notificationsState));
 
   return { ownChannels, followedUserChannels, subscribedChannels, index };
 }
 
-function renderChannelRow(channel, navigate) {
-  const row = document.createElement('article');
-  row.className = 'channel-row';
-  row.innerHTML = `
-    <div class="avatar">${channel.initials}</div>
-    <div class="channel-row-main">
-      <strong class="channel-row-title">${channel.displayName || channel.name}</strong>
-      <p class="channel-row-description">${channel.description}</p>
-      <p class="channel-row-message">${channel.lastMessage}</p>
-      <p class="channel-row-owner">Владелец: ${channel.ownerName}</p>
-    </div>
-    <div class="channel-row-meta">
-      <span class="channel-row-kind">Канал</span>
-      <span class="channel-row-time">${channel.time}</span>
-      <span class="unread channel-row-count">${channel.messagesCount}</span>
-    </div>
-  `;
-  row.addEventListener('click', () => navigate(channel.route || `channel-view/${channel.id}`));
-  return row;
+function toListModel(groups) {
+  return [
+    ...(groups.ownChannels || []),
+    ...(groups.followedUserChannels || []),
+    ...(groups.subscribedChannels || []),
+  ];
 }
 
-function renderSection(title, items, navigate) {
-  const wrap = document.createElement('section');
-  wrap.className = 'stack channels-section';
+function renderEmptyState(activeTab, navigate) {
+  const wrap = document.createElement('div');
+  wrap.className = 'channels-empty-state';
 
-  const header = document.createElement('h3');
-  header.className = 'section-title';
-  header.textContent = title;
+  const icon = document.createElement('div');
+  icon.className = 'channels-empty-icon';
+  icon.textContent = '◌';
 
-  wrap.append(header);
-  if (!items.length) {
-    const empty = document.createElement('div');
-    empty.className = 'channels-list-empty';
-    empty.textContent = 'Пока пусто.';
-    wrap.append(empty);
-    return wrap;
+  const text = document.createElement('div');
+  text.className = 'meta-muted';
+  text.textContent = 'В этом разделе пока нет каналов';
+
+  wrap.append(icon, text);
+
+  if (activeTab === 'my') {
+    const cta = document.createElement('button');
+    cta.type = 'button';
+    cta.className = 'secondary-btn';
+    cta.textContent = 'Создать первый канал';
+    cta.addEventListener('click', () => navigate('add-channel-view'));
+    wrap.append(cta);
   }
-
-  items.forEach((channel) => wrap.append(renderChannelRow(channel, navigate)));
 
   return wrap;
 }
 
-function renderGroupedList(container, navigate, groups) {
-  const listWrap = document.createElement('div');
-  listWrap.className = 'channels-scroll-wrap';
-
+function renderSkeletonList(container, count = 4) {
+  container.innerHTML = '';
   const list = document.createElement('div');
-  list.className = 'stack channels-groups';
-
-  list.append(renderSection('Мои каналы', groups.ownChannels, navigate));
-
-  const dividerOne = document.createElement('hr');
-  dividerOne.className = 'channels-divider';
-  list.append(dividerOne);
-
-  list.append(renderSection('Каналы пользователей, на которых я подписан', groups.followedUserChannels, navigate));
-
-  const dividerTwo = document.createElement('hr');
-  dividerTwo.className = 'channels-divider';
-  list.append(dividerTwo);
-
-  list.append(renderSection('Каналы, на которые я подписан', groups.subscribedChannels, navigate));
-
-  const addChannelButton = document.createElement('button');
-  addChannelButton.className = 'primary-btn channels-bottom-action';
-  addChannelButton.textContent = 'Создать канал';
-  addChannelButton.addEventListener('click', () => navigate('add-channel-view'));
-
-  list.append(addChannelButton);
-
-  const scrollHint = document.createElement('div');
-  scrollHint.className = 'channels-scroll-hint';
-
-  listWrap.append(list, scrollHint);
-  container.append(listWrap);
+  list.className = 'stack';
+  for (let i = 0; i < count; i += 1) {
+    list.append(createSkeletonCard());
+  }
+  container.append(list);
 }
 
 function renderErrorState(container, error, onRetry) {
@@ -368,154 +518,457 @@ function renderDemoFallback(container, navigate, error, onRetry) {
 
   info.append(retry);
   container.append(info);
-  renderGroupedList(container, navigate, mapMockGroups());
+
+  const groups = mapMockGroups();
+  const list = document.createElement('div');
+  list.className = 'stack';
+
+  toListModel(groups).forEach((channel) => {
+    const row = document.createElement('article');
+    row.className = 'channel-row';
+    row.innerHTML = `
+      <div class="avatar">${channel.avatar || channel.initials || '#'}</div>
+      <div class="channel-row-main">
+        <strong class="channel-row-title">${channel.title || channel.displayName || channel.name}</strong>
+        <p class="channel-row-message">${channel.messagePreview || 'Ждем ваших начинаний'}</p>
+      </div>
+      <div class="channel-row-controls">
+        <span class="channel-row-time">—</span>
+      </div>
+    `;
+    row.addEventListener('click', () => navigate(channel.route || `channel-view/${channel.id}`));
+    list.append(row);
+  });
+
+  container.append(list);
 }
 
-async function loadFeedAndRender(container, navigate) {
+function closeChannelMenu(listState, clearOpenMenuId = true) {
+  if (typeof listState.menuCleanup === 'function') {
+    listState.menuCleanup();
+  }
+  listState.menuCleanup = null;
+  const root = document.getElementById('modal-root');
+  if (root) {
+    const overlay = root.querySelector(`#${MENU_OVERLAY_ID}`);
+    if (overlay) overlay.remove();
+  }
+  if (clearOpenMenuId) {
+    listState.openMenuId = null;
+  }
+}
+
+function openChannelMenu({ listState, channel, anchorEl, refreshFeed, rerenderList }) {
+  closeChannelMenu(listState, false);
+
+  const root = document.getElementById('modal-root');
+  if (!root || !anchorEl) return;
+
+  const rect = anchorEl.getBoundingClientRect();
+  const menuWidth = Math.min(250, Math.max(220, window.innerWidth - 28));
+  let left = rect.right - menuWidth;
+  left = Math.max(12, Math.min(left, window.innerWidth - menuWidth - 12));
+
+  const estimatedHeight = 210;
+  let top = rect.bottom + 8;
+  if (top + estimatedHeight > window.innerHeight - 10) {
+    top = Math.max(12, rect.top - estimatedHeight - 8);
+  }
+
+  const overlay = document.createElement('div');
+  overlay.id = MENU_OVERLAY_ID;
+  overlay.className = 'channels-menu-overlay';
+
+  const menu = document.createElement('div');
+  menu.className = 'channel-menu-wrap channel-menu-wrap--portal';
+  menu.style.left = `${Math.round(left)}px`;
+  menu.style.top = `${Math.round(top)}px`;
+  menu.style.width = `${Math.round(menuWidth)}px`;
+
+  const canToggleSubscription = !channel.isOwnChannel;
+  const actionBtn = document.createElement('button');
+  actionBtn.type = 'button';
+  actionBtn.className = `channel-menu-item ${channel.isSubscribed ? 'destructive' : ''}`.trim();
+
+  if (canToggleSubscription) {
+    actionBtn.textContent = channel.pending
+      ? 'Выполняется...'
+      : channel.isSubscribed
+        ? 'Отписаться'
+        : 'Подписаться';
+    actionBtn.disabled = !!channel.pending;
+
+    actionBtn.addEventListener('click', async (event) => {
+      event.stopPropagation();
+      if (channel.pending) return;
+
+      const login = state.session.login;
+      const storagePwd = state.session.storagePwdInMemory;
+      if (!login || !storagePwd) {
+        showToast('Сессия недействительна. Выполните вход заново.', { kind: 'error' });
+        return;
+      }
+
+      channel.pending = true;
+      actionBtn.disabled = true;
+      actionBtn.textContent = 'Выполняется...';
+
+      const nextSubscribed = !channel.isSubscribed;
+      try {
+        await authService.addBlockFollowChannel({
+          login,
+          storagePwd,
+          targetBlockchainName: channel.ownerBlockchainName,
+          targetBlockNumber: channel.channelRootBlockNumber,
+          targetBlockHashHex: channel.channelRootBlockHash,
+          unfollow: !nextSubscribed,
+        });
+
+        channel.isSubscribed = nextSubscribed;
+        channel.pending = false;
+        softHaptic(15);
+        showToast(nextSubscribed ? 'Подписка на канал включена' : 'Подписка на канал отключена');
+        closeChannelMenu(listState);
+        await refreshFeed();
+      } catch (error) {
+        channel.pending = false;
+        actionBtn.disabled = false;
+        actionBtn.textContent = channel.isSubscribed ? 'Отписаться' : 'Подписаться';
+        showToast(toUserMessage(error, 'Не удалось изменить подписку.'), { kind: 'error' });
+        rerenderList();
+      }
+    });
+  } else {
+    actionBtn.textContent = 'Собственный канал';
+    actionBtn.disabled = true;
+  }
+
+  const toggleWrap = document.createElement('div');
+  toggleWrap.className = 'channel-menu-toggle';
+
+  const toggleLabel = document.createElement('span');
+  toggleLabel.textContent = 'Уведомления';
+
+  const toggleBtn = document.createElement('button');
+  toggleBtn.type = 'button';
+  toggleBtn.className = `channel-toggle-btn ${channel.notificationsEnabled ? 'is-on' : ''}`.trim();
+  toggleBtn.addEventListener('click', (event) => {
+    event.stopPropagation();
+    animatePress(toggleBtn);
+
+    channel.notificationsEnabled = !channel.notificationsEnabled;
+    const next = { ...listState.notificationsState, [channel.id]: channel.notificationsEnabled };
+    listState.notificationsState = next;
+    writeChannelNotificationsState(next);
+
+    toggleBtn.classList.toggle('is-on', channel.notificationsEnabled);
+    softHaptic(10);
+  });
+
+  toggleWrap.append(toggleLabel, toggleBtn);
+  menu.append(actionBtn, toggleWrap);
+  overlay.append(menu);
+  root.append(overlay);
+
+  const onOverlayClick = (event) => {
+    if (event.target === overlay) {
+      closeChannelMenu(listState);
+      rerenderList();
+    }
+  };
+
+  const onWindowResize = () => {
+    closeChannelMenu(listState);
+    rerenderList();
+  };
+
+  overlay.addEventListener('click', onOverlayClick);
+  window.addEventListener('resize', onWindowResize);
+
+  listState.menuCleanup = () => {
+    overlay.removeEventListener('click', onOverlayClick);
+    window.removeEventListener('resize', onWindowResize);
+  };
+}
+
+function renderChannelMain(channel, activeTab) {
+  const main = document.createElement('div');
+  main.className = 'channel-row-main';
+
+  if (activeTab === 'authors') {
+    const author = document.createElement('p');
+    author.className = 'channel-row-author';
+    author.textContent = `@${channel.ownerName}`;
+
+    const title = document.createElement('strong');
+    title.className = 'channel-row-title';
+    title.textContent = channel.channelName ? `#${channel.channelName}` : channel.title;
+
+    const preview = document.createElement('p');
+    preview.className = 'channel-row-message';
+    preview.textContent = channel.messagePreview || 'Ждем ваших начинаний';
+
+    const meta = document.createElement('p');
+    meta.className = 'channel-row-owner';
+    meta.textContent = `Сообщений: ${channel.messagesCount || 0}`;
+
+    main.append(author, title, preview, meta);
+    return main;
+  }
+
+  const title = document.createElement('strong');
+  title.className = 'channel-row-title';
+  title.textContent = activeTab === 'my' ? channel.channelName : channel.title;
+
+  if (activeTab === 'my' && channel.channelDescription) {
+    const desc = document.createElement('p');
+    desc.className = 'channel-row-description';
+    desc.textContent = channel.channelDescription;
+    main.append(desc);
+  }
+
+  const preview = document.createElement('p');
+  preview.className = 'channel-row-message';
+  preview.textContent = channel.messagePreview || 'Ждем ваших начинаний';
+
+  const meta = document.createElement('p');
+  meta.className = 'channel-row-owner';
+  meta.textContent = `Сообщений: ${channel.messagesCount || 0}`;
+
+  main.prepend(title);
+  main.append(preview, meta);
+  return main;
+}
+
+function renderListContent({ screen, container, listState, navigate, refreshFeed }) {
   container.innerHTML = '';
 
-  const status = document.createElement('div');
-  status.className = 'card meta-muted';
-  status.textContent = 'Загрузка каналов...';
-  container.append(status);
+  const allChannels = listState.channels || [];
+  const activeTab = listState.activeTab;
+  const filtered = allChannels.filter((channel) => channel.tabCategory === activeTab);
+
+  if (!filtered.length) {
+    container.append(renderEmptyState(activeTab, navigate));
+    return;
+  }
+
+  const list = document.createElement('div');
+  list.className = 'stack channels-groups channels-list-body-fade';
+
+  const rerenderList = () => renderListContent({ screen, container, listState, navigate, refreshFeed });
+
+  filtered.forEach((channel) => {
+    const row = document.createElement('article');
+    row.className = 'channel-row';
+
+    const avatar = document.createElement('div');
+    avatar.className = 'avatar';
+    avatar.textContent = channel.avatar;
+
+    const main = renderChannelMain(channel, activeTab);
+
+    const controls = document.createElement('div');
+    controls.className = 'channel-row-controls';
+
+    const menuButton = document.createElement('button');
+    menuButton.type = 'button';
+    menuButton.className = 'channel-menu-trigger';
+    menuButton.textContent = '…';
+    menuButton.addEventListener('click', (event) => {
+      event.stopPropagation();
+      animatePress(menuButton);
+
+      if (listState.openMenuId === channel.id) {
+        closeChannelMenu(listState);
+        rerenderList();
+        return;
+      }
+
+      listState.openMenuId = channel.id;
+      openChannelMenu({
+        listState,
+        channel,
+        anchorEl: menuButton,
+        refreshFeed: async () => loadFeedAndRender({ screen, listState, contentEl: container, navigate }),
+        rerenderList,
+      });
+      rerenderList();
+    });
+
+    const time = document.createElement('span');
+    time.className = 'channel-row-time';
+    time.textContent = channel.lastMessageAt ? formatRelativeTime(channel.lastMessageAt) : '—';
+
+    const count = document.createElement('span');
+    count.className = 'unread channel-row-count';
+    count.textContent = String(channel.messagesCount || 0);
+
+    controls.append(menuButton, time, count);
+
+    row.append(avatar, main, controls);
+    row.addEventListener('click', () => navigate(channel.route || `channel-view/${channel.id}`));
+    list.append(row);
+  });
+
+  container.append(list);
+}
+
+function updateBottomCta({ button, listState, navigate, onReload }) {
+  const tab = listState.activeTab;
+
+  if (tab === 'subscriptions') {
+    button.textContent = 'Подписаться на канал';
+    button.className = 'primary-btn channels-bottom-action';
+    button.onclick = () => openSimpleSubscribeModal({
+      kind: 'channel',
+      kindLabel: 'Подписка на канал',
+      submitLabel: 'Подписаться',
+      onSuccess: onReload,
+    });
+    return;
+  }
+
+  if (tab === 'authors') {
+    button.textContent = 'Подписаться на автора';
+    button.className = 'primary-btn channels-bottom-action';
+    button.onclick = () => openSimpleSubscribeModal({
+      kind: 'user',
+      kindLabel: 'Подписка на автора',
+      submitLabel: 'Подписаться',
+      onSuccess: onReload,
+    });
+    return;
+  }
+
+  button.textContent = 'Создать канал';
+  button.className = 'primary-btn channels-bottom-action';
+  button.onclick = () => navigate('add-channel-view');
+}
+
+async function loadFeedAndRender({ screen, listState, contentEl, navigate }) {
+  closeChannelMenu(listState);
+  renderSkeletonList(contentEl, 5);
 
   try {
     if (!state.session.login) throw new Error('not_authorized');
     const feed = await authService.listSubscriptionsFeed(state.session.login, 200);
-    const groups = mapApiFeed(feed);
+    const groups = mapApiFeed(feed, listState.notificationsState);
+
+    listState.channels = toListModel(groups);
     setChannelsFeed(feed, groups.index);
 
-    container.innerHTML = '';
-    renderGroupedList(container, navigate, groups);
+    renderListContent({
+      screen,
+      container: contentEl,
+      listState,
+      navigate,
+      refreshFeed: async () => loadFeedAndRender({ screen, listState, contentEl, navigate }),
+    });
   } catch (error) {
     setChannelsFeed(null, {});
-    container.innerHTML = '';
+    contentEl.innerHTML = '';
+
     if (isChannelsDemoMode()) {
-      renderDemoFallback(container, navigate, error, () => loadFeedAndRender(container, navigate));
+      renderDemoFallback(contentEl, navigate, error, () => loadFeedAndRender({ screen, listState, contentEl, navigate }));
       return;
     }
-    renderErrorState(container, error, () => loadFeedAndRender(container, navigate));
+
+    renderErrorState(contentEl, error, () => loadFeedAndRender({ screen, listState, contentEl, navigate }));
   }
 }
 
 export function render({ navigate }) {
   const screen = document.createElement('section');
   screen.className = 'stack channels-screen channels-screen--list';
+  const appScreen = document.getElementById('app-screen');
+  appScreen?.classList.add('channels-scroll-clean');
+
   const createSuccessFlash = pullCreateSuccessFlash();
-  const hero = document.createElement('div');
-  hero.className = 'card channels-hero';
-  hero.innerHTML = `
-    <div class="channels-hero-emblem" aria-hidden="true"></div>
-    <div class="channels-hero-copy">
-      <p class="channels-hero-kicker">SHiNE</p>
-      <p class="channels-hero-title">Каналы</p>
-      <p class="channels-hero-subtitle">Ленты, треды и подписки в одном экране.</p>
-    </div>
-  `;
+  const notificationsState = readChannelNotificationsState();
 
-  const currentUser = document.createElement('div');
-  currentUser.className = 'card channels-user-chip';
-  currentUser.textContent = `Вы вошли как @${state.session.login || 'неизвестно'}`;
-
-  let flashCard = null;
-  if (createSuccessFlash) {
-    flashCard = document.createElement('div');
-    flashCard.className = 'card status-line is-available';
-    flashCard.textContent = createSuccessFlash;
-  }
-
-  const help = document.createElement('div');
-  help.className = 'card stack channels-help-card';
-  help.innerHTML = `
-    <strong>Быстрый ручной тест</strong>
-    <p class="meta-muted">
-      1) Создайте пользователей A и B.<br />
-      2) Под A создайте 2 канала и сообщения.<br />
-      3) Под B проверьте follow/unfollow user и channel.<br />
-      4) Откройте канал: проверьте like/unlike, reply и thread.
-    </p>
-  `;
-
-  const content = document.createElement('div');
-  const refresh = () => {
-    loadFeedAndRender(content, navigate);
+  const listState = {
+    activeTab: 'my',
+    openMenuId: null,
+    notificationsState,
+    channels: [],
+    menuCleanup: null,
   };
 
-  screen.append(
-    renderHeader({
-      title: 'Каналы',
-    })
-  );
+  const tabs = document.createElement('div');
+  tabs.className = 'channels-tabs channels-tabs--sticky';
 
-  const actions = document.createElement('div');
-  actions.className = 'channels-action-grid';
+  const contentEl = document.createElement('div');
+  contentEl.className = 'channels-list-content';
 
-  const actionButtons = [
-    {
-      label: 'Подписаться на пользователя',
-      className: 'primary-btn channels-action-btn',
-      onClick: () => openSimpleSubscribeModal({
-        kind: 'user',
-        kindLabel: 'Подписка на пользователя',
-        submitLabel: 'Подписаться',
-        onSuccess: refresh,
-      }),
-    },
-    {
-      label: 'Отписаться от пользователя',
-      className: 'destructive-btn channels-action-btn',
-      onClick: () => openSimpleSubscribeModal({
-        kind: 'user',
-        kindLabel: 'Отписка от пользователя',
-        submitLabel: 'Отписаться',
-        unfollow: true,
-        onSuccess: refresh,
-      }),
-    },
-    {
-      label: 'Подписаться на канал',
-      className: 'primary-btn channels-action-btn',
-      onClick: () => openSimpleSubscribeModal({
-        kind: 'channel',
-        kindLabel: 'Подписка на канал',
-        submitLabel: 'Подписаться',
-        onSuccess: refresh,
-      }),
-    },
-    {
-      label: 'Отписаться от канала',
-      className: 'destructive-btn channels-action-btn',
-      onClick: () => openSimpleSubscribeModal({
-        kind: 'channel',
-        kindLabel: 'Отписка от канала',
-        submitLabel: 'Отписаться',
-        unfollow: true,
-        onSuccess: refresh,
-      }),
-    },
+  const bottomCta = document.createElement('button');
+  bottomCta.type = 'button';
+
+  const reloadFeed = async () => loadFeedAndRender({ screen, listState, contentEl, navigate });
+
+  const rerenderList = () => {
+    tabItems.forEach((tab) => {
+      const btn = tabs.querySelector(`[data-tab="${tab.key}"]`);
+      if (btn) btn.classList.toggle('is-active', tab.key === listState.activeTab);
+    });
+
+    closeChannelMenu(listState);
+
+    renderListContent({
+      screen,
+      container: contentEl,
+      listState,
+      navigate,
+      refreshFeed: reloadFeed,
+    });
+
+    updateBottomCta({
+      button: bottomCta,
+      listState,
+      navigate,
+      onReload: reloadFeed,
+    });
+  };
+
+  const tabItems = [
+    { key: 'my', label: 'Мои' },
+    { key: 'subscriptions', label: 'Подписки' },
+    { key: 'authors', label: 'Авторы' },
   ];
 
-  actionButtons.forEach((config) => {
+  tabItems.forEach((tab) => {
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = config.className;
-    btn.textContent = config.label;
-    btn.addEventListener('click', config.onClick);
-    actions.append(btn);
+    btn.dataset.tab = tab.key;
+    btn.className = `channels-tab-btn ${tab.key === listState.activeTab ? 'is-active' : ''}`;
+    btn.textContent = tab.label;
+    btn.addEventListener('click', () => {
+      if (listState.activeTab === tab.key) return;
+      listState.activeTab = tab.key;
+      animatePress(btn);
+      rerenderList();
+    });
+    tabs.append(btn);
   });
 
-  const limitations = document.createElement('div');
-  limitations.className = 'channels-info-strip';
-  limitations.textContent = 'Подписка на пользователя и подписка на конкретный канал работают независимо.';
+  screen.append(tabs, contentEl, bottomCta);
 
-  screen.append(hero);
-  screen.append(actions);
-  screen.append(currentUser);
-  if (flashCard) screen.append(flashCard);
-  screen.append(help);
-  screen.append(limitations);
-  screen.append(content);
-  refresh();
+  if (createSuccessFlash) {
+    showToast(createSuccessFlash);
+  }
+
+  updateBottomCta({
+    button: bottomCta,
+    listState,
+    navigate,
+    onReload: reloadFeed,
+  });
+
+  loadFeedAndRender({ screen, listState, contentEl, navigate });
+
+  screen.cleanup = () => {
+    closeChannelMenu(listState);
+    appScreen?.classList.remove('channels-scroll-clean');
+  };
+
   return screen;
 }
-

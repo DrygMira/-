@@ -51,21 +51,23 @@ public final class ChannelNameStateDAO {
                 INSERT INTO channel_names_state (
                     slug,
                     display_name,
+                    channel_description,
                     owner_login,
                     owner_bch_name,
                     channel_root_block_number,
                     channel_root_block_hash,
                     created_at_ms
-                ) VALUES (?, ?, ?, ?, ?, ?, ?)
+                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?)
                 """;
         try (PreparedStatement ps = c.prepareStatement(sql)) {
             ps.setString(1, entry.getSlug());
             ps.setString(2, entry.getDisplayName());
-            ps.setString(3, entry.getOwnerLogin());
-            ps.setString(4, entry.getOwnerBlockchainName());
-            ps.setInt(5, entry.getChannelRootBlockNumber());
-            ps.setBytes(6, entry.getChannelRootBlockHash());
-            ps.setLong(7, entry.getCreatedAtMs());
+            ps.setString(3, entry.getChannelDescription() == null ? "" : entry.getChannelDescription());
+            ps.setString(4, entry.getOwnerLogin());
+            ps.setString(5, entry.getOwnerBlockchainName());
+            ps.setInt(6, entry.getChannelRootBlockNumber());
+            ps.setBytes(7, entry.getChannelRootBlockHash());
+            ps.setLong(8, entry.getCreatedAtMs());
             ps.executeUpdate();
         }
     }

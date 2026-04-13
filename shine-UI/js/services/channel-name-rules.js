@@ -7,6 +7,11 @@ export function normalizeChannelDisplayName(value) {
   return String(value).trim().replace(/\s+/g, ' ');
 }
 
+export function normalizeChannelDescription(value) {
+  if (value == null) return '';
+  return String(value).trim().replace(/\s+/g, ' ');
+}
+
 export function toCanonicalChannelSlug(value) {
   const normalized = normalizeChannelDisplayName(value);
   if (!normalized) return '';
@@ -76,4 +81,10 @@ export function channelNameErrorText(code) {
   }
 }
 
-
+export function channelDescriptionErrorText(value) {
+  const normalized = normalizeChannelDescription(value);
+  if (new TextEncoder().encode(normalized).length > 200) {
+    return 'Описание слишком длинное: максимум 200 байт UTF-8.';
+  }
+  return '';
+}

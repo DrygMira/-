@@ -373,6 +373,7 @@ public final class DatabaseInitializer {
                 CREATE TABLE IF NOT EXISTS channel_names_state (
                     slug                      TEXT    NOT NULL PRIMARY KEY,
                     display_name              TEXT    NOT NULL,
+                    channel_description       TEXT    NOT NULL DEFAULT '',
                     owner_login               TEXT    NOT NULL,
                     owner_bch_name            TEXT    NOT NULL,
                     channel_root_block_number INTEGER NOT NULL,

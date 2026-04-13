@@ -5,6 +5,7 @@ import java.util.Arrays;
 public class ChannelNameStateEntry {
     private String slug;
     private String displayName;
+    private String channelDescription;
     private String ownerLogin;
     private String ownerBlockchainName;
     private int channelRootBlockNumber;
@@ -25,6 +26,14 @@ public class ChannelNameStateEntry {
 
     public void setDisplayName(String displayName) {
         this.displayName = displayName;
+    }
+
+    public String getChannelDescription() {
+        return channelDescription;
+    }
+
+    public void setChannelDescription(String channelDescription) {
+        this.channelDescription = channelDescription;
     }
 
     public String getOwnerLogin() {

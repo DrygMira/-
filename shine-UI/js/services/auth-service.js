@@ -40,6 +40,7 @@ const MSG_SUBTYPE_REACTION_LIKE = 1;
 const MSG_SUBTYPE_REACTION_UNLIKE = 2;
 const MSG_SUBTYPE_CONNECTION_FOLLOW = 30;
 const MSG_SUBTYPE_CONNECTION_UNFOLLOW = 31;
+const CREATE_CHANNEL_BODY_VERSION = 2;
 
 function normalizeServerUrl(url) {
   const value = (url || '').trim();
@@ -75,6 +76,17 @@ function opError(op, response) {
   error.code = code;
   error.status = response?.status || 0;
   return error;
+}
+
+function isLegacyCreateChannelFormatError(error) {
+  const code = String(error?.code || '').trim().toUpperCase();
+  const text = String(error?.message || '').toLowerCase();
+  if (code === 'BAD_BLOCK_FORMAT') return true;
+  return (
+    text.includes('unknown body type/version') ||
+    text.includes('unknown tech body type/version/subtype') ||
+    text.includes('bad_block_format')
+  );
 }
 
 function makeClientInfo() {
@@ -264,6 +276,50 @@ function makeCreateChannelBodyBytes({ lineCode, prevLineNumber, prevLineHashHex,
     int32Bytes(thisLineNumber),
     int8Byte(nameBytes.length),
     nameBytes
+  );
+}
+
+function normalizeChannelDescription(value) {
+  const text = String(value == null ? '' : value).trim().replace(/\s+/g, ' ');
+  const bytes = utf8Bytes(text);
+  if (bytes.length > 200) {
+    throw new Error('Описание канала слишком длинное: максимум 200 символов.');
+  }
+  return text;
+}
+
+function makeCreateChannelBodyV2Bytes({
+  lineCode,
+  prevLineNumber,
+  prevLineHashHex,
+  thisLineNumber,
+  channelName,
+  channelDescription = '',
+}) {
+  const check = validateChannelDisplayName(channelName);
+  if (!check.ok) throw new Error(channelNameErrorText(check.code));
+  const cleanName = check.normalized;
+  const cleanDescription = normalizeChannelDescription(channelDescription);
+
+  const nameBytes = utf8Bytes(cleanName);
+  if (nameBytes.length < 1 || nameBytes.length > 255) {
+    throw new Error('Channel name must be 1..255 bytes');
+  }
+
+  const descriptionBytes = utf8Bytes(cleanDescription);
+  if (descriptionBytes.length > 200) {
+    throw new Error('Описание канала слишком длинное: максимум 200 символов.');
+  }
+
+  return concatBytes(
+    int32Bytes(lineCode),
+    int32Bytes(prevLineNumber),
+    hexToBytes(normalizeHex32(prevLineHashHex)),
+    int32Bytes(thisLineNumber),
+    int8Byte(nameBytes.length),
+    nameBytes,
+    int16Bytes(descriptionBytes.length),
+    descriptionBytes,
   );
 }
 
@@ -828,7 +884,7 @@ export class AuthService {
       .filter((item) => Number.isFinite(item.rootBlockNumber) && item.rootBlockNumber >= 0);
   }
 
-  async addBlockCreateChannel({ login, channelName, storagePwd }) {
+  async addBlockCreateChannel({ login, channelName, channelDescription = '', storagePwd }) {
     const cleanLogin = (login || '').trim();
     if (!cleanLogin) throw new Error('Missing login');
 
@@ -866,25 +922,47 @@ export class AuthService {
         thisLineNumber = createdChannels.length + 1;
       }
 
-      const bodyBytes = makeCreateChannelBodyBytes({
-        lineCode: 0,
-        prevLineNumber,
-        prevLineHashHex,
-        thisLineNumber,
-        channelName: cleanChannelName,
-      });
+      const submitCreate = async (useV2) => {
+        const bodyBytes = useV2
+          ? makeCreateChannelBodyV2Bytes({
+            lineCode: 0,
+            prevLineNumber,
+            prevLineHashHex,
+            thisLineNumber,
+            channelName: cleanChannelName,
+            channelDescription,
+          })
+          : makeCreateChannelBodyBytes({
+            lineCode: 0,
+            prevLineNumber,
+            prevLineHashHex,
+            thisLineNumber,
+            channelName: cleanChannelName,
+          });
 
-      const payload = await this.addBlockSigned({
-        login: cleanLogin,
-        storagePwd,
-        msgType: MSG_TYPE_TECH,
-        msgSubType: MSG_SUBTYPE_TECH_CREATE_CHANNEL,
-        msgVersion: 1,
-        bodyBytes,
-      });
+        return this.addBlockSigned({
+          login: cleanLogin,
+          storagePwd,
+          msgType: MSG_TYPE_TECH,
+          msgSubType: MSG_SUBTYPE_TECH_CREATE_CHANNEL,
+          msgVersion: useV2 ? CREATE_CHANNEL_BODY_VERSION : 1,
+          bodyBytes,
+        });
+      };
+
+      let payload;
+      let usedLegacyDescriptionFallback = false;
+      try {
+        payload = await submitCreate(true);
+      } catch (error) {
+        if (!isLegacyCreateChannelFormatError(error)) throw error;
+        payload = await submitCreate(false);
+        usedLegacyDescriptionFallback = true;
+      }
 
       return {
         ...payload,
+        usedLegacyDescriptionFallback,
         channel: {
           ownerBlockchainName: blockchainName,
           channelRootBlockNumber: Number(payload?.serverLastGlobalNumber),

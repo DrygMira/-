@@ -86,6 +86,7 @@ public final class SqliteDbController {
                     rebuildConnectionsStateTable(st);
                 }
                 ensureChannelNamesStateTable(st);
+                ensureChannelNamesDescriptionColumn(c, st);
                 ensureConnectionsIndexes(st);
                 ensureReactionsIndexes(st);
                 ensureChannelNamesIndexes(st);
@@ -179,6 +180,7 @@ public final class SqliteDbController {
             CREATE TABLE IF NOT EXISTS channel_names_state (
                 slug                      TEXT    NOT NULL PRIMARY KEY,
                 display_name              TEXT    NOT NULL,
+                channel_description       TEXT    NOT NULL DEFAULT '',
                 owner_login               TEXT    NOT NULL,
                 owner_bch_name            TEXT    NOT NULL,
                 channel_root_block_number INTEGER NOT NULL,
@@ -186,6 +188,24 @@ public final class SqliteDbController {
                 created_at_ms             INTEGER NOT NULL
             );
             """);
+    }
+
+    private static void ensureChannelNamesDescriptionColumn(Connection c, Statement st) throws SQLException {
+        boolean hasDescription = false;
+        try (Statement probe = c.createStatement();
+             ResultSet rs = probe.executeQuery("PRAGMA table_info(channel_names_state)")) {
+            while (rs.next()) {
+                String name = rs.getString("name");
+                if ("channel_description".equalsIgnoreCase(name)) {
+                    hasDescription = true;
+                    break;
+                }
+            }
+        }
+
+        if (!hasDescription) {
+            st.executeUpdate("ALTER TABLE channel_names_state ADD COLUMN channel_description TEXT NOT NULL DEFAULT ''");
+        }
     }
 
     private static void ensureChannelNamesIndexes(Statement st) throws SQLException {

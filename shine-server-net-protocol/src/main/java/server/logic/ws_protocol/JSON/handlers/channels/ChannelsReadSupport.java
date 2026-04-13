@@ -212,6 +212,46 @@ final class ChannelsReadSupport {
         }
     }
 
+    static String detectChannelDescription(Connection c, String ownerBch, int rootNumber) throws SQLException {
+        if (rootNumber == 0) return "";
+
+        // Preferred source: persisted state (fast path, works for CreateChannelBody v2).
+        String stateSql = """
+            SELECT channel_description
+            FROM channel_names_state
+            WHERE owner_bch_name = ? AND channel_root_block_number = ?
+            LIMIT 1
+            """;
+        try (PreparedStatement ps = c.prepareStatement(stateSql)) {
+            ps.setString(1, ownerBch);
+            ps.setInt(2, rootNumber);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (rs.next()) {
+                    return String.valueOf(rs.getString("channel_description") == null ? "" : rs.getString("channel_description"));
+                }
+            }
+        } catch (SQLException ignored) {
+            // keep compatibility for environments where table schema is older/corrupted
+        }
+
+        // Fallback: parse root block directly.
+        String sql = "SELECT block_bytes FROM blocks WHERE bch_name=? AND block_number=? LIMIT 1";
+        try (PreparedStatement ps = c.prepareStatement(sql)) {
+            ps.setString(1, ownerBch);
+            ps.setInt(2, rootNumber);
+            try (ResultSet rs = ps.executeQuery()) {
+                if (!rs.next()) return "";
+                byte[] bytes = rs.getBytes("block_bytes");
+                BchBlockEntry e = new BchBlockEntry(bytes);
+                BodyRecord body = e.body;
+                if (body instanceof CreateChannelBody ccb) return ccb.channelDescription == null ? "" : ccb.channelDescription;
+                return "";
+            } catch (Exception ignored) {
+                return "";
+            }
+        }
+    }
+
     static boolean isLikedByLogin(Connection c, String login, String toBch, int toBlockNumber, byte[] toBlockHash) throws SQLException {
         if (login == null || login.isBlank() || toBch == null || toBch.isBlank() || toBlockHash == null || toBlockHash.length != 32) {
             return false;

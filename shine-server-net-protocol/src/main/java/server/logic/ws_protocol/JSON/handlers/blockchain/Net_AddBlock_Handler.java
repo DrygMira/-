@@ -267,6 +267,11 @@ public final class Net_AddBlock_Handler implements JsonMessageHandler {
             channelNameStateEntry = new ChannelNameStateEntry();
             channelNameStateEntry.setSlug(slug);
             channelNameStateEntry.setDisplayName(normalizedName);
+            channelNameStateEntry.setChannelDescription(
+                    createChannelBody.channelDescription == null
+                            ? ""
+                            : ChannelNameRules.normalizeDisplayName(createChannelBody.channelDescription)
+            );
             channelNameStateEntry.setOwnerLogin(login);
             channelNameStateEntry.setOwnerBlockchainName(blockchainName);
             channelNameStateEntry.setChannelRootBlockNumber(block.blockNumber);

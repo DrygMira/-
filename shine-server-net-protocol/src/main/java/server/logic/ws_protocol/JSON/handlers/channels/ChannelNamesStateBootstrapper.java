@@ -76,9 +76,11 @@ public final class ChannelNamesStateBootstrapper {
 
                             final String displayName;
                             final String slug;
+                            final String channelDescription;
                             try {
                                 displayName = ChannelNameRules.normalizeDisplayName(createChannelBody.channelName);
                                 slug = ChannelNameRules.toCanonicalSlug(displayName);
+                                channelDescription = ChannelNameRules.normalizeDisplayName(createChannelBody.channelDescription);
                             } catch (Exception badName) {
                                 skipped.add(ownerBch + "#" + blockNumber + " (invalid_name)");
                                 continue;
@@ -94,6 +96,7 @@ public final class ChannelNamesStateBootstrapper {
                             ChannelNameStateEntry entry = new ChannelNameStateEntry();
                             entry.setSlug(slug);
                             entry.setDisplayName(displayName);
+                            entry.setChannelDescription(channelDescription == null ? "" : channelDescription);
                             entry.setOwnerLogin(ownerLogin);
                             entry.setOwnerBlockchainName(ownerBch);
                             entry.setChannelRootBlockNumber(blockNumber);

@@ -2,10 +2,17 @@
 import { authService, getMessageReactionState, setMessageReactionState, state } from '../state.js';
 import { captureClientError } from '../services/client-error-reporter.js';
 import { toUserMessage } from '../services/ui-error-texts.js';
+import {
+  animatePress,
+  createSkeletonCard,
+  showToast,
+  softHaptic,
+} from '../services/channels-ux.js';
 
 export const pageMeta = { id: 'channel-thread-view', title: 'Тред' };
 
 const pendingReactionActions = new Set();
+const pendingThreadScroll = new Map();
 
 function logThreadRuntimeError(stage, error, context = {}) {
   const message = String(error?.message || error || 'thread runtime error');
@@ -14,10 +21,7 @@ function logThreadRuntimeError(stage, error, context = {}) {
     kind: 'channels_thread_runtime',
     message,
     stack: error?.stack || '',
-    context: {
-      stage,
-      ...context,
-    },
+    context: { stage, ...context },
   });
 }
 
@@ -49,6 +53,14 @@ function makeReactionActionKey(messageRef) {
   const blockHash = normalizeMessageHash(messageRef?.blockHash);
   if (!login || !blockchainName || !Number.isFinite(blockNumber) || blockNumber < 0 || !blockHash) return '';
   return `${login}|${blockchainName}|${blockNumber}|${blockHash}`;
+}
+
+function messageRefKey(messageRef) {
+  const blockchainName = String(messageRef?.blockchainName || '').trim();
+  const blockNumber = Number(messageRef?.blockNumber);
+  const blockHash = normalizeMessageHash(messageRef?.blockHash);
+  if (!blockchainName || !Number.isFinite(blockNumber) || blockNumber < 0 || !blockHash) return '';
+  return `${blockchainName}:${blockNumber}:${blockHash}`;
 }
 
 function parseThreadSelector(route) {
@@ -161,22 +173,38 @@ function openReplyModal({ onSubmit }) {
 
   const textEl = root.querySelector('#thread-reply-text');
   const errorEl = root.querySelector('#thread-reply-error');
+  const submitEl = root.querySelector('#thread-reply-submit');
+  let inFlight = false;
+
+  const setBusy = (busy) => {
+    inFlight = !!busy;
+    submitEl.disabled = inFlight;
+    if (textEl) textEl.disabled = inFlight;
+    submitEl.textContent = inFlight ? 'Отправляем...' : 'Отправить';
+  };
+
   const close = () => {
     root.innerHTML = '';
   };
 
-  root.querySelector('#thread-reply-cancel').addEventListener('click', close);
-  root.querySelector('#thread-reply-submit').addEventListener('click', async () => {
+  root.querySelector('#thread-reply-cancel')?.addEventListener('click', close);
+  root.querySelector('#thread-reply-submit')?.addEventListener('click', async () => {
+    if (inFlight) return;
+
     const text = String(textEl?.value || '').trim();
     if (!text) {
       errorEl.textContent = 'Введите текст ответа.';
       return;
     }
 
+    setBusy(true);
+    errorEl.textContent = '';
+
     try {
       await onSubmit(text);
       close();
     } catch (error) {
+      setBusy(false);
       errorEl.textContent = toUserMessage(error, 'Не удалось отправить ответ.');
     }
   });
@@ -184,32 +212,48 @@ function openReplyModal({ onSubmit }) {
   if (textEl) textEl.focus();
 }
 
-function renderNodeCard(node, heading, handlers) {
+function renderNodeCard(node, heading, handlers, localNumber) {
   const card = document.createElement('article');
   card.className = 'card stack thread-node-card';
 
   const author = node?.authorLogin || 'автор';
-  const bch = node?.authorBlockchainName || '-';
-  const blockNo = node?.messageRef?.blockNumber ?? '?';
   const text = resolveNodeText(node) || '(пусто)';
   const likes = Number(node?.likesCount || 0);
   const replies = Number(node?.repliesCount || 0);
   const versions = Number(node?.versionsTotal || 1);
 
-  card.innerHTML = `
-    <strong class="thread-node-heading">${heading}</strong>
-    <p class="thread-node-meta">${author} (${bch}) - #${blockNo}</p>
-    <p class="thread-node-body">${text}</p>
-    <p class="thread-node-stats">Лайки: ${likes}, ответы: ${replies}, версий: ${versions}</p>
+  const headingEl = document.createElement('strong');
+  headingEl.className = 'thread-node-heading';
+  headingEl.textContent = heading;
+
+  const meta = document.createElement('p');
+  meta.className = 'thread-node-meta';
+  meta.innerHTML = `
+    <span class="author-line-login">${author}</span>
+    <span class="author-line-num">· #${localNumber}</span>
   `;
+
+  const body = document.createElement('p');
+  body.className = 'thread-node-body';
+  body.textContent = text;
+
+  const stats = document.createElement('p');
+  stats.className = 'thread-node-stats';
+  stats.textContent = `Лайки: ${likes}, ответы: ${replies}, версий: ${versions}`;
+
+  card.append(headingEl, meta, body, stats);
 
   const target = buildTargetFromNode(node);
   if (!target || !handlers) return card;
+
+  const refKey = messageRefKey(target);
+  if (refKey) card.dataset.messageKey = refKey;
 
   setMessageReactionState(target, node?.likedByMe === true ? 'liked' : 'unliked');
 
   const actionKey = makeReactionActionKey(target);
   const isPending = actionKey ? pendingReactionActions.has(actionKey) : false;
+
   const isLiked = getMessageReactionState(target) === 'liked';
 
   const actions = document.createElement('div');
@@ -221,8 +265,11 @@ function renderNodeCard(node, heading, handlers) {
   if (isLiked) likeButton.classList.add('is-liked');
   likeButton.textContent = isPending ? 'Выполняется...' : (isLiked ? 'Убрать лайк' : 'Лайк');
   likeButton.disabled = isPending;
-  likeButton.addEventListener('click', async () => {
+  likeButton.addEventListener('click', async (event) => {
+    animatePress(event.currentTarget);
     if (isPending) return;
+    likeButton.disabled = true;
+    likeButton.textContent = 'Выполняется...';
     try {
       await handlers.onToggleLike(target, isLiked ? 'unlike' : 'like');
     } catch (error) {
@@ -239,7 +286,8 @@ function renderNodeCard(node, heading, handlers) {
   replyButton.type = 'button';
   replyButton.className = 'secondary-btn thread-reply-btn';
   replyButton.textContent = 'Ответить';
-  replyButton.addEventListener('click', () => {
+  replyButton.addEventListener('click', (event) => {
+    animatePress(event.currentTarget);
     openReplyModal({
       onSubmit: async (textValue) => handlers.onReply(target, textValue),
     });
@@ -250,20 +298,21 @@ function renderNodeCard(node, heading, handlers) {
   return card;
 }
 
-function renderDescendants(items, handlers, depth = 0) {
+function renderDescendants(items, handlers, nextNumber, depth = 0) {
   const wrap = document.createElement('div');
   wrap.className = 'stack';
 
   const normalized = Array.isArray(items) ? items : [];
   normalized.forEach((branch, index) => {
     try {
-      const row = renderNodeCard(branch?.node, `Ответ ${index + 1}`, handlers);
+      const nodeNumber = nextNumber();
+      const row = renderNodeCard(branch?.node, `Ответ ${index + 1}`, handlers, nodeNumber);
       row.classList.add('thread-node-level');
       row.style.setProperty('--depth', String(Math.min(depth, 4)));
       wrap.append(row);
 
       if (Array.isArray(branch?.children) && branch.children.length) {
-        wrap.append(renderDescendants(branch.children, handlers, depth + 1));
+        wrap.append(renderDescendants(branch.children, handlers, nextNumber, depth + 1));
       }
     } catch (error) {
       logThreadRuntimeError('render_descendants_branch', error, { depth, index });
@@ -273,10 +322,44 @@ function renderDescendants(items, handlers, depth = 0) {
   return wrap;
 }
 
+function applyPendingScroll(screen, routeKey) {
+  const target = pendingThreadScroll.get(routeKey);
+  if (!target) return;
+
+  const doScroll = () => {
+    if (target === '__LAST_REPLY__') {
+      const cards = screen.querySelectorAll('.thread-block--replies [data-message-key]');
+      const last = cards[cards.length - 1];
+      if (last) {
+        last.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      }
+      pendingThreadScroll.delete(routeKey);
+      return;
+    }
+
+    const node = screen.querySelector(`[data-message-key="${target}"]`);
+    if (node) {
+      node.scrollIntoView({ behavior: 'smooth', block: 'center' });
+      pendingThreadScroll.delete(routeKey);
+    }
+  };
+
+  setTimeout(doScroll, 20);
+}
+
+function renderSkeleton(screen) {
+  const wrap = document.createElement('div');
+  wrap.className = 'stack';
+  wrap.append(createSkeletonCard(), createSkeletonCard(), createSkeletonCard());
+  screen.append(wrap);
+  return wrap;
+}
+
 export function render({ navigate, route }) {
   const selector = parseThreadSelector(route);
   const backRoute = buildBackRoute(selector);
   const channelDisplayName = resolveChannelDisplayName(selector?.channel);
+  const routeKey = `${selector?.message?.blockchainName || ''}:${selector?.message?.blockNumber || ''}:${selector?.message?.blockHash || ''}`;
 
   const screen = document.createElement('section');
   screen.className = 'stack channels-screen channels-screen--thread';
@@ -300,9 +383,7 @@ export function render({ navigate, route }) {
       const next = render({ navigate, route });
       current.replaceWith(next);
     } catch (error) {
-      logThreadRuntimeError('rerender', error, {
-        routeHash: window.location.hash,
-      });
+      logThreadRuntimeError('rerender', error, { routeHash: window.location.hash });
     }
   };
 
@@ -323,19 +404,16 @@ export function render({ navigate, route }) {
     return { login, storagePwd };
   };
 
-  const rereadThread = async () => {
-    if (!selector) return;
-    await authService.getMessageThread(selector.message, 20, 2, 50, state.session.login);
-  };
-
   const handlers = {
     onToggleLike: async (target, action) => {
       const actionKey = makeReactionActionKey(target);
       if (!actionKey) throw new Error('Некорректная ссылка на сообщение для реакции.');
       if (pendingReactionActions.has(actionKey)) return;
 
+      const previousReaction = getMessageReactionState(target);
+      const nextReaction = action === 'unlike' ? 'unliked' : 'liked';
+
       pendingReactionActions.add(actionKey);
-      rerender();
       try {
         const { login, storagePwd } = requireSigningSession();
         if (action === 'unlike') {
@@ -343,24 +421,24 @@ export function render({ navigate, route }) {
         } else {
           await authService.addBlockLike({ login, storagePwd, message: target });
         }
-        await rereadThread();
-        showStatus('');
+
+        setMessageReactionState(target, nextReaction);
+        softHaptic(10);
+        rerender();
       } catch (error) {
-        logThreadRuntimeError('toggle_like', error, {
-          action,
-          targetBlockchainName: target?.blockchainName || '',
-          targetBlockNumber: target?.blockNumber,
-        });
+        setMessageReactionState(target, previousReaction || 'unliked');
+        rerender();
         throw error;
       } finally {
         pendingReactionActions.delete(actionKey);
-        rerender();
       }
     },
     onReply: async (target, textValue) => {
       const { login, storagePwd } = requireSigningSession();
       await authService.addBlockReply({ login, storagePwd, message: target, text: textValue });
-      await rereadThread();
+      pendingThreadScroll.set(routeKey, '__LAST_REPLY__');
+      softHaptic(15);
+      showToast('Ответ отправлен');
       showStatus('');
       rerender();
     },
@@ -376,7 +454,7 @@ export function render({ navigate, route }) {
     renderHeader({
       title: 'Тред',
       leftAction: { label: '<', onClick: () => navigate(backRoute) },
-    })
+    }),
   );
   screen.append(userIndicator, channelIndicator, statusBox);
 
@@ -388,15 +466,12 @@ export function render({ navigate, route }) {
     return screen;
   }
 
-  const loading = document.createElement('div');
-  loading.className = 'card meta-muted';
-  loading.textContent = 'Загрузка треда...';
-  screen.append(loading);
+  const skeleton = renderSkeleton(screen);
 
   (async () => {
     try {
       const payload = await authService.getMessageThread(selector.message, 20, 2, 50, state.session.login);
-      loading.remove();
+      skeleton.remove();
 
       const ancestors = Array.isArray(payload?.ancestors) ? payload.ancestors : [];
       const focus = payload?.focus || null;
@@ -407,6 +482,12 @@ export function render({ navigate, route }) {
       summary.textContent = `Предки: ${ancestors.length}, ответы: ${descendants.length}`;
       screen.append(summary);
 
+      let seq = 0;
+      const nextNumber = () => {
+        seq += 1;
+        return seq;
+      };
+
       if (ancestors.length) {
         const ancestorsWrap = document.createElement('div');
         ancestorsWrap.className = 'stack thread-block thread-block--ancestors';
@@ -415,7 +496,7 @@ export function render({ navigate, route }) {
         title.textContent = 'Предыдущие сообщения';
         ancestorsWrap.append(title);
         ancestors.forEach((node, index) => {
-          ancestorsWrap.append(renderNodeCard(node, `Предок ${index + 1}`, handlers));
+          ancestorsWrap.append(renderNodeCard(node, `Предок ${index + 1}`, handlers, nextNumber()));
         });
         screen.append(ancestorsWrap);
       }
@@ -426,7 +507,7 @@ export function render({ navigate, route }) {
         const title = document.createElement('h3');
         title.className = 'section-title';
         title.textContent = 'Текущее сообщение';
-        focusWrap.append(title, renderNodeCard(focus, 'Выбранное сообщение', handlers));
+        focusWrap.append(title, renderNodeCard(focus, 'Выбранное сообщение', handlers, nextNumber()));
         screen.append(focusWrap);
       }
 
@@ -438,7 +519,7 @@ export function render({ navigate, route }) {
       descendantsWrap.append(descendantsTitle);
 
       if (descendants.length) {
-        descendantsWrap.append(renderDescendants(descendants, handlers));
+        descendantsWrap.append(renderDescendants(descendants, handlers, nextNumber));
       } else {
         const empty = document.createElement('div');
         empty.className = 'card meta-muted';
@@ -447,8 +528,9 @@ export function render({ navigate, route }) {
       }
 
       screen.append(descendantsWrap);
+      applyPendingScroll(screen, routeKey);
     } catch (error) {
-      loading.remove();
+      skeleton.remove();
       const failed = document.createElement('div');
       failed.className = 'card meta-muted';
       failed.textContent = `Не удалось загрузить тред: ${toUserMessage(error, 'неизвестная ошибка')}`;
@@ -458,4 +540,3 @@ export function render({ navigate, route }) {
 
   return screen;
 }
-
