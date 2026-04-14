@@ -363,6 +363,8 @@ export function render({ navigate, route }) {
 
   const screen = document.createElement('section');
   screen.className = 'stack channels-screen channels-screen--thread';
+  const appScreen = document.getElementById('app-screen');
+  appScreen?.classList.add('channels-scroll-clean');
 
   const userIndicator = document.createElement('div');
   userIndicator.className = 'card channels-user-chip';
@@ -537,6 +539,10 @@ export function render({ navigate, route }) {
       screen.append(failed);
     }
   })();
+
+  screen.cleanup = () => {
+    appScreen?.classList.remove('channels-scroll-clean');
+  };
 
   return screen;
 }

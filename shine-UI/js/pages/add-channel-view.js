@@ -132,8 +132,8 @@ export function render({ navigate }) {
       });
 
       const baseMessage = `Канал "${normalizeChannelDisplayName(check.name)}" создан.`;
-      const successMessage = created?.usedLegacyDescriptionFallback
-        ? `${baseMessage} Описание не сохранено: на текущем сервере включен legacy-формат create-channel.`
+      const successMessage = created?.usedLegacyDescriptionFallback && created?.savedDescriptionViaUserParam
+        ? `${baseMessage} Описание сохранено через блок параметра.`
         : baseMessage;
       persistCreateSuccessFlash(successMessage);
       navigate('channels-list');

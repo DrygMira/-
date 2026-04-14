@@ -89,6 +89,16 @@ function isLegacyCreateChannelFormatError(error) {
   );
 }
 
+function channelDescriptionParamKeyFromSelector(selector) {
+  const owner = String(selector?.ownerBlockchainName || '').trim();
+  const rootNo = Number(selector?.channelRootBlockNumber);
+  const rootHash = String(selector?.channelRootBlockHash || '').trim().toLowerCase();
+  if (!owner || !Number.isFinite(rootNo) || rootNo < 0 || !/^[0-9a-f]{64}$/.test(rootHash)) {
+    return '';
+  }
+  return `channel_desc:${owner}:${rootNo}:${rootHash}`;
+}
+
 function makeClientInfo() {
   const ua = navigator.userAgent || 'unknown';
   return ua.slice(0, 50);
@@ -891,6 +901,7 @@ export class AuthService {
     const check = validateChannelDisplayName(channelName);
     if (!check.ok) throw new Error(channelNameErrorText(check.code));
     const cleanChannelName = normalizeChannelDisplayName(check.normalized);
+    const cleanChannelDescription = normalizeChannelDescription(channelDescription);
     const channelSlug = toCanonicalChannelSlug(cleanChannelName);
 
     const key = `create-channel:${cleanLogin}:${channelSlug || cleanChannelName.toLowerCase()}`;
@@ -930,7 +941,7 @@ export class AuthService {
             prevLineHashHex,
             thisLineNumber,
             channelName: cleanChannelName,
-            channelDescription,
+            channelDescription: cleanChannelDescription,
           })
           : makeCreateChannelBodyBytes({
             lineCode: 0,
@@ -952,6 +963,7 @@ export class AuthService {
 
       let payload;
       let usedLegacyDescriptionFallback = false;
+      let savedDescriptionViaUserParam = false;
       try {
         payload = await submitCreate(true);
       } catch (error) {
@@ -960,13 +972,32 @@ export class AuthService {
         usedLegacyDescriptionFallback = true;
       }
 
+      const selector = {
+        ownerBlockchainName: blockchainName,
+        channelRootBlockNumber: Number(payload?.serverLastGlobalNumber),
+        channelRootBlockHash: normalizeHex32(payload?.serverLastGlobalHash, ZERO64),
+      };
+
+      if (usedLegacyDescriptionFallback && cleanChannelDescription) {
+        const param = channelDescriptionParamKeyFromSelector(selector);
+        if (!param) {
+          throw new Error('Не удалось сохранить описание канала: некорректный идентификатор канала.');
+        }
+        await this.addBlockUserParam({
+          login: cleanLogin,
+          storagePwd,
+          param,
+          value: JSON.stringify({ v: cleanChannelDescription }),
+        });
+        savedDescriptionViaUserParam = true;
+      }
+
       return {
         ...payload,
         usedLegacyDescriptionFallback,
+        savedDescriptionViaUserParam,
         channel: {
-          ownerBlockchainName: blockchainName,
-          channelRootBlockNumber: Number(payload?.serverLastGlobalNumber),
-          channelRootBlockHash: normalizeHex32(payload?.serverLastGlobalHash, ZERO64),
+          ...selector,
         },
       };
     });

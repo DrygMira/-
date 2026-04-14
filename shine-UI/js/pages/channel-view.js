@@ -605,21 +605,12 @@ function renderBody(screen, navigate, routeKey, channelData, handlers) {
   title.className = 'channel-head-title';
   title.textContent = channelData.channel.displayName || channelData.channel.name;
 
-  const description = document.createElement('p');
-  description.className = 'channel-head-description';
-  const hasDescription = !!String(channelData.channel.description || '').trim();
-  if (hasDescription) {
-    description.textContent = channelData.channel.description;
-  } else if (channelData.isOwnChannel) {
-    description.textContent = 'Описание пока не задано.';
-  }
-
   const owner = document.createElement('p');
   owner.className = 'channel-head-meta';
   owner.textContent = `Владелец: ${channelData.channel.ownerName}`;
 
   const headActions = document.createElement('div');
-  headActions.className = 'row';
+  headActions.className = 'channel-head-actions';
   const aboutButton = document.createElement('button');
   aboutButton.type = 'button';
   aboutButton.className = 'secondary-btn small-btn';
@@ -646,20 +637,7 @@ function renderBody(screen, navigate, routeKey, channelData, handlers) {
     headActions.append(editButton);
   }
 
-  if (hasDescription) {
-    const moreButton = document.createElement('button');
-    moreButton.type = 'button';
-    moreButton.className = 'channel-head-more';
-    moreButton.textContent = 'ещё';
-    moreButton.addEventListener('click', () => {
-      description.classList.toggle('is-expanded');
-      moreButton.textContent = description.classList.contains('is-expanded') ? 'скрыть' : 'ещё';
-    });
-    headActions.append(moreButton);
-  }
-
   head.append(title);
-  if (hasDescription || channelData.isOwnChannel) head.append(description);
   head.append(owner, headActions);
 
   const actionButton = document.createElement('button');
@@ -723,16 +701,8 @@ export function render({ navigate, route }) {
 
   const screen = document.createElement('section');
   screen.className = 'stack channels-screen channels-screen--channel';
-
-  const titleFromIndex = state.channelsIndex[channelId]?.channel?.channelName;
-  const ownerFromIndex = state.channelsIndex[channelId]?.channel?.ownerLogin;
-  const titleFromIndexDisplay = (ownerFromIndex && titleFromIndex) ? `${ownerFromIndex}/${titleFromIndex}` : titleFromIndex;
-  const titleFromRoute = route.params.ownerBlockchainName ? String(route.params.ownerBlockchainName) : '';
-  const headerTitle = `Канал: ${titleFromIndexDisplay || titleFromRoute || 'Канал'}`;
-
-  const userIndicator = document.createElement('div');
-  userIndicator.className = 'card channels-user-chip';
-  userIndicator.textContent = `Вы вошли как @${state.session.login || 'неизвестно'}`;
+  const appScreen = document.getElementById('app-screen');
+  appScreen?.classList.add('channels-scroll-clean');
 
   const statusBox = document.createElement('div');
   statusBox.className = 'card status-line is-unavailable channels-status';
@@ -846,11 +816,11 @@ export function render({ navigate, route }) {
 
   screen.append(
     renderHeader({
-      title: headerTitle,
+      title: '',
       leftAction: { label: '<', onClick: () => navigate('channels-list') },
     }),
   );
-  screen.append(userIndicator, statusBox);
+  screen.append(statusBox);
 
   const skeleton = renderSkeleton(screen);
 
@@ -923,6 +893,10 @@ export function render({ navigate, route }) {
       renderLoadError(screen, navigate, toUserMessage(error, 'Не удалось загрузить канал.'), rerender);
     }
   })();
+
+  screen.cleanup = () => {
+    appScreen?.classList.remove('channels-scroll-clean');
+  };
 
   return screen;
 }
