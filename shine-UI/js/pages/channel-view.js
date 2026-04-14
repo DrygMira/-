@@ -603,7 +603,7 @@ function renderBody(screen, navigate, routeKey, channelData, handlers) {
 
   const title = document.createElement('strong');
   title.className = 'channel-head-title';
-  title.textContent = channelData.channel.displayName || channelData.channel.name;
+  title.textContent = String(channelData.channel.name || '').trim();
 
   const owner = document.createElement('p');
   owner.className = 'channel-head-meta';
